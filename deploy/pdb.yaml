@@ -1,0 +1,10 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: atlas-api-pdb
+  namespace: atlas
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: atlas-api

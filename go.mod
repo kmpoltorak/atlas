@@ -2,7 +2,10 @@ module atlas
 
 go 1.23.0
 
-require github.com/prometheus/client_golang v1.22.0
+require (
+	github.com/prometheus/client_golang v1.22.0
+	go.uber.org/zap v1.28.0
+)
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -12,7 +15,6 @@ require (
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
-	go.uber.org/zap v1.28.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
 	google.golang.org/protobuf v1.36.5 // indirect
 )

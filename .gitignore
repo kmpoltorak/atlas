@@ -17,3 +17,6 @@ atlas
 
 # Chat history
 chat.json
+
+# Claude
+.claude

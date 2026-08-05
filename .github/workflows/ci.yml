@@ -1,0 +1,80 @@
+name: CI
+
+# Implements the "PR" and "Build" stages of the pipeline documented in docs/deployment.md.
+# The "Push" and "Deploy" stages are deliberately not implemented here — they need a
+# container registry and cluster credentials this repo doesn't have configured yet. See
+# deploy/README.md's "Not yet done" section.
+#
+# go-version is "stable" rather than pinned to go.mod's "go 1.23.0" on purpose: that
+# directive is a minimum language version, not a toolchain pin, and Go only backports
+# security fixes to its latest two major releases. Building/scanning with an old, unpatched
+# toolchain would make the vulnerability scan flag stdlib CVEs no one can actually fix here.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    name: Lint, vet, and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+          cache: true
+
+      - name: Verify gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: go test
+        run: go test -race ./...
+
+  security-scan:
+    name: Vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+          cache: true
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  docker-build:
+    name: Docker build validation
+    runs-on: ubuntu-latest
+    needs: [lint-and-test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image (not pushed)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: atlas-api:ci
