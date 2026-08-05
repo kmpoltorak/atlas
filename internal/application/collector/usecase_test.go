@@ -25,6 +25,10 @@ func (s *stubStorage) SaveBars(symbol string, bars []market.Bar) error {
 	return s.err
 }
 
+func (s *stubStorage) GetBars(symbol string) ([]market.Bar, error) {
+	return s.storedBars, s.err
+}
+
 func (s stubProvider) FetchBars(symbol string, window int) ([]market.Bar, error) {
 	if s.err != nil {
 		return nil, s.err

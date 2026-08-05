@@ -40,3 +40,14 @@ func (u *UseCase) Collect(symbol string, window int) ([]market.Bar, error) {
 	}
 	return bars, nil
 }
+
+// GetStoredBars returns previously collected bars for a symbol without calling the live provider.
+func (u *UseCase) GetStoredBars(symbol string) ([]market.Bar, error) {
+	if symbol == "" {
+		return nil, errors.New("symbol is required")
+	}
+	if u.Storage == nil {
+		return nil, errors.New("storage is not configured")
+	}
+	return u.Storage.GetBars(symbol)
+}

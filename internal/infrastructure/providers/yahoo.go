@@ -18,14 +18,30 @@ type YahooFinanceProvider struct {
 
 func NewYahooFinanceProvider() *YahooFinanceProvider {
 	return &YahooFinanceProvider{
-		BaseURL: "https://query1.finance.yahoo.com/v8/finance/chart",
+		BaseURL: "https://query2.finance.yahoo.com/v8/finance/chart",
 		Client:  &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
+// yahooUserAgent is required: Yahoo's unofficial chart endpoint returns HTTP 429 for
+// requests without a browser-like User-Agent, regardless of host or query parameters.
+const yahooUserAgent = "Mozilla/5.0 (compatible; AtlasPortfolioAdvisor/1.0)"
+
 func (p *YahooFinanceProvider) FetchBars(symbol string, window int) ([]market.Bar, error) {
-	url := fmt.Sprintf("%s/%s?interval=1d&range=%dd", p.BaseURL, symbol, window)
-	resp, err := p.Client.Get(url)
+	if window <= 0 {
+		window = 30
+	}
+	period2 := time.Now().UTC()
+	period1 := period2.AddDate(0, 0, -window)
+	url := fmt.Sprintf("%s/%s?interval=1d&period1=%d&period2=%d&events=history", p.BaseURL, symbol, period1.Unix(), period2.Unix())
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", yahooUserAgent)
+
+	resp, err := p.Client.Do(req)
 	if err != nil {
 		return nil, err
 	}

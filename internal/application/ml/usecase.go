@@ -1,6 +1,10 @@
 package ml
 
-import "atlas/internal/domain/ml"
+import (
+	analyzerUC "atlas/internal/application/analyzer"
+	"atlas/internal/domain/market"
+	"atlas/internal/domain/ml"
+)
 
 // UseCase defines the first ML contract boundary for feature generation and prediction.
 type UseCase struct{}
@@ -25,6 +29,31 @@ func (u *UseCase) BuildTrainingDataset() ([]ml.FeatureVector, error) {
 // Validate returns a placeholder validation score for the current model skeleton.
 func (u *UseCase) Validate() (float64, error) {
 	return 0.78, nil
+}
+
+// BuildFeatureVector derives a feature vector from an analyzer's latest indicator values for a
+// symbol. RSI falls back to a neutral 50 when there isn't enough history to compute it.
+func BuildFeatureVector(analyzer *analyzerUC.UseCase, symbol string, bars []market.Bar) ml.FeatureVector {
+	feature := ml.FeatureVector{RSI: 50}
+	if analyzer == nil || len(bars) == 0 {
+		return feature
+	}
+	if series, err := analyzer.ComputeRSI(symbol, bars); err == nil && len(series) > 0 {
+		feature.RSI = series[len(series)-1]
+	}
+	if series, err := analyzer.ComputeEMA(symbol, bars); err == nil && len(series) > 0 {
+		feature.EMA = series[len(series)-1]
+	}
+	if series, err := analyzer.ComputeMACD(symbol, bars); err == nil && len(series) > 0 {
+		feature.MACD = series[len(series)-1]
+	}
+	if series, err := analyzer.ComputeATR(symbol, bars); err == nil && len(series) > 0 {
+		feature.ATR = series[len(series)-1]
+	}
+	if series, err := analyzer.ComputeVolume(symbol, bars); err == nil && len(series) > 0 {
+		feature.Volume = series[len(series)-1]
+	}
+	return feature
 }
 
 // Predict returns a deterministic placeholder prediction object.

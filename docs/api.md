@@ -6,5 +6,6 @@ GET /watchlist
 GET /alerts
 GET /recommendations
 GET /predictions
+GET /backtests
 POST /portfolio
 POST /watchlist

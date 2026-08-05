@@ -45,3 +45,37 @@ func TestOrchestratorRejectsEmptyBarSet(t *testing.T) {
 		t.Fatalf("expected HOLD recommendation, got %q", rec.Action)
 	}
 }
+
+func TestBuildTechnicalScoreUsesRealIndicatorsNotAConstant(t *testing.T) {
+	orchestrator := NewOrchestrator(analyzerUC.NewUseCase(), portfolioUC.NewUseCase(), NewUseCase())
+
+	bars := make([]market.Bar, 0, 20)
+	price := 100.0
+	for i := 0; i < 20; i++ {
+		price += 1
+		bars = append(bars, market.Bar{
+			Symbol: "AAPL", Open: price - 1, High: price + 1, Low: price - 2, Close: price,
+			Volume: 1000, Timestamp: time.Now().Add(time.Duration(i) * time.Minute),
+		})
+	}
+
+	technical := orchestrator.buildTechnicalScore("AAPL", bars)
+	if technical.RSI == 62 {
+		t.Fatalf("RSI should be computed from real bars, not the old hardcoded constant")
+	}
+	if technical.RSI <= 50 {
+		t.Fatalf("expected RSI to reflect the sustained uptrend (>50), got %v", technical.RSI)
+	}
+}
+
+func TestBuildTechnicalScoreFallsBackToNeutralRSIWithShortHistory(t *testing.T) {
+	orchestrator := NewOrchestrator(analyzerUC.NewUseCase(), portfolioUC.NewUseCase(), NewUseCase())
+	bars := []market.Bar{
+		{Symbol: "AAPL", Open: 100, High: 105, Low: 99, Close: 102, Volume: 1000, Timestamp: time.Now()},
+	}
+
+	technical := orchestrator.buildTechnicalScore("AAPL", bars)
+	if technical.RSI != 50 {
+		t.Fatalf("expected neutral RSI fallback of 50 with insufficient history, got %v", technical.RSI)
+	}
+}
