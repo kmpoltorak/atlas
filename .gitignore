@@ -12,3 +12,6 @@ atlas-api
 # IDE
 .vscode/
 .DS_Store
+
+# Binary
+atlas
