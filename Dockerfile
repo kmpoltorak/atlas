@@ -2,11 +2,12 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /src
 
-COPY go.mod ./
-COPY main.go ./
+COPY go.mod go.sum ./
+COPY cmd ./cmd
+COPY internal ./internal
 
 RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/atlas-api ./
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/atlas-api ./cmd/api
 
 FROM alpine:3.20
 

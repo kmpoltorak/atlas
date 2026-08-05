@@ -1,25 +1,25 @@
-# Machine Learning
-Initial Model
-XGBoost
-Features
-EMA
-RSI
-MACD
-ATR
-ADX
-OBV
-Volume
-Volatility
-Distance from ATH
-Distance from Local High
-Market Trend
-Prediction
-Correction Probability
-Confidence
-Expected Duration
-Expected Strength
-Model Output
-Buy Score
-Hold Score
-Reduce Score
-Sell Score
+# ML Architecture
+
+## Training
+
+Framework:
+Python ecosystem
+Possible tools:
+- pandas
+- numpy
+- scikit-learn
+- XGBoost
+- Optuna
+
+## Model Lifecycle
+1. Collect historical data
+2. Generate features
+3. Train model
+4. Validate model
+5. Export model
+6. Deploy model
+
+## Production Inference
+The production system is written in Go.
+The ML model should be consumed through a stable interface.
+The model implementation must be replaceable.

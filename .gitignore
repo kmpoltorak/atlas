@@ -1,6 +1,8 @@
 # Go build output
 atlas-api
 *.exe
+/bin/
+atlas
 
 # Local env
 .env
@@ -13,5 +15,5 @@ atlas-api
 .vscode/
 .DS_Store
 
-# Binary
-atlas
+# Chat history
+chat.json
