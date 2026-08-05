@@ -1,0 +1,14 @@
+# Go build output
+atlas-api
+*.exe
+
+# Local env
+.env
+.env.*
+
+# Docker data
+*.log
+
+# IDE
+.vscode/
+.DS_Store

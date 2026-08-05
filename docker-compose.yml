@@ -1,0 +1,67 @@
+version: "3.9"
+
+services:
+  atlas-api:
+    build:
+      context: .
+    container_name: atlas-api
+    ports:
+      - "8080:8080"
+    environment:
+      LOG_LEVEL: info
+    depends_on:
+      - timescaledb
+      - redis
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: atlas-timescaledb
+    environment:
+      POSTGRES_DB: atlas
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: atlas
+    volumes:
+      - timescaledb-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: atlas-redis
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+
+  prometheus:
+    image: prom/prometheus:v3.0.0
+    container_name: atlas-prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: atlas-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+
+volumes:
+  timescaledb-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:
