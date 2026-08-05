@@ -1,0 +1,10 @@
+GET /health
+GET /symbols
+GET /prices
+GET /portfolio
+GET /watchlist
+GET /alerts
+GET /recommendations
+GET /predictions
+POST /portfolio
+POST /watchlist
