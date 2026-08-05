@@ -1,0 +1,27 @@
+# The host below is the example.com placeholder from docs/deployment.md's
+# "Kubernetes Architecture" section — replace with the real domain before applying.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: atlas-api-ingress
+  namespace: atlas
+  annotations:
+    # Adjust to whatever ingress controller/TLS issuer the cluster actually runs.
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - atlas.example.com
+      secretName: atlas-api-tls
+  rules:
+    - host: atlas.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: atlas-api-service
+                port:
+                  name: http
