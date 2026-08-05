@@ -17,6 +17,9 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       PROMETHEUS_ENABLED: "true"
+      MARKET_PROVIDER: yahoo
+      DISCORD_WEBHOOK_URL: ""
+      ALERT_POLL_INTERVAL_SECONDS: "300"
     depends_on:
       timescaledb:
         condition: service_healthy

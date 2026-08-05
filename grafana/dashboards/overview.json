@@ -2,6 +2,93 @@
   "title": "Atlas Overview",
   "uid": "atlas-overview",
   "schemaVersion": 39,
-  "version": 1,
-  "panels": []
+  "version": 2,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "HTTP Request Rate",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(atlas_api_requests_total[5m])) by (path, status)",
+          "legendFormat": "{{path}} ({{status}})"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "HTTP Request Latency (p95)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum(rate(atlas_request_duration_seconds_bucket[5m])) by (le, path))",
+          "legendFormat": "{{path}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Provider Requests (Success vs Error)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(atlas_provider_requests_total[5m])) by (provider, outcome)",
+          "legendFormat": "{{provider}} - {{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Recommendations Issued (by Action)",
+      "type": "piechart",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(increase(atlas_recommendations_total[1h])) by (action)",
+          "legendFormat": "{{action}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "ML Predictions Served (by Model Version)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(atlas_predictions_total[5m])) by (model_version)",
+          "legendFormat": "{{model_version}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Discord Alerts Sent (by Action)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(atlas_alerts_sent_total[5m])) by (action)",
+          "legendFormat": "{{action}}"
+        }
+      ]
+    }
+  ]
 }

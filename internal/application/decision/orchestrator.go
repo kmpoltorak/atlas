@@ -32,15 +32,7 @@ func (o *Orchestrator) BuildRecommendationFromBars(symbol string, bars []market.
 	if o.Decision == nil {
 		return domainDecision.Recommendation{Symbol: symbol, Action: "HOLD", Confidence: 0.5, Reason: []string{"Decision engine unavailable"}}, nil
 	}
-	latest := bars[len(bars)-1]
-	technical := domainDecision.TechnicalScore{
-		RSI:     62,
-		EMA:     signalEMA(bars),
-		MACD:    signalMACD(bars),
-		ATR:     signalATR(bars),
-		Volume:  signalVolume(bars),
-		Overall: overallScore(latest.Close, latest.Open, latest.Volume),
-	}
+	technical := o.buildTechnicalScore(symbol, bars)
 	recommendation, err := o.Decision.BuildRecommendation(technical)
 	if err != nil {
 		return domainDecision.Recommendation{}, err
@@ -66,34 +58,42 @@ func (o *Orchestrator) BuildRecommendationForSymbol(symbol string, signals []dom
 	return recommendation, nil
 }
 
-func signalEMA(bars []market.Bar) float64 {
-	if len(bars) == 0 {
-		return 0
-	}
-	return bars[len(bars)-1].Close / math.Max(1, bars[0].Open)
-}
-
-func signalMACD(bars []market.Bar) float64 {
-	if len(bars) == 0 {
-		return 0
-	}
-	return (bars[len(bars)-1].Close - bars[0].Open) / math.Max(1, bars[0].Open)
-}
-
-func signalATR(bars []market.Bar) float64 {
-	if len(bars) == 0 {
-		return 0
-	}
+// buildTechnicalScore derives an explainable TechnicalScore from the real analyzer indicators.
+// RSI falls back to a neutral baseline only when there isn't enough history (< 15 bars) to
+// compute Wilder's RSI; every other field reflects the actual indicator series.
+func (o *Orchestrator) buildTechnicalScore(symbol string, bars []market.Bar) domainDecision.TechnicalScore {
 	latest := bars[len(bars)-1]
-	return math.Abs(latest.High - latest.Low)
-}
+	momentumVolume := overallScore(latest.Close, latest.Open, latest.Volume)
 
-func signalVolume(bars []market.Bar) float64 {
-	if len(bars) == 0 {
-		return 0
+	technical := domainDecision.TechnicalScore{RSI: 50, EMA: latest.Close, Overall: momentumVolume}
+	if o.Analyzer == nil {
+		return technical
 	}
-	latest := bars[len(bars)-1]
-	return latest.Volume / 1000
+
+	if series, err := o.Analyzer.ComputeRSI(symbol, bars); err == nil && len(series) > 0 {
+		technical.RSI = series[len(series)-1]
+	}
+	if series, err := o.Analyzer.ComputeEMA(symbol, bars); err == nil && len(series) > 0 {
+		technical.EMA = series[len(series)-1]
+	}
+	if series, err := o.Analyzer.ComputeMACD(symbol, bars); err == nil && len(series) > 0 {
+		technical.MACD = series[len(series)-1]
+	}
+	if series, err := o.Analyzer.ComputeATR(symbol, bars); err == nil && len(series) > 0 {
+		technical.ATR = series[len(series)-1]
+	}
+	if series, err := o.Analyzer.ComputeVolume(symbol, bars); err == nil && len(series) > 0 {
+		technical.Volume = series[len(series)-1]
+	}
+
+	// Blend the real RSI into the overall score only when it was actually computed;
+	// otherwise keep the momentum/volume score untouched.
+	if technical.RSI != 50 {
+		rsiSignal := 0.5 + (technical.RSI-50)/100
+		technical.Overall = clamp01(momentumVolume*0.7 + rsiSignal*0.3)
+	}
+
+	return technical
 }
 
 func overallScore(close, open, volume float64) float64 {
@@ -103,4 +103,8 @@ func overallScore(close, open, volume float64) float64 {
 		return 0.82
 	}
 	return 0.48
+}
+
+func clamp01(value float64) float64 {
+	return math.Min(1, math.Max(0, value))
 }
