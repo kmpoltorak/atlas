@@ -8,6 +8,7 @@ Before making any changes:
 2. Read relevant documentation in /docs.
 3. Understand existing architecture.
 4. Do not make assumptions when requirements are unclear.
+5. Necessary skills are in skills directory.
 
 The project documentation is the source of truth.
 
