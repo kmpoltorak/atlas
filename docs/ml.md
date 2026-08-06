@@ -4,7 +4,13 @@
 The Go production inference path (internal/application/ml) is a deterministic stub — it
 returns a score derived from the RSI feature plus a fixed 0.72 confidence and a
 "stub-v0" model version, not output from a trained model. `BuildFeatureVector` (real,
-analyzer-backed) is the only genuinely "real" piece of this module today.
+analyzer-backed) is the only genuinely "real" piece of this module today. Every live prediction
+(GET /predictions, and indirectly every recommendation that blends ML in) is now persisted to
+the `predictions` table (see internal/infrastructure/persistence/ml.go) as an append-only
+history log — but only into a `score` column added specifically for this stub's output
+(migrations/004); `correction_probability`, `expected_duration`, and `expected_strength` (the
+columns matching this doc's target design below) stay NULL until a real model produces that
+richer output.
 
 ## Training
 

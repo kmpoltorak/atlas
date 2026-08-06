@@ -50,6 +50,8 @@ func (a *Application) pollAlertsOnce(lastAction map[string]string) {
 	}
 
 	for _, alert := range result {
+		a.persistRecommendation(alert.Recommendation)
+
 		symbol := alert.Recommendation.Symbol
 		action := alert.Recommendation.Action
 		if lastAction[symbol] == action {
