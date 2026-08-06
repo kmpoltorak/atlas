@@ -89,9 +89,14 @@ ML predictions are supporting signals.
 
 ML is NOT the final decision maker.
 
-Implementation status: the ML prediction path is a deterministic stub (internal/application/ml)
-— it returns a score derived from RSI plus a fixed confidence, not a trained model, and has no
-correction/recovery-probability or market-condition fields yet. No training pipeline exists.
+Implementation status: a real training pipeline exists (training/, see training/README.md) —
+an XGBoost binary classifier predicting correction probability, trained on real collected OHLCV
+history, exported to ONNX and loaded in Go via `github.com/yalue/onnxruntime_go`
+(internal/application/ml, `OnnxModel`) — verified live end-to-end (train → export → real HTTP
+prediction → persisted `correction_probability` row). No model is loaded by default; unset
+`MODEL_PATH` (or a load failure) falls back to the original deterministic RSI-derived stub, a
+normal non-fatal state, not an error. Recovery probability and market-condition fields still
+don't exist — only correction probability and confidence are real outputs today.
 
 ---
 
@@ -331,11 +336,11 @@ Implementation status: prices, portfolio data (positions, transactions, watchlis
 predictions, and recommendations are all persisted (see migrations/001-004,
 internal/infrastructure/persistence/{portfolio,watchlist,decision,ml}.go). Indicators are
 still computed fresh per request rather than persisted — there is no indicators table write
-path. Predictions only populate the `score` column added in migrations/004 for the current
-deterministic stub's output; the richer target-design columns (correction_probability,
-expected_duration, expected_strength) stay NULL until a real trained model exists (see
-docs/ml.md). Backtesting's simulated recommendations are deliberately not persisted. There is
-no alerts table at all yet (alerts are computed on demand from the watchlist, see
+path. Predictions always populate `score`/`confidence`/`model_version`; `correction_probability`
+is populated too when a real trained model produced it (see docs/ml.md), and stays NULL for the
+deterministic stub. `expected_duration`/`expected_strength` stay NULL regardless — no model
+produces those yet. Backtesting's simulated recommendations are deliberately not persisted.
+There is no alerts table at all yet (alerts are computed on demand from the watchlist, see
 internal/application/alerts).
 
 Cache:

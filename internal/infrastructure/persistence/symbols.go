@@ -23,3 +23,20 @@ func upsertSymbol(ctx context.Context, db sqlxGetter, ticker string) (string, er
 	}
 	return symbolID, nil
 }
+
+// ListSymbolsWithBars returns every ticker with at least one persisted price bar, regardless
+// of current watchlist membership. Used by cmd/export-training-data to find every symbol with
+// real history to train on, not just the currently-watched subset.
+func (t *TimescaleDB) ListSymbolsWithBars() ([]string, error) {
+	ctx := context.Background()
+
+	var tickers []string
+	if err := t.db.SelectContext(ctx, &tickers,
+		`SELECT DISTINCT s.ticker
+		 FROM symbols s
+		 JOIN prices p ON p.symbol_id = s.id
+		 ORDER BY s.ticker ASC`); err != nil {
+		return nil, fmt.Errorf("list symbols with bars: %w", err)
+	}
+	return tickers, nil
+}

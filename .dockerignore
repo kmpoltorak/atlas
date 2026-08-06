@@ -1,0 +1,5 @@
+.git
+training/.venv
+training/data
+training/models
+*.onnx

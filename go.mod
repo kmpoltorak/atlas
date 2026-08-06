@@ -7,6 +7,7 @@ require (
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/prometheus/client_golang v1.22.0
 	github.com/redis/go-redis/v9 v9.22.0
+	github.com/yalue/onnxruntime_go v1.32.0
 	go.uber.org/zap v1.28.0
 )
 

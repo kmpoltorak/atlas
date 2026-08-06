@@ -75,6 +75,16 @@ Deliverables:
 - decision engine,
 - recommendation persistence and traceability.
 
+**Implementation status** (see PROJECT_CONTEXT.md and docs/ml.md/decision_engine.md for full
+detail): all deliverables above are real. Feature vector construction, the decision engine
+(technical + ML + portfolio-risk blend), and recommendation persistence/traceability
+(recommendations + predictions both append-only in TimescaleDB) shipped first. Model training
+and inference contract shipped after: a real XGBoost correction-probability classifier, trained
+on real collected history, exported to ONNX, and loaded in Go (falling back to a deterministic
+stub when no model is loaded) — verified live end-to-end through the actual HTTP API and a real
+Docker container. Not yet done: recovery-probability/market-condition ML outputs, a separate
+Risk Engine stage, and ACCUMULATE/REDUCE/WAIT actions (still only BUY/SELL/HOLD).
+
 ## 7. Phase 5 — Observability and Notifications
 
 Scope:
