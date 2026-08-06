@@ -14,4 +14,13 @@ type Recommendation struct {
 	Action     string   `json:"action"`
 	Confidence float64  `json:"confidence"`
 	Reason     []string `json:"reason"`
+
+	// Score is the final blended score (Technical/ML/Portfolio, see Orchestrator.
+	// blendMLAndPortfolio); the component fields below are the inputs that produced it. All
+	// four are zero when a recommendation short-circuits before scoring (e.g. no bar data).
+	Score          float64 `json:"score"`
+	TechnicalScore float64 `json:"technical_score"`
+	MLScore        float64 `json:"ml_score"`
+	PortfolioScore float64 `json:"portfolio_score"`
+	ModelVersion   string  `json:"model_version"`
 }

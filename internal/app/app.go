@@ -28,11 +28,14 @@ import (
 // Application is the composition root. It wires the infrastructure adapters (market data
 // provider, persistence, cache, notifications) into the tested application use cases so they
 // are actually reachable through the HTTP layer. Prices, portfolio positions/transactions,
-// and the watchlist are all backed by TimescaleDB and survive restarts; indicators, ML
-// predictions, and recommendations are computed fresh per request rather than persisted.
-// The Orchestrator is wired via NewOrchestratorWithML, so recommendations genuinely blend
-// technical + ML + portfolio-risk signals (see decision.Orchestrator.blendMLAndPortfolio) —
-// not just technical score, even though the ML component is still a deterministic stub.
+// the watchlist, and every live recommendation/prediction are all backed by TimescaleDB and
+// survive restarts (see handlers.go's persistRecommendation/persistPrediction); indicators
+// are still computed fresh per request — nothing persists the intermediate indicator series
+// itself. Backtesting's simulated recommendations are deliberately excluded from persistence
+// since they're hypothetical, not real, decisions. The Orchestrator is wired via
+// NewOrchestratorWithML, so recommendations genuinely blend technical + ML + portfolio-risk
+// signals (see decision.Orchestrator.blendMLAndPortfolio) — not just technical score, even
+// though the ML component is still a deterministic stub.
 type Application struct {
 	Config  config.Config
 	Metrics *observability.Metrics

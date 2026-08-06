@@ -8,7 +8,9 @@ import (
 	"time"
 
 	mlUC "atlas/internal/application/ml"
+	"atlas/internal/domain/decision"
 	"atlas/internal/domain/market"
+	mlDomain "atlas/internal/domain/ml"
 	"atlas/internal/domain/portfolio"
 
 	"go.uber.org/zap"
@@ -58,6 +60,30 @@ func (a *Application) collectBars(symbol string, window int) ([]market.Bar, erro
 	}
 	a.Metrics.ProviderRequests.WithLabelValues(a.Config.MarketProvider, outcome).Inc()
 	return bars, err
+}
+
+// persistRecommendation best-effort writes a recommendation to the history log (see
+// migrations/001's recommendations table). Unlike portfolio writes, a failure here doesn't
+// fail the request: Atlas can still give a truthful live analysis even if the audit log isn't
+// currently reachable, whereas silently dropping a trade record would corrupt real state.
+func (a *Application) persistRecommendation(rec decision.Recommendation) {
+	if a.Storage == nil {
+		return
+	}
+	if err := a.Storage.SaveRecommendation(rec); err != nil {
+		a.Logger.Error("failed to persist recommendation", zap.String("symbol", rec.Symbol), zap.Error(err))
+	}
+}
+
+// persistPrediction best-effort writes a prediction to the history log (see migrations/001's
+// predictions table / migrations/004's score column).
+func (a *Application) persistPrediction(pred mlDomain.Prediction) {
+	if a.Storage == nil {
+		return
+	}
+	if err := a.Storage.SavePrediction(pred); err != nil {
+		a.Logger.Error("failed to persist prediction", zap.String("symbol", pred.Symbol), zap.Error(err))
+	}
 }
 
 // symbolsHandler lists the symbols currently tracked on the watchlist.
@@ -159,6 +185,9 @@ func (a *Application) alertsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := a.Alerts.Evaluate()
+	for _, alert := range result {
+		a.persistRecommendation(alert.Recommendation)
+	}
 	response := map[string]any{"alerts": result}
 	if err != nil {
 		response["warnings"] = err.Error()
@@ -188,6 +217,7 @@ func (a *Application) recommendationsHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	a.Metrics.RecommendationsTotal.WithLabelValues(recommendation.Action).Inc()
+	a.persistRecommendation(recommendation)
 	writeJSON(w, http.StatusOK, recommendation)
 }
 
@@ -215,6 +245,7 @@ func (a *Application) predictionsHandler(w http.ResponseWriter, r *http.Request)
 	}
 	prediction.Symbol = symbol
 	a.Metrics.PredictionsTotal.WithLabelValues(prediction.ModelVersion).Inc()
+	a.persistPrediction(prediction)
 	writeJSON(w, http.StatusOK, prediction)
 }
 

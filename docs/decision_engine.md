@@ -6,12 +6,17 @@
 closer to the "Scoring Model" below than before, though the weights/heuristics are placeholders
 and ML itself is still a deterministic stub (see docs/ml.md). There is still no separate Risk
 Engine stage, and the engine only ever emits BUY/SELL/HOLD (not ACCUMULATE/REDUCE/WAIT). The
-real Recommendation object is `{Symbol, Action, Confidence, Reason}` — no score, risk,
-timestamp, or per-component (technical/ml/portfolio/risk) breakdown; Reason does list which of
-ML/portfolio meaningfully influenced the result. Nothing is persisted to the `recommendations`
-table described below — it exists in migrations/001 but nothing writes to it. Discord
-notifications exist (internal/app/alerts_loop.go) but aren't gated by action type the way
-"Notifications" below describes.
+real Recommendation object is `{Symbol, Action, Confidence, Reason, Score, TechnicalScore,
+MLScore, PortfolioScore, ModelVersion}` — no separate risk score or timestamp field yet (risk
+score has nothing to compute from without a Risk Engine stage); Reason does list which of
+ML/portfolio meaningfully influenced the result. Every live recommendation (GET /recommendations,
+GET /alerts, and the background alert-poll loop) is now persisted to the `recommendations`
+table below (see internal/infrastructure/persistence/decision.go) as an append-only history
+log — `risk_score` stays NULL there for the same no-Risk-Engine reason. Backtesting's simulated
+recommendations are deliberately NOT persisted (see internal/application/backtesting/usecase.go)
+since they're hypothetical past decisions, not real ones. Discord notifications exist
+(internal/app/alerts_loop.go) but aren't gated by action type the way "Notifications" below
+describes.
 
 ## Overview
 The Decision Engine is the core intelligence layer of Atlas.

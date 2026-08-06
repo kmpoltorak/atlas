@@ -1,12 +1,12 @@
 # Architecture
 
 **Implementation status** (as of this pass — see PROJECT_CONTEXT.md for the up-to-date
-per-module breakdown): Collector, Analyzer (minus ADX), Decision Engine's technical-only path,
-Notification Service, Metrics, REST API, and TimescaleDB storage for prices/portfolio/watchlist
-are real and wired end-to-end. Still aspirational: ML Engine (deterministic stub, no training
-pipeline), Decision Engine's ML/portfolio fusion (technical score only today) and its
-ACCUMULATE/REDUCE/WAIT actions (only BUY/SELL/HOLD exist), and persistence for
-indicators/predictions/recommendations (tables exist, nothing writes to them yet).
+per-module breakdown): Collector, Analyzer (minus ADX), Decision Engine (technical + ML +
+portfolio-risk blend), Notification Service, Metrics, REST API, and TimescaleDB storage for
+prices/portfolio/watchlist/recommendations/predictions are real and wired end-to-end. Still
+aspirational: ML Engine (deterministic stub, no training pipeline), Decision Engine's
+ACCUMULATE/REDUCE/WAIT actions (only BUY/SELL/HOLD exist), a Risk Engine stage, and persistence
+for indicators (table exists, nothing writes to it yet).
 
 ## Core Modules
 

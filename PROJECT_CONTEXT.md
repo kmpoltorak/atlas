@@ -327,11 +327,16 @@ Used for:
 - recommendations,
 - alerts.
 
-Implementation status: prices and portfolio data (positions, transactions, watchlist) are
-persisted (see migrations/001-003). Indicators, ML predictions, and recommendations are
-computed fresh per request and not yet written to TimescaleDB — their tables exist in
-migrations/001 but nothing inserts into them yet. There is no alerts table at all yet
-(alerts are computed on demand from the watchlist, see internal/application/alerts).
+Implementation status: prices, portfolio data (positions, transactions, watchlist), ML
+predictions, and recommendations are all persisted (see migrations/001-004,
+internal/infrastructure/persistence/{portfolio,watchlist,decision,ml}.go). Indicators are
+still computed fresh per request rather than persisted — there is no indicators table write
+path. Predictions only populate the `score` column added in migrations/004 for the current
+deterministic stub's output; the richer target-design columns (correction_probability,
+expected_duration, expected_strength) stay NULL until a real trained model exists (see
+docs/ml.md). Backtesting's simulated recommendations are deliberately not persisted. There is
+no alerts table at all yet (alerts are computed on demand from the watchlist, see
+internal/application/alerts).
 
 Cache:
 

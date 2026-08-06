@@ -11,6 +11,11 @@ import (
 	"atlas/internal/domain/portfolio"
 )
 
+// EngineVersion tags every Recommendation this orchestrator produces (Recommendation.
+// ModelVersion), independent of ML's own model_version (see ml.Prediction) — it identifies the
+// decision-engine scoring logic (weights, thresholds), not the ML sub-model.
+const EngineVersion = "atlas-decision-v1"
+
 // Orchestrator composes the analyzer, ML, portfolio, and decision use cases into an explainable
 // recommendation workflow, per docs/decision_engine.md's "Scoring Model" (Technical + ML +
 // Portfolio + Risk). ML is optional (nil-safe) since most callers/tests only care about the
@@ -48,14 +53,21 @@ func (o *Orchestrator) BuildRecommendationFromBars(symbol string, bars []market.
 		return domainDecision.Recommendation{Symbol: symbol, Action: "HOLD", Confidence: 0.5, Reason: []string{"Decision engine unavailable"}}, nil
 	}
 	technical := o.buildTechnicalScore(symbol, bars)
+	technicalScore := technical.Overall
+	var mlScore, portfolioScore float64
 	var extraReasons []string
-	technical.Overall, extraReasons = o.blendMLAndPortfolio(symbol, bars, technical)
+	technical.Overall, mlScore, portfolioScore, extraReasons = o.blendMLAndPortfolio(symbol, bars, technical)
 	recommendation, err := o.Decision.BuildRecommendation(technical)
 	if err != nil {
 		return domainDecision.Recommendation{}, err
 	}
 	recommendation.Symbol = symbol
 	recommendation.Reason = append(recommendation.Reason, extraReasons...)
+	recommendation.Score = technical.Overall
+	recommendation.TechnicalScore = technicalScore
+	recommendation.MLScore = mlScore
+	recommendation.PortfolioScore = portfolioScore
+	recommendation.ModelVersion = EngineVersion
 	return recommendation, nil
 }
 
@@ -121,11 +133,9 @@ func (o *Orchestrator) buildTechnicalScore(symbol string, bars []market.Bar) dom
 // (nil-safe) and neutral (0.5) when unavailable, so the blend degrades to technical-only
 // exactly as before when ML/Portfolio aren't wired in (see NewOrchestrator vs
 // NewOrchestratorWithML).
-func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, technical domainDecision.TechnicalScore) (float64, []string) {
-	overall := technical.Overall
-	var reasons []string
-
-	mlScore := 0.5
+func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, technical domainDecision.TechnicalScore) (overallScore, mlScore, portfolioScore float64, reasons []string) {
+	overallScore = technical.Overall
+	mlScore = 0.5
 	if o.ML != nil {
 		feature := mlUC.BuildFeatureVector(o.Analyzer, symbol, bars)
 		if prediction, err := o.ML.Predict(feature); err == nil {
@@ -133,7 +143,7 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 		}
 	}
 
-	portfolioScore := 0.5
+	portfolioScore = 0.5
 	if o.Portfolio != nil {
 		if positions, err := o.Portfolio.GetPositions(); err == nil {
 			portfolioScore = portfolioRiskSignal(symbol, positions)
@@ -150,7 +160,7 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 		// with the RSI blend in buildTechnicalScore until a real trained model exists —
 		// wiring the composition now means Atlas picks up a genuine ML signal automatically
 		// the moment Predict() stops being a stub, with no further orchestration changes.
-		overall = clamp01(technical.Overall*0.55 + mlScore*0.30 + portfolioScore*0.15)
+		overallScore = clamp01(technical.Overall*0.55 + mlScore*0.30 + portfolioScore*0.15)
 	}
 
 	if mlScore >= 0.6 {
@@ -162,7 +172,7 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 		reasons = append(reasons, "Portfolio risk context reduces conviction")
 	}
 
-	return overall, reasons
+	return overallScore, mlScore, portfolioScore, reasons
 }
 
 // portfolioRiskSignal is a placeholder heuristic: a large unrealized loss is a risk signal

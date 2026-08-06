@@ -87,7 +87,7 @@ func TestBlendMLAndPortfolioIsNoOpWithoutML(t *testing.T) {
 	orchestrator := NewOrchestrator(analyzerUC.NewUseCase(), portfolioUC.NewUseCase(), NewUseCase())
 	technical := domainDecision.TechnicalScore{Overall: 0.9}
 
-	overall, reasons := orchestrator.blendMLAndPortfolio("AAPL", nil, technical)
+	overall, _, _, reasons := orchestrator.blendMLAndPortfolio("AAPL", nil, technical)
 	if overall != 0.9 {
 		t.Fatalf("expected the blend to be a no-op without ML (plain NewOrchestrator), got %v", overall)
 	}
@@ -103,11 +103,17 @@ func TestBlendMLAndPortfolioAppliesFullMixWithML(t *testing.T) {
 	bars := []market.Bar{{Symbol: "AAPL", Close: 100, Timestamp: time.Now()}}
 	technical := domainDecision.TechnicalScore{Overall: 0.9}
 
-	overall, _ := orchestrator.blendMLAndPortfolio("AAPL", bars, technical)
+	overall, mlScore, portfolioScore, _ := orchestrator.blendMLAndPortfolio("AAPL", bars, technical)
 
 	want := clamp01(0.9*0.55 + 0.5*0.30 + 0.5*0.15)
 	if math.Abs(overall-want) > 0.0001 {
 		t.Fatalf("expected blended overall %.4f, got %.4f", want, overall)
+	}
+	if mlScore != 0.5 {
+		t.Fatalf("expected mlScore 0.5, got %v", mlScore)
+	}
+	if portfolioScore != 0.5 {
+		t.Fatalf("expected portfolioScore 0.5, got %v", portfolioScore)
 	}
 }
 
@@ -117,7 +123,7 @@ func TestBlendMLAndPortfolioFlagsRiskForLosingPosition(t *testing.T) {
 	orchestrator := NewOrchestratorWithML(analyzerUC.NewUseCase(), portfolioUseCase, NewUseCase(), mlUC.NewUseCase())
 	bars := []market.Bar{{Symbol: "AAPL", Close: 100, Timestamp: time.Now()}}
 
-	_, reasons := orchestrator.blendMLAndPortfolio("AAPL", bars, domainDecision.TechnicalScore{Overall: 0.9})
+	_, _, _, reasons := orchestrator.blendMLAndPortfolio("AAPL", bars, domainDecision.TechnicalScore{Overall: 0.9})
 
 	found := false
 	for _, reason := range reasons {
