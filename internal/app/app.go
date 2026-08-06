@@ -28,8 +28,11 @@ import (
 // Application is the composition root. It wires the infrastructure adapters (market data
 // provider, persistence, cache, notifications) into the tested application use cases so they
 // are actually reachable through the HTTP layer. Prices, portfolio positions/transactions,
-// and the watchlist are all backed by TimescaleDB and survive restarts; only the ML pipeline
-// and technical indicators remain computed fresh per request rather than persisted.
+// and the watchlist are all backed by TimescaleDB and survive restarts; indicators, ML
+// predictions, and recommendations are computed fresh per request rather than persisted.
+// The Orchestrator is wired via NewOrchestratorWithML, so recommendations genuinely blend
+// technical + ML + portfolio-risk signals (see decision.Orchestrator.blendMLAndPortfolio) —
+// not just technical score, even though the ML component is still a deterministic stub.
 type Application struct {
 	Config  config.Config
 	Metrics *observability.Metrics
@@ -74,6 +77,7 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 	barsCache := &redisBarsCache{client: redisCache}
 	collector := collectorUC.NewUseCaseWithStorageAndCache(provider, storage, barsCache)
 	analyzer := analyzerUC.NewUseCase()
+	mlUseCase := mlUC.NewUseCase()
 
 	portfolioUseCase, err := portfolioUC.NewUseCaseWithRepository(storage)
 	if err != nil {
@@ -82,7 +86,7 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 		return nil, fmt.Errorf("load portfolio state: %w", err)
 	}
 	decisionUseCase := decisionUC.NewUseCase()
-	orchestrator := decisionUC.NewOrchestrator(analyzer, portfolioUseCase, decisionUseCase)
+	orchestrator := decisionUC.NewOrchestratorWithML(analyzer, portfolioUseCase, decisionUseCase, mlUseCase)
 
 	watchlist, err := watchlistUC.NewUseCaseWithRepository(storage)
 	if err != nil {
@@ -105,7 +109,7 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 		Portfolio:     portfolioUseCase,
 		Decision:      decisionUseCase,
 		Orchestrator:  orchestrator,
-		ML:            mlUC.NewUseCase(),
+		ML:            mlUseCase,
 		Notifications: notificationsUC.NewUseCase(discord),
 		Backtesting:   backtestingUC.NewUseCase(orchestrator),
 		Watchlist:     watchlist,
