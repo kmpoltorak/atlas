@@ -40,8 +40,13 @@ func (a *Application) windowFromQuery(r *http.Request) int {
 
 // collectBars wraps Collector.Collect with the provider metrics and error logging every
 // HTTP entry point into the market data path needs, so those concerns live in one place.
+// Cache hits are deliberately excluded from atlas_provider_requests_total — that metric
+// exists to show real load/rate-limit exposure on the live provider, not request volume.
 func (a *Application) collectBars(symbol string, window int) ([]market.Bar, error) {
-	bars, err := a.Collector.Collect(symbol, window)
+	bars, fromCache, err := a.Collector.Collect(symbol, window)
+	if fromCache {
+		return bars, nil
+	}
 	outcome := "success"
 	if err != nil {
 		outcome = "error"

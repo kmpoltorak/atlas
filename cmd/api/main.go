@@ -25,7 +25,18 @@ func main() {
 	defer logger.Sync() //nolint:errcheck
 
 	metrics := observability.NewMetrics()
-	application := app.New(cfg, metrics, logger)
+
+	connectCtx, cancelConnect := context.WithTimeout(context.Background(), 10*time.Second)
+	application, err := app.New(connectCtx, cfg, metrics, logger)
+	cancelConnect()
+	if err != nil {
+		logger.Fatal("failed to initialize application", zap.Error(err))
+	}
+	defer func() {
+		if err := application.Close(); err != nil {
+			logger.Error("error closing application resources", zap.Error(err))
+		}
+	}()
 
 	stopAlerts := application.StartAlertPolling()
 	defer stopAlerts()

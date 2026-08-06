@@ -1,6 +1,10 @@
 package app
 
 import (
+	"context"
+	"errors"
+	"fmt"
+
 	alertsUC "atlas/internal/application/alerts"
 	analyzerUC "atlas/internal/application/analyzer"
 	backtestingUC "atlas/internal/application/backtesting"
@@ -45,13 +49,28 @@ type Application struct {
 	Alerts        *alertsUC.UseCase
 }
 
-func New(cfg config.Config, metrics *observability.Metrics, logger *zap.Logger) *Application {
-	storage := persistence.NewTimescaleDB(cfg.DatabaseHost, cfg.DatabasePort, cfg.DatabaseName, cfg.DatabaseUser, cfg.DatabasePassword)
+// New connects to TimescaleDB and Redis and wires the full application. A connection
+// failure here is fatal and returned to the caller rather than silently degrading: Atlas
+// can't give a truthful recommendation without real historical data (see
+// persistence.NewTimescaleDB's doc comment).
+func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics, logger *zap.Logger) (*Application, error) {
+	dsn := persistence.DSN(cfg.DatabaseHost, cfg.DatabasePort, cfg.DatabaseName, cfg.DatabaseUser, cfg.DatabasePassword)
+	storage, err := persistence.NewTimescaleDB(ctx, dsn)
+	if err != nil {
+		return nil, fmt.Errorf("connect to timescaledb: %w", err)
+	}
+
 	redisCache := cache.NewRedisClient(cfg.RedisHost, cfg.RedisPort)
+	if err := redisCache.Ping(ctx); err != nil {
+		_ = storage.Close()
+		return nil, fmt.Errorf("connect to redis: %w", err)
+	}
+
 	discord := notifications.NewDiscordClient(cfg.DiscordWebhookURL)
 
 	provider := newProvider(cfg)
-	collector := collectorUC.NewUseCaseWithStorage(provider, storage)
+	barsCache := &redisBarsCache{client: redisCache}
+	collector := collectorUC.NewUseCaseWithStorageAndCache(provider, storage, barsCache)
 	analyzer := analyzerUC.NewUseCase()
 	portfolioUseCase := portfolioUC.NewUseCase()
 	decisionUseCase := decisionUC.NewUseCase()
@@ -77,7 +96,22 @@ func New(cfg config.Config, metrics *observability.Metrics, logger *zap.Logger) 
 		Backtesting:   backtestingUC.NewUseCase(orchestrator),
 		Watchlist:     watchlist,
 		Alerts:        alertsUC.NewUseCase(watchlist, collector, orchestrator, cfg.CollectorWindow),
+	}, nil
+}
+
+// Close releases the database and cache connections. Call it during graceful shutdown.
+func (a *Application) Close() error {
+	var errs []error
+	if err := a.Storage.Close(); err != nil {
+		errs = append(errs, fmt.Errorf("close timescaledb: %w", err))
 	}
+	if err := a.Cache.Close(); err != nil {
+		errs = append(errs, fmt.Errorf("close redis: %w", err))
+	}
+	if len(errs) == 0 {
+		return nil
+	}
+	return errors.Join(errs...)
 }
 
 // newProvider selects the market data provider from configuration. Yahoo Finance has no

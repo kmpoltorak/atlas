@@ -41,6 +41,11 @@ services:
       POSTGRES_PASSWORD: atlas
     volumes:
       - timescaledb-data:/var/lib/postgresql/data
+      # Official postgres/timescaledb images auto-run any .sql files found here, in
+      # lexical order, but only against a fresh (empty) data volume. For an existing
+      # volume, apply new migrations manually — this isn't a real migration tool with
+      # version tracking, just the standard Docker Compose bootstrap mechanism.
+      - ./migrations:/docker-entrypoint-initdb.d
     ports:
       - "5432:5432"
     healthcheck:

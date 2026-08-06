@@ -1,36 +1,53 @@
 package cache
 
-import "fmt"
+import (
+	"context"
+	"time"
 
-// RedisClient keeps the minimum cache contract exposed by the approved architecture.
+	"github.com/redis/go-redis/v9"
+)
+
+// RedisClient is a real go-redis-backed cache adapter — used for temporary calculations,
+// API response caching, and rate limiting per docs/deployment.md's "redis" service scope.
 type RedisClient struct {
-	Host  string
-	Port  string
-	store map[string]string
+	client *redis.Client
+	addr   string
 }
 
 func NewRedisClient(host, port string) *RedisClient {
-	return &RedisClient{Host: host, Port: port, store: map[string]string{}}
+	addr := host + ":" + port
+	return &RedisClient{
+		client: redis.NewClient(&redis.Options{Addr: addr}),
+		addr:   addr,
+	}
 }
 
 // Address returns the host:port address used by the cache client.
 func (c *RedisClient) Address() string {
-	return fmt.Sprintf("%s:%s", c.Host, c.Port)
+	return c.addr
 }
 
-// Set stores a value in the in-memory cache for the first implementation milestone.
-func (c *RedisClient) Set(key, value string) error {
-	if c.store == nil {
-		c.store = map[string]string{}
-	}
-	c.store[key] = value
-	return nil
+func (c *RedisClient) Close() error {
+	return c.client.Close()
 }
 
-// Get retrieves a value from the in-memory cache.
-func (c *RedisClient) Get(key string) (string, error) {
-	if c.store == nil {
-		return "", nil
+func (c *RedisClient) Ping(ctx context.Context) error {
+	return c.client.Ping(ctx).Err()
+}
+
+// Set stores a value with an expiration. ttl <= 0 means the key never expires.
+func (c *RedisClient) Set(ctx context.Context, key, value string, ttl time.Duration) error {
+	return c.client.Set(ctx, key, value, ttl).Err()
+}
+
+// Get retrieves a value. found is false on a cache miss, which is not an error condition.
+func (c *RedisClient) Get(ctx context.Context, key string) (value string, found bool, err error) {
+	value, err = c.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return "", false, nil
 	}
-	return c.store[key], nil
+	if err != nil {
+		return "", false, err
+	}
+	return value, true, nil
 }

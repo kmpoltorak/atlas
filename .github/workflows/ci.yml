@@ -23,6 +23,36 @@ jobs:
   lint-and-test:
     name: Lint, vet, and test
     runs-on: ubuntu-latest
+    # Real service containers for the persistence/cache integration tests
+    # (internal/infrastructure/persistence, internal/infrastructure/cache) — without these,
+    # TEST_DATABASE_DSN/TEST_REDIS_ADDR are unset and those tests just skip, silently
+    # untested. Matches docker-compose.yml's timescaledb/redis service definitions.
+    services:
+      timescaledb:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_DB: atlas
+          POSTGRES_USER: atlas
+          POSTGRES_PASSWORD: atlas
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U atlas -d atlas"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_DSN: "host=localhost port=5432 user=atlas password=atlas dbname=atlas sslmode=disable"
+      TEST_REDIS_ADDR: "localhost:6379"
     steps:
       - uses: actions/checkout@v4
 
@@ -30,6 +60,18 @@ jobs:
         with:
           go-version: "stable"
           cache: true
+
+      # GitHub Actions service containers start before checkout, so they can't mount
+      # ./migrations the way docker-compose.yml's docker-entrypoint-initdb.d does — apply
+      # them explicitly instead, with ON_ERROR_STOP so a broken migration fails CI loudly
+      # rather than the container silently continuing (see migrations/001's fix history).
+      - name: Apply database migrations
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          for f in migrations/*.sql; do
+            echo "Applying $f"
+            PGPASSWORD=atlas psql -h localhost -U atlas -d atlas -v ON_ERROR_STOP=1 -f "$f"
+          done
 
       - name: Verify gofmt
         run: |

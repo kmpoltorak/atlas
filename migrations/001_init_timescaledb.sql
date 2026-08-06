@@ -9,15 +9,18 @@ CREATE TABLE IF NOT EXISTS symbols (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- TimescaleDB requires every unique constraint on a hypertable (including the primary key)
+-- to include the partitioning column, so the key is composite (id, ts) rather than id alone.
 CREATE TABLE IF NOT EXISTS prices (
-    id UUID PRIMARY KEY,
+    id UUID NOT NULL,
     symbol_id UUID NOT NULL REFERENCES symbols(id),
     ts TIMESTAMPTZ NOT NULL,
     open NUMERIC,
     high NUMERIC,
     low NUMERIC,
     close NUMERIC,
-    volume NUMERIC
+    volume NUMERIC,
+    PRIMARY KEY (id, ts)
 );
 
 SELECT create_hypertable('prices', 'ts', if_not_exists => TRUE);
