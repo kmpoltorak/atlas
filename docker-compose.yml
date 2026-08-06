@@ -20,6 +20,21 @@ services:
       MARKET_PROVIDER: yahoo
       DISCORD_WEBHOOK_URL: ""
       ALERT_POLL_INTERVAL_SECONDS: "300"
+      # Empty by default: no model loaded, Atlas falls back to the deterministic RSI stub
+      # (non-fatal — see internal/application/ml). Set MODEL_PATH in the shell/.env before
+      # `docker compose up` to enable real inference, e.g.:
+      #   MODEL_PATH=/models/atlas-ml-v1.onnx docker compose up -d
+      # referencing the *container* path under the training/models mount below, not the host
+      # path — see training/README.md's step 4.
+      MODEL_PATH: ${MODEL_PATH:-}
+      # LIBONNXRUNTIME_PATH is intentionally not overridden here: the Dockerfile already sets
+      # a working default (ENV LIBONNXRUNTIME_PATH=/usr/lib/libonnxruntime.so) matching where
+      # it bundles the real onnxruntime .so; only override this if you rebuilt the image with
+      # a different runtime location.
+    volumes:
+      # Read-only: lets MODEL_PATH above reference a locally-trained model (training/models/
+      # is gitignored — these are locally/CI-generated artifacts, not committed source).
+      - ./training/models:/models:ro
     depends_on:
       timescaledb:
         condition: service_healthy
