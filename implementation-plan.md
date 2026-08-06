@@ -63,10 +63,14 @@ Deliverables:
 
 **Implementation status**: indicator service (RSI/EMA/MACD/ATR/Volume/OBV/ADX/Bollinger Bands),
 portfolio service, and watchlist support are all real. Risk context calculator
-(`portfolio.UseCase.ComputeRisk`) is real and now reachable (`GET /portfolio`'s `risk` field) —
-it existed with no caller before this pass. Storage of portfolio snapshots is done (positions
-persist to TimescaleDB); storage of indicator snapshots is not — the `indicators` table exists
-in migrations/001 but nothing writes to it (indicators are computed fresh per request).
+(`portfolio.UseCase.ComputeRisk`) is real and reachable (`GET /portfolio`'s `risk` field) — it
+existed with no caller before a prior pass. Storage of portfolio snapshots is done (positions
+persist to TimescaleDB); storage of indicator snapshots now is too — `GET /recommendations`
+writes the full computed indicator set (one row per indicator, migrations/001+006,
+internal/infrastructure/persistence/indicators.go) to the `indicators` table. This only covers
+the one live-recommendation request path, not the background alert-poll loop or backtesting —
+indicators are still computed fresh per request everywhere, this just also records what was
+computed when a symbol is explicitly queried.
 
 ## 6. Phase 4 — ML and Decision Engine
 
