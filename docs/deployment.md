@@ -80,6 +80,10 @@ Stores:
 - portfolio
 - predictions
 - alerts
+
+Implementation status: prices and portfolio (positions, transactions, watchlist) are
+actually persisted; indicators/predictions are computed fresh per request and not yet
+written; there is no alerts table.
 ## redis
 Used for:
 - caching
@@ -133,15 +137,16 @@ Application metrics:
 ```
 /metrics
 ```
-Examples:
+Actual metric names (internal/observability/metrics.go):
 ```
 atlas_api_requests_total
-atlas_market_data_updates_total
-atlas_analysis_duration_seconds
-atlas_ml_prediction_duration_seconds
-atlas_alerts_total
-atlas_database_errors_total
+atlas_request_duration_seconds
+atlas_provider_requests_total
+atlas_recommendations_total
+atlas_predictions_total
+atlas_alerts_sent_total
 ```
+There is no database-error counter yet.
 ---
 # Logging
 All logs must be:

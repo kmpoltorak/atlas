@@ -6,7 +6,6 @@ import (
 	"net/http"
 )
 
-// DiscordClient maintains the minimal webhook transport boundary for informational notification delivery.
 type DiscordClient struct {
 	WebhookURL string
 	Client     *http.Client
@@ -19,7 +18,6 @@ func NewDiscordClient(webhookURL string) *DiscordClient {
 	}
 }
 
-// Send posts a Discord informational notification to the configured webhook URL.
 func (c *DiscordClient) Send(message string) error {
 	if c.WebhookURL == "" {
 		return fmt.Errorf("webhook url is required")

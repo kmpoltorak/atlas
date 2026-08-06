@@ -27,7 +27,9 @@ import (
 
 // Application is the composition root. It wires the infrastructure adapters (market data
 // provider, persistence, cache, notifications) into the tested application use cases so they
-// are actually reachable through the HTTP layer.
+// are actually reachable through the HTTP layer. Prices, portfolio positions/transactions,
+// and the watchlist are all backed by TimescaleDB and survive restarts; only the ML pipeline
+// and technical indicators remain computed fresh per request rather than persisted.
 type Application struct {
 	Config  config.Config
 	Metrics *observability.Metrics
@@ -72,10 +74,22 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 	barsCache := &redisBarsCache{client: redisCache}
 	collector := collectorUC.NewUseCaseWithStorageAndCache(provider, storage, barsCache)
 	analyzer := analyzerUC.NewUseCase()
-	portfolioUseCase := portfolioUC.NewUseCase()
+
+	portfolioUseCase, err := portfolioUC.NewUseCaseWithRepository(storage)
+	if err != nil {
+		_ = storage.Close()
+		_ = redisCache.Close()
+		return nil, fmt.Errorf("load portfolio state: %w", err)
+	}
 	decisionUseCase := decisionUC.NewUseCase()
 	orchestrator := decisionUC.NewOrchestrator(analyzer, portfolioUseCase, decisionUseCase)
-	watchlist := watchlistUC.NewUseCase()
+
+	watchlist, err := watchlistUC.NewUseCaseWithRepository(storage)
+	if err != nil {
+		_ = storage.Close()
+		_ = redisCache.Close()
+		return nil, fmt.Errorf("load watchlist state: %w", err)
+	}
 
 	return &Application{
 		Config:  cfg,

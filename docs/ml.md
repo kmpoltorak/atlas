@@ -1,5 +1,11 @@
 # ML Architecture
 
+**Implementation status**: none of the Python training pipeline described below exists yet.
+The Go production inference path (internal/application/ml) is a deterministic stub — it
+returns a score derived from the RSI feature plus a fixed 0.72 confidence and a
+"stub-v0" model version, not output from a trained model. `BuildFeatureVector` (real,
+analyzer-backed) is the only genuinely "real" piece of this module today.
+
 ## Training
 
 Framework:

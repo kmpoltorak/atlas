@@ -14,7 +14,7 @@ Per `docs/deployment.md`'s Backup Strategy:
 
 | Target | Cadence | Where it lives today |
 |---|---|---|
-| TimescaleDB (prices, indicators, portfolio, predictions, alerts) | Daily | `timescaledb-data` volume — **not yet backed up automatically** |
+| TimescaleDB (prices, portfolio positions/transactions, watchlist) | Daily | `timescaledb-data` volume — **not yet backed up automatically** |
 | Configuration | On every change | This Git repository (`docker-compose.yml`, `deploy/`, `.env` is gitignored by design) |
 | Grafana dashboards | On every change | Already in Git: `grafana/dashboards/`, provisioned automatically — a `git checkout` restores them |
 | Prometheus config | On every change | Already in Git: `prometheus/prometheus.yml` — a `git checkout` restores it |

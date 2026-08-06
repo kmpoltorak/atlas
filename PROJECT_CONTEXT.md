@@ -69,6 +69,9 @@ Indicators include:
 - Volume analysis
 - Volatility metrics
 
+Implementation status: RSI, EMA, MACD, ATR, and volume analysis are implemented
+(internal/application/analyzer). ADX and broader volatility metrics are not yet implemented.
+
 ---
 
 ## ML Engine
@@ -85,6 +88,10 @@ The ML Engine predicts:
 ML predictions are supporting signals.
 
 ML is NOT the final decision maker.
+
+Implementation status: the ML prediction path is a deterministic stub (internal/application/ml)
+— it returns a score derived from RSI plus a fixed confidence, not a trained model, and has no
+correction/recovery-probability or market-condition fields yet. No training pipeline exists.
 
 ---
 
@@ -124,6 +131,11 @@ It produces:
 - WAIT
 
 Every recommendation must explain WHY.
+
+Implementation status: the current decision engine (internal/application/decision) only
+combines technical analysis into a score; ML and portfolio state are not yet read by it
+(Orchestrator.Portfolio is wired but unused). It only ever emits BUY/SELL/HOLD — ACCUMULATE,
+REDUCE, and WAIT are not implemented.
 
 ---
 
@@ -313,6 +325,12 @@ Used for:
 - ML predictions,
 - recommendations,
 - alerts.
+
+Implementation status: prices and portfolio data (positions, transactions, watchlist) are
+persisted (see migrations/001-003). Indicators, ML predictions, and recommendations are
+computed fresh per request and not yet written to TimescaleDB — their tables exist in
+migrations/001 but nothing inserts into them yet. There is no alerts table at all yet
+(alerts are computed on demand from the watchlist, see internal/application/alerts).
 
 Cache:
 

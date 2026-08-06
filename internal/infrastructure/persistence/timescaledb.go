@@ -59,12 +59,9 @@ func (t *TimescaleDB) SaveBars(symbol string, bars []market.Bar) error {
 	}
 	defer func() { _ = tx.Rollback() }() // no-op once Commit has succeeded below
 
-	var symbolID string
-	if err := tx.GetContext(ctx, &symbolID,
-		`INSERT INTO symbols (ticker) VALUES ($1)
-		 ON CONFLICT (ticker) DO UPDATE SET ticker = EXCLUDED.ticker
-		 RETURNING id`, symbol); err != nil {
-		return fmt.Errorf("upsert symbol %s: %w", symbol, err)
+	symbolID, err := upsertSymbol(ctx, tx, symbol)
+	if err != nil {
+		return err
 	}
 
 	for _, bar := range bars {

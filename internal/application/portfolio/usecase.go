@@ -7,14 +7,33 @@ import (
 	"atlas/internal/domain/portfolio"
 )
 
-// UseCase keeps the first portfolio logic in a deterministic, testable form.
+// UseCase keeps portfolio logic deterministic and testable. Positions/Transactions are an
+// in-memory working copy; when Repository is set, it's hydrated from persisted state on
+// construction and written through on every mutation, so state survives restarts.
 type UseCase struct {
 	Positions    []portfolio.Position
 	Transactions []portfolio.Transaction
+	Repository   Repository
 }
 
 func NewUseCase() *UseCase {
 	return &UseCase{}
+}
+
+// NewUseCaseWithRepository hydrates in-memory state from the repository up front. A load
+// failure here is returned rather than silently starting empty, matching the rest of the
+// app's "no silent degraded mode" stance.
+func NewUseCaseWithRepository(repo Repository) (*UseCase, error) {
+	uc := &UseCase{Repository: repo}
+	if repo == nil {
+		return uc, nil
+	}
+	positions, err := repo.GetPositions()
+	if err != nil {
+		return nil, err
+	}
+	uc.Positions = positions
+	return uc, nil
 }
 
 // GetPositions returns the current snapshot held by the use case.
@@ -52,6 +71,15 @@ func (u *UseCase) RecordTransaction(tx portfolio.Transaction) error {
 		u.Positions[index] = position
 	} else {
 		u.Positions = append(u.Positions, position)
+	}
+
+	if u.Repository != nil {
+		if err := u.Repository.SaveTransaction(tx); err != nil {
+			return err
+		}
+		if err := u.Repository.SavePositions(u.Positions); err != nil {
+			return err
+		}
 	}
 	return nil
 }

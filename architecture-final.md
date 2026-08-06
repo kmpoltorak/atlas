@@ -102,6 +102,10 @@ Responsibilities:
 - always include explanation and confidence,
 - persist recommendation results and input traceability.
 
+Implementation status: only technical signals are merged today (ML and portfolio are not
+read); explanation and confidence are included, but nothing is persisted yet — see
+docs/decision_engine.md for the detailed gap list.
+
 ### 4.6 Notification Service
 
 Responsibilities:
