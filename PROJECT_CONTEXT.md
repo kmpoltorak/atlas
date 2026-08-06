@@ -117,6 +117,18 @@ Responsible for:
 
 The Decision Engine must always consider portfolio context.
 
+Implementation status: positions/buy-prices/P&L/exposure are all real and persisted (see
+Portfolio Engine's own section below). Risk analysis (`portfolio.UseCase.ComputeRisk`) exists
+with real logic but was dead code until now — nothing called it. It's now exposed via
+`GET /portfolio`'s response (`risk` field alongside `positions`). Its Drawdown field is a
+current-state proxy (unrealized loss across losing positions, as a fraction of exposure), not a
+true historical peak-to-trough max drawdown — that needs a portfolio equity curve over time,
+which needs snapshot persistence (not implemented). The Decision Engine does not consume this
+risk snapshot in its scoring — portfolio context there comes from `portfolioRiskSignal` (P&L-based,
+a separate, narrower heuristic — see docs/decision_engine.md), not `ComputeRisk`. Wiring
+`ComputeRisk` into scoring would mean designing real weighting rules first (the same caution
+applied to ACCUMULATE/REDUCE/WAIT), not done here.
+
 ---
 
 ## Decision Engine

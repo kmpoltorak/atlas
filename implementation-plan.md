@@ -61,6 +61,13 @@ Deliverables:
 - portfolio service,
 - explanation-ready input model.
 
+**Implementation status**: indicator service (RSI/EMA/MACD/ATR/Volume/OBV/ADX/Bollinger Bands),
+portfolio service, and watchlist support are all real. Risk context calculator
+(`portfolio.UseCase.ComputeRisk`) is real and now reachable (`GET /portfolio`'s `risk` field) —
+it existed with no caller before this pass. Storage of portfolio snapshots is done (positions
+persist to TimescaleDB); storage of indicator snapshots is not — the `indicators` table exists
+in migrations/001 but nothing writes to it (indicators are computed fresh per request).
+
 ## 6. Phase 4 — ML and Decision Engine
 
 Scope:
@@ -98,6 +105,12 @@ Deliverables:
 - observability dashboards,
 - alerting rules,
 - readiness and health checks.
+
+**Implementation status**: Prometheus metrics, Grafana dashboards, JSON structured logs, and
+`/health` are all real. Discord notifications for high-priority actions are now real too —
+`isHighPriorityAction` (internal/app/alerts_loop.go) gates the push to BUY/SELL/REDUCE only,
+matching docs/decision_engine.md's "Notifications" section; previously every non-HOLD action
+(including ACCUMULATE/WAIT) triggered a push.
 
 ## 8. Phase 6 — Backtesting and Validation
 

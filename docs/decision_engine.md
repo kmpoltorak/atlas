@@ -21,9 +21,11 @@ GET /alerts, and the background alert-poll loop) is now persisted to the `recomm
 table below (see internal/infrastructure/persistence/decision.go) as an append-only history
 log — `risk_score` stays NULL there for the same no-Risk-Engine reason. Backtesting's simulated
 recommendations are deliberately NOT persisted (see internal/application/backtesting/usecase.go)
-since they're hypothetical past decisions, not real ones. Discord notifications exist
-(internal/app/alerts_loop.go) but aren't gated by action type the way "Notifications" below
-describes.
+since they're hypothetical past decisions, not real ones. Discord notifications
+(internal/app/alerts_loop.go) are now gated to BUY/SELL/REDUCE only
+(isHighPriorityAction), matching "Notifications" below — GET /alerts itself is unaffected and
+still surfaces every non-HOLD action, including ACCUMULATE/WAIT; only the push notification is
+restricted.
 
 ## Overview
 The Decision Engine is the core intelligence layer of Atlas.
