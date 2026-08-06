@@ -6,7 +6,8 @@ import (
 	"atlas/internal/domain/market"
 )
 
-// UseCase implements the collector workflow for the first application milestone.
+// UseCase fetches market data through a short-lived Redis cache, falling back to the live
+// provider on a miss and persisting the result to TimescaleDB.
 type UseCase struct {
 	Provider market.MarketProvider
 	Storage  Storage

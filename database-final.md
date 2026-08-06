@@ -130,6 +130,14 @@ Fields:
 
 ## 3. ERD
 
+**Implementation status**: SYMBOLS, PRICES, INDICATORS, PREDICTIONS, PORTFOLIOS, and
+POSITIONS below are migrated (migrations/001). A TRANSACTIONS table also exists in
+migrations/001 — an append-only trade-history table, missing from this ERD entirely — see
+migrations/001_init_timescaledb.sql for its actual columns. WATCHLISTS and WATCHLIST_ITEMS
+were migrated later (migrations/003) once real portfolio/watchlist persistence was wired.
+ALERTS, BACKTESTS, BACKTEST_RUNS, TRADES, and PERFORMANCE_METRICS below do not exist as
+tables anywhere yet.
+
 ```mermaid
 erDiagram
     SYMBOLS {

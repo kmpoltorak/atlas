@@ -36,8 +36,15 @@ func Load() Config {
 		PrometheusEnabled: envOrDefault("PROMETHEUS_ENABLED", "true") == "true",
 		MarketProvider:    envOrDefault("MARKET_PROVIDER", "yahoo"),
 		DiscordWebhookURL: envOrDefault("DISCORD_WEBHOOK_URL", ""),
-		CollectorWindow:   envOrDefaultInt("COLLECTOR_WINDOW_DAYS", 30),
-		AlertPollSeconds:  envOrDefaultInt("ALERT_POLL_INTERVAL_SECONDS", 300),
+		// 30 days comfortably covers the 15-bar RSI warm-up (analyzer.ComputeRSI) with room
+		// left for the decision/backtesting pipeline. Providers also fall back to 30 when
+		// called directly with window<=0 (e.g. in tests) — kept in sync manually since
+		// there's no shared constant across the config/providers package boundary.
+		CollectorWindow: envOrDefaultInt("COLLECTOR_WINDOW_DAYS", 30),
+		// 300s balances near-real-time alerts against provider rate-limit exposure (see
+		// providers/yahoo.go's User-Agent workaround for why that's a real concern here).
+		// internal/app/alerts_loop.go duplicates this as a fallback for the same reason.
+		AlertPollSeconds: envOrDefaultInt("ALERT_POLL_INTERVAL_SECONDS", 300),
 	}
 }
 

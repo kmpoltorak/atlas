@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -20,7 +21,11 @@ func main() {
 
 	logger, err := observability.NewLogger(cfg.LogLevel)
 	if err != nil {
-		panic(err)
+		// No logger exists yet to log through (CODING_GUIDELINES.md bans panic() for
+		// everything else — this is the one unavoidable exception, at the single point
+		// before logging itself is available).
+		fmt.Fprintln(os.Stderr, "failed to initialize logger:", err)
+		os.Exit(1)
 	}
 	defer logger.Sync() //nolint:errcheck
 

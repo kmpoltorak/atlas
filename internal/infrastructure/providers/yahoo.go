@@ -29,7 +29,7 @@ const yahooUserAgent = "Mozilla/5.0 (compatible; AtlasPortfolioAdvisor/1.0)"
 
 func (p *YahooFinanceProvider) FetchBars(symbol string, window int) ([]market.Bar, error) {
 	if window <= 0 {
-		window = 30
+		window = 30 // mirrors config.Load's COLLECTOR_WINDOW_DAYS default; guards direct calls (e.g. tests) that skip it
 	}
 	period2 := time.Now().UTC()
 	period1 := period2.AddDate(0, 0, -window)

@@ -28,6 +28,9 @@ func (u *UseCase) ScoreRisk() (float64, error) {
 }
 
 // BuildRecommendation synthesizes a recommendation object from the incoming technical score.
+// The 0.75/0.4 thresholds are asymmetric on purpose: a mediocre score should HOLD rather than
+// SELL, since exiting a position is a stronger claim than staying put. Both are placeholder
+// heuristics pending real threshold tuning (see orchestrator.go's blend weighting).
 func (u *UseCase) BuildRecommendation(input decision.TechnicalScore) (decision.Recommendation, error) {
 	if input.Overall >= 0.75 {
 		return decision.Recommendation{

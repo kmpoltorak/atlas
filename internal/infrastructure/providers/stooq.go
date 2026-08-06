@@ -33,7 +33,7 @@ func (p *StooqProvider) FetchBars(symbol string, window int) ([]market.Bar, erro
 		return nil, fmt.Errorf("symbol is required")
 	}
 	if window <= 0 {
-		window = 30
+		window = 30 // mirrors config.Load's COLLECTOR_WINDOW_DAYS default; guards direct calls (e.g. tests) that skip it
 	}
 
 	to := time.Now().UTC()

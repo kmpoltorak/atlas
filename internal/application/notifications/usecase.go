@@ -6,7 +6,6 @@ import (
 	"atlas/internal/infrastructure/notifications"
 )
 
-// UseCase provides the initial notification boundary for decision-support alerts.
 type UseCase struct {
 	Client *notifications.DiscordClient
 }
@@ -15,7 +14,8 @@ func NewUseCase(client *notifications.DiscordClient) *UseCase {
 	return &UseCase{Client: client}
 }
 
-// Send informational Discord notification without any execution path.
+// Send posts a message and nothing else — deliberately no action/trade path exists here.
+// PROMPT.md: "Atlas never executes trades automatically."
 func (u *UseCase) Send(message string) error {
 	if message == "" {
 		return errors.New("message is required")

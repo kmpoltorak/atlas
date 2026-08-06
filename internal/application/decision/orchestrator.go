@@ -9,7 +9,9 @@ import (
 	"atlas/internal/domain/market"
 )
 
-// Orchestrator composes the analyzer and portfolio use cases into an explainable recommendation workflow.
+// Orchestrator composes the analyzer and decision use cases into an explainable recommendation
+// workflow. Portfolio is held for future portfolio-aware scoring (per docs/decision_engine.md's
+// intended design) but is not yet read anywhere — recommendations are technical-score-only today.
 type Orchestrator struct {
 	Analyzer  *analyzerUC.UseCase
 	Portfolio *portfolioUC.UseCase
@@ -87,7 +89,9 @@ func (o *Orchestrator) buildTechnicalScore(symbol string, bars []market.Bar) dom
 	}
 
 	// Blend the real RSI into the overall score only when it was actually computed;
-	// otherwise keep the momentum/volume score untouched.
+	// otherwise keep the momentum/volume score untouched. Momentum/volume is weighted
+	// higher (0.7) than RSI (0.3): RSI reflects recent overbought/oversold state, not
+	// trend direction, so it's a secondary signal here rather than an equal partner.
 	if technical.RSI != 50 {
 		rsiSignal := 0.5 + (technical.RSI-50)/100
 		technical.Overall = clamp01(momentumVolume*0.7 + rsiSignal*0.3)
@@ -96,6 +100,9 @@ func (o *Orchestrator) buildTechnicalScore(symbol string, bars []market.Bar) dom
 	return technical
 }
 
+// overallScore is a placeholder momentum/volume heuristic pending real threshold tuning.
+// volume/1000 assumes typical daily-bar equity share-volume scale; feeding differently-scaled
+// volume data (e.g. dollar volume, or a thin instrument) would silently skew this.
 func overallScore(close, open, volume float64) float64 {
 	momentum := (close - open) / math.Max(1, open)
 	volumeScore := volume / 1000

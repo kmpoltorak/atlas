@@ -16,7 +16,7 @@ import (
 func (a *Application) StartAlertPolling() func() {
 	interval := time.Duration(a.Config.AlertPollSeconds) * time.Second
 	if interval <= 0 {
-		interval = 5 * time.Minute
+		interval = 5 * time.Minute // matches config.Load's ALERT_POLL_INTERVAL_SECONDS default
 	}
 	if a.Config.DiscordWebhookURL == "" {
 		a.Logger.Info("discord webhook not configured; alert polling will run without notifications")
