@@ -54,19 +54,23 @@ func (o *Orchestrator) BuildRecommendationFromBars(symbol string, bars []market.
 	}
 	technical := o.buildTechnicalScore(symbol, bars)
 	technicalScore := technical.Overall
-	var mlScore, portfolioScore float64
-	var extraReasons []string
-	technical.Overall, mlScore, portfolioScore, extraReasons = o.blendMLAndPortfolio(symbol, bars, technical)
-	recommendation, err := o.Decision.BuildRecommendation(technical)
+	blend := o.blendMLAndPortfolio(symbol, bars, technical)
+	technical.Overall = blend.Overall
+
+	recommendation, err := o.Decision.BuildRecommendation(domainDecision.RecommendationInput{
+		Technical:    technical,
+		HasPosition:  blend.HasPosition,
+		MLConfidence: blend.MLConfidence,
+	})
 	if err != nil {
 		return domainDecision.Recommendation{}, err
 	}
 	recommendation.Symbol = symbol
-	recommendation.Reason = append(recommendation.Reason, extraReasons...)
+	recommendation.Reason = append(recommendation.Reason, blend.Reasons...)
 	recommendation.Score = technical.Overall
 	recommendation.TechnicalScore = technicalScore
-	recommendation.MLScore = mlScore
-	recommendation.PortfolioScore = portfolioScore
+	recommendation.MLScore = blend.MLScore
+	recommendation.PortfolioScore = blend.PortfolioScore
 	recommendation.ModelVersion = EngineVersion
 	return recommendation, nil
 }
@@ -80,7 +84,12 @@ func (o *Orchestrator) BuildRecommendationForSymbol(symbol string, signals []dom
 	if o.Decision == nil {
 		return domainDecision.Recommendation{Symbol: symbol, Action: "HOLD", Confidence: 0.5, Reason: []string{"Decision engine unavailable"}}, nil
 	}
-	recommendation, err := o.Decision.BuildRecommendation(latest)
+	// No bars/portfolio/ML context available from a bare signal slice — defaults preserve the
+	// original BUY/SELL/HOLD-only behavior (no known position, confidence high enough to never
+	// trigger WAIT). See BuildRecommendationFromBars for the full blend.
+	recommendation, err := o.Decision.BuildRecommendation(domainDecision.RecommendationInput{
+		Technical: latest, HasPosition: false, MLConfidence: 1.0,
+	})
 	if err != nil {
 		return domainDecision.Recommendation{}, err
 	}
@@ -128,25 +137,41 @@ func (o *Orchestrator) buildTechnicalScore(symbol string, bars []market.Bar) dom
 	return technical
 }
 
+// blendResult carries every signal blendMLAndPortfolio derives: the blended score, its raw
+// components (for the persisted score breakdown — see Recommendation.MLScore/PortfolioScore),
+// and the extra context (HasPosition, MLConfidence) BuildRecommendationFromBars needs to build
+// a decision.RecommendationInput for ACCUMULATE/REDUCE/WAIT differentiation.
+type blendResult struct {
+	Overall        float64
+	MLScore        float64
+	PortfolioScore float64
+	MLConfidence   float64
+	HasPosition    bool
+	Reasons        []string
+}
+
 // blendMLAndPortfolio folds the ML prediction and portfolio risk context into the technical
 // score, per docs/decision_engine.md's Technical+ML+Portfolio scoring model. Both are optional
 // (nil-safe) and neutral (0.5) when unavailable, so the blend degrades to technical-only
 // exactly as before when ML/Portfolio aren't wired in (see NewOrchestrator vs
-// NewOrchestratorWithML).
-func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, technical domainDecision.TechnicalScore) (overallScore, mlScore, portfolioScore float64, reasons []string) {
-	overallScore = technical.Overall
-	mlScore = 0.5
+// NewOrchestratorWithML). MLConfidence defaults to 1.0 (never triggers
+// decision.UseCase's WAIT band) when ML isn't wired in — there's no real confidence signal to
+// distrust in that mode.
+func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, technical domainDecision.TechnicalScore) blendResult {
+	result := blendResult{Overall: technical.Overall, MLScore: 0.5, PortfolioScore: 0.5, MLConfidence: 1.0}
+
 	if o.ML != nil {
 		feature := mlUC.BuildFeatureVector(o.Analyzer, symbol, bars)
 		if prediction, err := o.ML.Predict(feature); err == nil {
-			mlScore = prediction.Score
+			result.MLScore = prediction.Score
+			result.MLConfidence = prediction.Confidence
 		}
 	}
 
-	portfolioScore = 0.5
 	if o.Portfolio != nil {
 		if positions, err := o.Portfolio.GetPositions(); err == nil {
-			portfolioScore = portfolioRiskSignal(symbol, positions)
+			result.PortfolioScore = portfolioRiskSignal(symbol, positions)
+			result.HasPosition = hasPosition(symbol, positions)
 		}
 	}
 
@@ -160,25 +185,36 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 		// with the RSI blend in buildTechnicalScore until a real trained model exists —
 		// wiring the composition now means Atlas picks up a genuine ML signal automatically
 		// the moment Predict() stops being a stub, with no further orchestration changes.
-		overallScore = clamp01(technical.Overall*0.55 + mlScore*0.30 + portfolioScore*0.15)
+		result.Overall = clamp01(technical.Overall*0.55 + result.MLScore*0.30 + result.PortfolioScore*0.15)
 	}
 
-	if mlScore >= 0.6 {
-		reasons = append(reasons, "ML signal supportive")
-	} else if mlScore <= 0.4 {
-		reasons = append(reasons, "ML signal cautious")
+	if result.MLScore >= 0.6 {
+		result.Reasons = append(result.Reasons, "ML signal supportive")
+	} else if result.MLScore <= 0.4 {
+		result.Reasons = append(result.Reasons, "ML signal cautious")
 	}
-	if portfolioScore < 0.5 {
-		reasons = append(reasons, "Portfolio risk context reduces conviction")
+	if result.PortfolioScore < 0.5 {
+		result.Reasons = append(result.Reasons, "Portfolio risk context reduces conviction")
 	}
 
-	return overallScore, mlScore, portfolioScore, reasons
+	return result
+}
+
+// hasPosition reports whether the portfolio holds a real (positive-quantity) position in
+// symbol — used to gate BUY/ACCUMULATE and SELL/REDUCE, independent of that position's P&L
+// (see portfolioRiskSignal, which reads P&L for a different purpose: risk-adjusting the score).
+func hasPosition(symbol string, positions []portfolio.Position) bool {
+	for _, position := range positions {
+		if position.Symbol == symbol && position.Quantity > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // portfolioRiskSignal is a placeholder heuristic: a large unrealized loss is a risk signal
 // (bias away from adding to a losing position), a large unrealized gain is a profit-taking
-// signal (bias away from chasing further, since Atlas has no REDUCE action yet — see
-// docs/decision_engine.md). No position, or a middling P&L, is neutral.
+// signal (bias away from chasing further). No position, or a middling P&L, is neutral.
 func portfolioRiskSignal(symbol string, positions []portfolio.Position) float64 {
 	for _, position := range positions {
 		if position.Symbol != symbol || position.AverageCost <= 0 {

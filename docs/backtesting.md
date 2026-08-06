@@ -1,15 +1,25 @@
 # Backtesting Engine
 
 **Implementation status**: internal/application/backtesting implements a real walk-forward
-simulation (no future data leakage, verified by regression test) of exactly one fixed
+simulation (no future *bar* data leakage, verified by regression test) of exactly one fixed
 all-in/all-out strategy driven by the live Decision Engine — not the pluggable Strategy
 interface described below, and no other example strategies exist. It computes Returns, Max
 Drawdown, Volatility, Sharpe Ratio, and Win Rate. Not yet implemented: the train/validate/test
 Walk Forward Testing date-range splitting described below (the "no lookahead" guarantee is
-real; the separate train/validate/test period concept is not), ML Evaluation metrics
-(Accuracy/Precision/Recall/F1/ROC AUC), parameter Optimization, and all of the Database
+real for price bars; the separate train/validate/test period concept is not), ML Evaluation
+metrics (Accuracy/Precision/Recall/F1/ROC AUC), parameter Optimization, and all of the Database
 Tables listed below — nothing is persisted, results are returned as JSON only
 (GET /backtests).
+
+A real caveat, not yet fixed: because backtesting reuses the exact same Orchestrator instance as
+live recommendations (see internal/app/app.go), every simulated recommendation's
+`decision.RecommendationInput.HasPosition` (see docs/decision_engine.md's ACCUMULATE/REDUCE/WAIT
+differentiation) reflects the **live, real, present-day** portfolio, not the backtest's own
+simulated position built up bar-by-bar in the simulation loop. This can make a backtest's action
+sequence (BUY vs. ACCUMULATE, SELL vs. REDUCE) depend on unrelated present-day portfolio state —
+a form of leakage this doc's "No Future Data Leakage" principle doesn't cover, since it's not
+about *bar* data. Fixing it properly needs the backtest loop to feed the Orchestrator its own
+simulated position instead of querying the live Portfolio use case — not done here.
 
 ## Overview
 The Backtesting Engine is responsible for evaluating investment strategies using historical market data.

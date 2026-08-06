@@ -33,13 +33,11 @@ func TestScoreTechnicalReturnsInputScore(t *testing.T) {
 
 func TestBuildRecommendationSynthesizesActionFromSignals(t *testing.T) {
 	uc := NewUseCase()
-	rec, err := uc.BuildRecommendation(decision.TechnicalScore{
-		RSI:     62,
-		EMA:     0.68,
-		MACD:    0.41,
-		ATR:     0.91,
-		Volume:  1.05,
-		Overall: 0.82,
+	rec, err := uc.BuildRecommendation(decision.RecommendationInput{
+		Technical: decision.TechnicalScore{
+			RSI: 62, EMA: 0.68, MACD: 0.41, ATR: 0.91, Volume: 1.05, Overall: 0.82,
+		},
+		MLConfidence: 1.0,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -49,5 +47,60 @@ func TestBuildRecommendationSynthesizesActionFromSignals(t *testing.T) {
 	}
 	if rec.Confidence <= 0.5 {
 		t.Fatalf("expected confidence to exceed 0.5, got %v", rec.Confidence)
+	}
+}
+
+func TestBuildRecommendationActionMatrix(t *testing.T) {
+	uc := NewUseCase()
+	tests := []struct {
+		name         string
+		overall      float64
+		hasPosition  bool
+		mlConfidence float64
+		want         string
+	}{
+		{"strong bullish, no position -> BUY", 0.85, false, 1.0, "BUY"},
+		{"strong bullish, existing position -> ACCUMULATE", 0.85, true, 1.0, "ACCUMULATE"},
+		{"strong bearish, existing position -> SELL", 0.10, true, 1.0, "SELL"},
+		{"strong bearish, no position, confident -> HOLD", 0.10, false, 1.0, "HOLD"},
+		{"strong bearish, no position, unconfident -> WAIT", 0.10, false, 0.1, "WAIT"},
+		{"lean bearish, existing position -> REDUCE", 0.35, true, 1.0, "REDUCE"},
+		{"lean bearish, no position, unconfident -> WAIT", 0.35, false, 0.1, "WAIT"},
+		{"lean bearish, no position, confident -> HOLD", 0.35, false, 1.0, "HOLD"},
+		{"lean bullish, unconfident -> WAIT", 0.60, false, 0.1, "WAIT"},
+		{"lean bullish, confident -> HOLD", 0.60, true, 1.0, "HOLD"},
+		{"neutral, unconfident still HOLD (no lean to distrust)", 0.50, false, 0.1, "HOLD"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec, err := uc.BuildRecommendation(decision.RecommendationInput{
+				Technical:    decision.TechnicalScore{Overall: tt.overall},
+				HasPosition:  tt.hasPosition,
+				MLConfidence: tt.mlConfidence,
+			})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if rec.Action != tt.want {
+				t.Fatalf("expected action %q, got %q", tt.want, rec.Action)
+			}
+		})
+	}
+}
+
+func TestBuildRecommendationWaitReportsRealConfidenceNotAConstant(t *testing.T) {
+	uc := NewUseCase()
+	rec, err := uc.BuildRecommendation(decision.RecommendationInput{
+		Technical:    decision.TechnicalScore{Overall: 0.60},
+		MLConfidence: 0.12,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Action != "WAIT" {
+		t.Fatalf("expected WAIT, got %q", rec.Action)
+	}
+	if rec.Confidence != 0.12 {
+		t.Fatalf("expected WAIT to report the real ML confidence (0.12), got %v", rec.Confidence)
 	}
 }

@@ -82,8 +82,9 @@ detail): all deliverables above are real. Feature vector construction, the decis
 and inference contract shipped after: a real XGBoost correction-probability classifier, trained
 on real collected history, exported to ONNX, and loaded in Go (falling back to a deterministic
 stub when no model is loaded) — verified live end-to-end through the actual HTTP API and a real
-Docker container. Not yet done: recovery-probability/market-condition ML outputs, a separate
-Risk Engine stage, and ACCUMULATE/REDUCE/WAIT actions (still only BUY/SELL/HOLD).
+Docker container. ACCUMULATE/REDUCE/WAIT shipped after that, gated on real portfolio position
+state and ML confidence, not cosmetic renaming — see docs/decision_engine.md. Not yet done:
+recovery-probability/market-condition ML outputs and a separate Risk Engine stage.
 
 ## 7. Phase 5 — Observability and Notifications
 

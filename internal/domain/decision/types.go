@@ -9,6 +9,25 @@ type TechnicalScore struct {
 	Overall float64 `json:"overall"`
 }
 
+// RecommendationInput bundles everything BuildRecommendation needs to differentiate
+// ACCUMULATE/REDUCE/WAIT from BUY/SELL/HOLD: the blended technical score alone can't tell
+// "opening a new position" from "adding to one already held", or "a real but untrustworthy
+// signal" from "no signal at all".
+type RecommendationInput struct {
+	Technical TechnicalScore
+
+	// HasPosition reflects real portfolio state (Portfolio.GetPositions), not score/P&L —
+	// per docs/decision_engine.md, BUY/SELL are gated purely on whether a position already
+	// exists, independent of how profitable it currently is.
+	HasPosition bool
+
+	// MLConfidence is the ML model's confidence in the current reading (ml.Prediction.
+	// Confidence). Defaults to 1.0 (never triggers WAIT) when ML isn't wired in at all
+	// (plain NewOrchestrator, no model), since there's no real confidence signal to distrust
+	// in that mode — see Orchestrator.blendMLAndPortfolio.
+	MLConfidence float64
+}
+
 type Recommendation struct {
 	Symbol     string   `json:"symbol"`
 	Action     string   `json:"action"`
