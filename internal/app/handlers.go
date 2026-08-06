@@ -123,7 +123,8 @@ func (a *Application) pricesHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"symbol": symbol, "bars": bars})
 }
 
-// portfolioHandler returns the current position snapshot (GET) or records a transaction (POST).
+// portfolioHandler returns the current position snapshot and risk context (GET) or records a
+// transaction (POST).
 func (a *Application) portfolioHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -132,7 +133,12 @@ func (a *Application) portfolioHandler(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"positions": positions})
+		risk, err := a.Portfolio.ComputeRisk()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"positions": positions, "risk": risk})
 	case http.MethodPost:
 		var tx portfolio.Transaction
 		if err := json.NewDecoder(r.Body).Decode(&tx); err != nil {

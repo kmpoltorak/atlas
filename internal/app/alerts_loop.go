@@ -42,7 +42,9 @@ func (a *Application) StartAlertPolling() func() {
 }
 
 // pollAlertsOnce evaluates the watchlist once and notifies only for symbols whose action
-// changed since the last poll, so the same signal isn't re-sent every tick.
+// changed since the last poll, so the same signal isn't re-sent every tick. Every non-HOLD
+// action (including ACCUMULATE/WAIT) is still persisted and tracked for change-detection, but
+// only high-priority actions actually push a Discord notification — see isHighPriorityAction.
 func (a *Application) pollAlertsOnce(lastAction map[string]string) {
 	result, err := a.Alerts.Evaluate()
 	if err != nil {
@@ -59,7 +61,7 @@ func (a *Application) pollAlertsOnce(lastAction map[string]string) {
 		}
 		lastAction[symbol] = action
 
-		if a.Config.DiscordWebhookURL == "" {
+		if a.Config.DiscordWebhookURL == "" || !isHighPriorityAction(action) {
 			continue
 		}
 		if err := a.Notifications.Send(formatAlertMessage(alert)); err != nil {
@@ -68,6 +70,19 @@ func (a *Application) pollAlertsOnce(lastAction map[string]string) {
 		}
 		a.Metrics.AlertsSent.WithLabelValues(action).Inc()
 		a.Logger.Info("discord alert sent", zap.String("symbol", symbol), zap.String("action", action))
+	}
+}
+
+// isHighPriorityAction reports whether an action should push a Discord notification, per
+// docs/decision_engine.md's "Notifications" section: BUY, SELL, and REDUCE only — not
+// ACCUMULATE, HOLD, or WAIT. GET /alerts itself is unaffected by this (it surfaces every
+// non-HOLD action); this only gates the push notification.
+func isHighPriorityAction(action string) bool {
+	switch action {
+	case "BUY", "SELL", "REDUCE":
+		return true
+	default:
+		return false
 	}
 }
 

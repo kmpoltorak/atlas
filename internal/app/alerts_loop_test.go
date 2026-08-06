@@ -16,6 +16,7 @@ import (
 	watchlistUC "atlas/internal/application/watchlist"
 	"atlas/internal/config"
 	"atlas/internal/domain/market"
+	"atlas/internal/domain/portfolio"
 	infraNotifications "atlas/internal/infrastructure/notifications"
 	"atlas/internal/observability"
 
@@ -91,4 +92,32 @@ func TestPollAlertsOnceSkipsRepeatedSameAction(t *testing.T) {
 func TestPollAlertsOnceSkipsWhenDiscordNotConfigured(t *testing.T) {
 	app := newTestApplicationWithDiscord("")
 	app.pollAlertsOnce(map[string]string{})
+}
+
+func TestPollAlertsOnceDoesNotNotifyForNonHighPriorityAction(t *testing.T) {
+	var sent int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&sent, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	app := newTestApplicationWithDiscord(server.URL)
+	// Same bullish bars as TestPollAlertsOnceSendsDiscordNotificationForNewAction (which
+	// produce BUY with no position), but with an existing AAPL position this time — the
+	// strong-bullish score becomes ACCUMULATE instead, which isHighPriorityAction excludes.
+	app.Portfolio = portfolioUC.NewUseCase()
+	app.Portfolio.Positions = []portfolio.Position{{Symbol: "AAPL", Quantity: 5, AverageCost: 90, CurrentPrice: 100}}
+	app.Alerts = alertsUC.NewUseCase(app.Watchlist, app.Alerts.Collector,
+		decisionUC.NewOrchestrator(analyzerUC.NewUseCase(), app.Portfolio, decisionUC.NewUseCase()), 30)
+
+	lastAction := map[string]string{}
+	app.pollAlertsOnce(lastAction)
+
+	if lastAction["AAPL"] != "ACCUMULATE" {
+		t.Fatalf("expected ACCUMULATE to still be tracked for change-detection, got %q", lastAction["AAPL"])
+	}
+	if atomic.LoadInt32(&sent) != 0 {
+		t.Fatalf("expected no Discord notification for a non-high-priority action (ACCUMULATE), got %d", sent)
+	}
 }

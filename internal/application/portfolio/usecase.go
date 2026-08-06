@@ -105,22 +105,38 @@ func (u *UseCase) ComputeROI() (float64, error) {
 	return totalWeight / totalQuantity, nil
 }
 
-// ComputeRisk returns a lightweight risk snapshot based on exposure and volatility proxies.
+// ComputeRisk returns a lightweight risk snapshot based on exposure, drawdown, and volatility
+// proxies.
+//
+// Drawdown here is a current-state proxy — total unrealized loss across losing positions, as a
+// fraction of total exposure (negative; 0 when nothing is underwater) — not a true historical
+// peak-to-trough max drawdown. A real max drawdown needs a portfolio equity curve over time,
+// which needs portfolio snapshot persistence (not implemented — see PROJECT_CONTEXT.md); this
+// is what's computable from current position state alone.
 func (u *UseCase) ComputeRisk() (portfolio.RiskSnapshot, error) {
-	exposure := 0.0
-	for _, position := range u.Positions {
-		exposure += position.CurrentPrice * position.Quantity
-	}
-	volatility := 0.0
-	for _, position := range u.Positions {
-		volatility += math.Abs(position.CurrentPrice - position.AverageCost)
-	}
 	if len(u.Positions) == 0 {
 		return portfolio.RiskSnapshot{Exposure: 0, Drawdown: 0, Volatility: 0}, nil
 	}
+
+	exposure := 0.0
+	unrealizedLoss := 0.0
+	volatility := 0.0
+	for _, position := range u.Positions {
+		exposure += position.CurrentPrice * position.Quantity
+		volatility += math.Abs(position.CurrentPrice - position.AverageCost)
+		if pnl := (position.CurrentPrice - position.AverageCost) * position.Quantity; pnl < 0 {
+			unrealizedLoss += pnl
+		}
+	}
+
+	drawdown := 0.0
+	if exposure > 0 {
+		drawdown = unrealizedLoss / exposure
+	}
+
 	return portfolio.RiskSnapshot{
 		Exposure:   exposure,
-		Drawdown:   0,
+		Drawdown:   drawdown,
 		Volatility: volatility / float64(len(u.Positions)),
 	}, nil
 }
