@@ -7,7 +7,12 @@ closer to the "Scoring Model" below than before, though the weights/heuristics a
 ML itself is now a real trained model (XGBoost correction-probability classifier, via ONNX —
 see docs/ml.md) when one is loaded (`MODEL_PATH` set), falling back to the same deterministic
 RSI-derived stub as before when it isn't. There is still no separate Risk
-Engine stage, and the engine only ever emits BUY/SELL/HOLD (not ACCUMULATE/REDUCE/WAIT). The
+Engine stage. The engine now emits all six action types below (BUY/SELL/HOLD plus
+ACCUMULATE/REDUCE/WAIT — see decision.UseCase.BuildRecommendation's threshold bands), gated on
+real portfolio position state (BUY vs. ACCUMULATE, SELL vs. REDUCE) and ML confidence (HOLD vs.
+WAIT) — see this doc's "Recommendation Types" below and PROJECT_CONTEXT.md for the exact rules
+and thresholds. Backtesting has a real, undocumented-until-now caveat here — see
+docs/backtesting.md's Implementation status note. The
 real Recommendation object is `{Symbol, Action, Confidence, Reason, Score, TechnicalScore,
 MLScore, PortfolioScore, ModelVersion}` — no separate risk score or timestamp field yet (risk
 score has nothing to compute from without a Risk Engine stage); Reason does list which of

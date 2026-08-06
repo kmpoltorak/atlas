@@ -33,8 +33,11 @@ func TestOrchestratorBuildsRecommendationFromLatestSignal(t *testing.T) {
 	if rec.Symbol != "AAPL" {
 		t.Fatalf("expected symbol AAPL, got %q", rec.Symbol)
 	}
-	if rec.Action != "BUY" {
-		t.Fatalf("expected BUY recommendation, got %q", rec.Action)
+	// ACCUMULATE, not BUY: portfolioUC already holds an AAPL position above, and a strong
+	// bullish score with an existing position is exactly ACCUMULATE's differentiation from
+	// BUY (see decision.UseCase.BuildRecommendation).
+	if rec.Action != "ACCUMULATE" {
+		t.Fatalf("expected ACCUMULATE recommendation (existing position + strong bullish score), got %q", rec.Action)
 	}
 }
 
@@ -87,12 +90,15 @@ func TestBlendMLAndPortfolioIsNoOpWithoutML(t *testing.T) {
 	orchestrator := NewOrchestrator(analyzerUC.NewUseCase(), portfolioUC.NewUseCase(), NewUseCase())
 	technical := domainDecision.TechnicalScore{Overall: 0.9}
 
-	overall, _, _, reasons := orchestrator.blendMLAndPortfolio("AAPL", nil, technical)
-	if overall != 0.9 {
-		t.Fatalf("expected the blend to be a no-op without ML (plain NewOrchestrator), got %v", overall)
+	blend := orchestrator.blendMLAndPortfolio("AAPL", nil, technical)
+	if blend.Overall != 0.9 {
+		t.Fatalf("expected the blend to be a no-op without ML (plain NewOrchestrator), got %v", blend.Overall)
 	}
-	if len(reasons) != 0 {
-		t.Fatalf("expected no extra reasons without ML, got %v", reasons)
+	if len(blend.Reasons) != 0 {
+		t.Fatalf("expected no extra reasons without ML, got %v", blend.Reasons)
+	}
+	if blend.MLConfidence != 1.0 {
+		t.Fatalf("expected MLConfidence to default to 1.0 (never trigger WAIT) without ML, got %v", blend.MLConfidence)
 	}
 }
 
@@ -103,17 +109,20 @@ func TestBlendMLAndPortfolioAppliesFullMixWithML(t *testing.T) {
 	bars := []market.Bar{{Symbol: "AAPL", Close: 100, Timestamp: time.Now()}}
 	technical := domainDecision.TechnicalScore{Overall: 0.9}
 
-	overall, mlScore, portfolioScore, _ := orchestrator.blendMLAndPortfolio("AAPL", bars, technical)
+	blend := orchestrator.blendMLAndPortfolio("AAPL", bars, technical)
 
 	want := clamp01(0.9*0.55 + 0.5*0.30 + 0.5*0.15)
-	if math.Abs(overall-want) > 0.0001 {
-		t.Fatalf("expected blended overall %.4f, got %.4f", want, overall)
+	if math.Abs(blend.Overall-want) > 0.0001 {
+		t.Fatalf("expected blended overall %.4f, got %.4f", want, blend.Overall)
 	}
-	if mlScore != 0.5 {
-		t.Fatalf("expected mlScore 0.5, got %v", mlScore)
+	if blend.MLScore != 0.5 {
+		t.Fatalf("expected mlScore 0.5, got %v", blend.MLScore)
 	}
-	if portfolioScore != 0.5 {
-		t.Fatalf("expected portfolioScore 0.5, got %v", portfolioScore)
+	if blend.PortfolioScore != 0.5 {
+		t.Fatalf("expected portfolioScore 0.5, got %v", blend.PortfolioScore)
+	}
+	if blend.MLConfidence != 0.72 {
+		t.Fatalf("expected the stub's fixed 0.72 confidence, got %v", blend.MLConfidence)
 	}
 }
 
@@ -123,16 +132,19 @@ func TestBlendMLAndPortfolioFlagsRiskForLosingPosition(t *testing.T) {
 	orchestrator := NewOrchestratorWithML(analyzerUC.NewUseCase(), portfolioUseCase, NewUseCase(), mlUC.NewUseCase())
 	bars := []market.Bar{{Symbol: "AAPL", Close: 100, Timestamp: time.Now()}}
 
-	_, _, _, reasons := orchestrator.blendMLAndPortfolio("AAPL", bars, domainDecision.TechnicalScore{Overall: 0.9})
+	blend := orchestrator.blendMLAndPortfolio("AAPL", bars, domainDecision.TechnicalScore{Overall: 0.9})
 
 	found := false
-	for _, reason := range reasons {
+	for _, reason := range blend.Reasons {
 		if reason == "Portfolio risk context reduces conviction" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("expected a portfolio risk reason for a -15%% position, got %v", reasons)
+		t.Fatalf("expected a portfolio risk reason for a -15%% position, got %v", blend.Reasons)
+	}
+	if !blend.HasPosition {
+		t.Fatal("expected HasPosition to be true for a real, positive-quantity AAPL position")
 	}
 }
 

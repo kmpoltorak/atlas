@@ -144,9 +144,20 @@ Every recommendation must explain WHY.
 
 Implementation status: the current decision engine (internal/application/decision) now blends
 technical analysis, ML prediction, and portfolio risk context into its score (see
-docs/decision_engine.md), though ML itself is still a stub and the blend weights are
-placeholders. It only ever emits BUY/SELL/HOLD — ACCUMULATE, REDUCE, and WAIT are not
-implemented.
+docs/decision_engine.md and docs/ml.md — ML is a real trained model when one is loaded, falling
+back to a deterministic stub otherwise), though the blend weights are placeholders. All six
+actions above are now real, differentiated by real signals, not cosmetic renaming:
+- BUY vs ACCUMULATE, SELL vs REDUCE: gated on whether a real portfolio position already exists
+  (Portfolio.GetPositions), independent of that position's P&L.
+- SELL vs REDUCE: score severity — a strongly bearish blended score (<=0.25) with a position is
+  SELL; a moderately bearish one (0.25-0.45] with a position is REDUCE.
+- HOLD vs WAIT: a genuinely mixed score (0.45-0.55) is always HOLD; a score that leans one
+  direction (0.55-0.75 bullish, or the bearish bands above without a position to act on) is WAIT
+  when the ML model's confidence is below 0.30, else HOLD.
+All thresholds are first-pass, documented heuristics (internal/application/decision/usecase.go),
+same honesty stance as the original BUY>=0.75/SELL<=0.4 cutoffs they replace. A real caveat:
+backtesting reuses the live Portfolio use case for HasPosition, not its own simulated position
+— see docs/backtesting.md's Implementation status note.
 
 ---
 

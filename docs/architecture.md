@@ -3,13 +3,14 @@
 **Implementation status** (as of this pass — see PROJECT_CONTEXT.md for the up-to-date
 per-module breakdown): Collector, Analyzer (RSI/EMA/MACD/ATR/Volume/OBV/ADX/Bollinger Bands —
 the last three not yet blended into Decision Engine scoring), Decision Engine (technical + ML +
-portfolio-risk blend), ML Engine (real XGBoost→ONNX training pipeline and Go inference, falling
-back to a deterministic stub when no model is loaded — see docs/ml.md), Notification Service,
-Metrics, REST API, and TimescaleDB storage for
+portfolio-risk blend, all six actions BUY/ACCUMULATE/HOLD/REDUCE/SELL/WAIT real and
+differentiated — see docs/decision_engine.md), ML Engine (real XGBoost→ONNX training pipeline
+and Go inference, falling back to a deterministic stub when no model is loaded — see
+docs/ml.md), Notification Service, Metrics, REST API, and TimescaleDB storage for
 prices/portfolio/watchlist/recommendations/predictions are real and wired end-to-end. Still
 aspirational: ML Engine's recovery-probability/market-condition outputs (only correction
-probability + confidence are real), Decision Engine's ACCUMULATE/REDUCE/WAIT actions (only
-BUY/SELL/HOLD exist), a Risk Engine stage, and persistence for indicators (table exists,
+probability + confidence are real), and a Risk Engine stage (folded into the portfolio-risk
+component rather than a separate stage). Indicators still aren't persisted (table exists,
 nothing writes to it yet).
 
 ## Core Modules
