@@ -361,15 +361,17 @@ Used for:
 - alerts.
 
 Implementation status: prices, portfolio data (positions, transactions, watchlist), ML
-predictions, and recommendations are all persisted (see migrations/001-004,
-internal/infrastructure/persistence/{portfolio,watchlist,decision,ml}.go). Indicators are
-still computed fresh per request rather than persisted — there is no indicators table write
+predictions, recommendations, and backtest runs are all persisted (see migrations/001-005,
+internal/infrastructure/persistence/{portfolio,watchlist,decision,ml,backtesting}.go). Indicators
+are still computed fresh per request rather than persisted — there is no indicators table write
 path. Predictions always populate `score`/`confidence`/`model_version`; `correction_probability`
 is populated too when a real trained model produced it (see docs/ml.md), and stays NULL for the
 deterministic stub. `expected_duration`/`expected_strength` stay NULL regardless — no model
-produces those yet. Backtesting's simulated recommendations are deliberately not persisted.
-There is no alerts table at all yet (alerts are computed on demand from the watchlist, see
-internal/application/alerts).
+produces those yet. Backtesting's individual simulated recommendations are still not persisted
+one-by-one (they're hypothetical, not real, decisions), but each full run's summary (returns,
+trades, ML evaluation) now is — append-only in `backtest_runs`, queryable via
+`GET /backtests/history` — see docs/backtesting.md. There is no alerts table at all yet (alerts
+are computed on demand from the watchlist, see internal/application/alerts).
 
 Cache:
 

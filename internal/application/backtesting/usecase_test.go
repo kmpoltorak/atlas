@@ -8,6 +8,7 @@ import (
 	decisionUC "atlas/internal/application/decision"
 	portfolioUC "atlas/internal/application/portfolio"
 	"atlas/internal/domain/market"
+	"atlas/internal/domain/portfolio"
 )
 
 func newOrchestrator() *decisionUC.Orchestrator {
@@ -112,5 +113,84 @@ func TestRunDoesNotUseFutureData(t *testing.T) {
 		if !trade.Timestamp.Equal(other.Timestamp) || trade.Action != other.Action || trade.Price != other.Price {
 			t.Fatalf("decision at trade %d changed after appending a future bar: base=%+v spiked=%+v", i, trade, other)
 		}
+	}
+}
+
+// TestRunDoesNotLeakLivePortfolioState guards against the bug documented in
+// docs/backtesting.md: the backtest must judge HasPosition from its own simulated position,
+// not from whatever the live Portfolio use case (shared with real trading) happens to hold.
+// A live AAPL position would turn the sustained uptrend's opening BUY into ACCUMULATE if it
+// leaked in; asserting the first trade is a real BUY proves it starts from a clean simulated
+// slate regardless of live state.
+func TestRunDoesNotLeakLivePortfolioState(t *testing.T) {
+	livePortfolio := portfolioUC.NewUseCase()
+	livePortfolio.Positions = []portfolio.Position{{Symbol: "AAPL", Quantity: 50, AverageCost: 80, CurrentPrice: 100}}
+	orchestrator := decisionUC.NewOrchestrator(analyzerUC.NewUseCase(), livePortfolio, decisionUC.NewUseCase())
+
+	uc := NewUseCase(orchestrator)
+	bars := uptrendBars(40)
+
+	result, err := uc.Run("AAPL", bars, 10000, "momentum", "v1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Trades) == 0 {
+		t.Fatal("expected at least one trade on a sustained uptrend")
+	}
+	if result.Trades[0].Action != "BUY" {
+		t.Fatalf("expected the opening trade to be BUY (simulated position starts empty), got %q — live portfolio state leaked in", result.Trades[0].Action)
+	}
+	// The live portfolio itself must be untouched by the simulation.
+	if len(livePortfolio.Positions) != 1 || livePortfolio.Positions[0].Quantity != 50 {
+		t.Fatalf("expected live portfolio to remain unmodified by the backtest, got %+v", livePortfolio.Positions)
+	}
+}
+
+// TestRunOmitsMLEvaluationWithoutARealModel confirms no fabricated metric is produced when
+// there's no real trained model loaded — the orchestrator here has no ML use case at all,
+// matching most existing tests/call sites (see docs/decision_engine.md's nil-safe ML pattern).
+func TestRunOmitsMLEvaluationWithoutARealModel(t *testing.T) {
+	uc := NewUseCase(newOrchestrator())
+	result, err := uc.Run("AAPL", uptrendBars(40), 10000, "momentum", "v1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.MLEvaluation != nil {
+		t.Fatalf("expected nil MLEvaluation without a loaded model, got %+v", result.MLEvaluation)
+	}
+}
+
+func TestComputeMLEvaluationPerfectPredictions(t *testing.T) {
+	trueLabels := []int{1, 1, 0, 0, 1, 0}
+	predictedProbs := []float64{0.9, 0.8, 0.1, 0.2, 0.7, 0.3}
+
+	eval := computeMLEvaluation(trueLabels, predictedProbs)
+	if eval.SampleSize != 6 {
+		t.Fatalf("expected sample size 6, got %d", eval.SampleSize)
+	}
+	if eval.Accuracy != 1 || eval.Precision != 1 || eval.Recall != 1 || eval.F1Score != 1 {
+		t.Fatalf("expected perfect scores for perfectly separated predictions, got %+v", eval)
+	}
+	if eval.ROCAUC != 1 {
+		t.Fatalf("expected ROC AUC 1 for perfectly separated predictions, got %v", eval.ROCAUC)
+	}
+}
+
+func TestComputeMLEvaluationWorstCasePredictions(t *testing.T) {
+	// Every positive scored lower than every negative — the model is perfectly wrong, which
+	// should read as AUC 0 (not 0.5, which would mean "no better than chance").
+	trueLabels := []int{1, 1, 0, 0}
+	predictedProbs := []float64{0.1, 0.2, 0.8, 0.9}
+
+	eval := computeMLEvaluation(trueLabels, predictedProbs)
+	if eval.ROCAUC != 0 {
+		t.Fatalf("expected ROC AUC 0 for perfectly inverted predictions, got %v", eval.ROCAUC)
+	}
+}
+
+func TestRocAUCIsUndefinedWithOnlyOneClass(t *testing.T) {
+	auc := rocAUC([]int{1, 1, 1}, []float64{0.9, 0.6, 0.3})
+	if auc != 0.5 {
+		t.Fatalf("expected 0.5 when only one class is present, got %v", auc)
 	}
 }
