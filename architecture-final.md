@@ -104,8 +104,8 @@ Responsibilities:
 
 Implementation status: technical, ML, and portfolio signals are all merged now (risk is
 folded into the portfolio component rather than a separate stage); explanation and confidence
-are included, but nothing is persisted yet — see docs/decision_engine.md for the detailed gap
-list.
+are included, and every live recommendation (not backtesting's simulated ones) is persisted as
+an append-only history log — see docs/decision_engine.md for the detailed gap list.
 
 ### 4.6 Notification Service
 
