@@ -51,6 +51,7 @@ type Application struct {
 	Decision      *decisionUC.UseCase
 	Orchestrator  *decisionUC.Orchestrator
 	ML            *mlUC.UseCase
+	MLModel       *mlUC.OnnxModel // nil unless MODEL_PATH loaded successfully; owns the onnxruntime session
 	Notifications *notificationsUC.UseCase
 	Backtesting   *backtestingUC.UseCase
 	Watchlist     *watchlistUC.UseCase
@@ -80,7 +81,24 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 	barsCache := &redisBarsCache{client: redisCache}
 	collector := collectorUC.NewUseCaseWithStorageAndCache(provider, storage, barsCache)
 	analyzer := analyzerUC.NewUseCase()
+
+	// A missing/unloadable model is non-fatal: Atlas falls back to the deterministic
+	// RSI-derived stub (see mlUC.UseCase.Predict) rather than refusing to start, unlike the
+	// TimescaleDB/Redis connections above — this is a genuinely optional enhancement, not a
+	// dependency the app can't function without. See training/README.md.
 	mlUseCase := mlUC.NewUseCase()
+	var mlModel *mlUC.OnnxModel
+	if cfg.ModelPath != "" {
+		model, err := mlUC.LoadOnnxModel(cfg.ModelPath, cfg.LibOnnxRuntimePath)
+		if err != nil {
+			logger.Warn("failed to load ML model; falling back to deterministic RSI stub",
+				zap.String("model_path", cfg.ModelPath), zap.Error(err))
+		} else {
+			mlModel = model
+			mlUseCase = mlUC.NewUseCaseWithModel(model)
+			logger.Info("loaded ML model", zap.String("version", model.Version))
+		}
+	}
 
 	portfolioUseCase, err := portfolioUC.NewUseCaseWithRepository(storage)
 	if err != nil {
@@ -113,6 +131,7 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 		Decision:      decisionUseCase,
 		Orchestrator:  orchestrator,
 		ML:            mlUseCase,
+		MLModel:       mlModel,
 		Notifications: notificationsUC.NewUseCase(discord),
 		Backtesting:   backtestingUC.NewUseCase(orchestrator),
 		Watchlist:     watchlist,
@@ -120,7 +139,8 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 	}, nil
 }
 
-// Close releases the database and cache connections. Call it during graceful shutdown.
+// Close releases the database, cache, and (if loaded) ML model resources. Call it during
+// graceful shutdown.
 func (a *Application) Close() error {
 	var errs []error
 	if err := a.Storage.Close(); err != nil {
@@ -128,6 +148,11 @@ func (a *Application) Close() error {
 	}
 	if err := a.Cache.Close(); err != nil {
 		errs = append(errs, fmt.Errorf("close redis: %w", err))
+	}
+	if a.MLModel != nil {
+		if err := a.MLModel.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close ml model: %w", err))
+		}
 	}
 	if len(errs) == 0 {
 		return nil

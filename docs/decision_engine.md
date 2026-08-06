@@ -3,8 +3,10 @@
 **Implementation status**: this document describes the target design. The actual engine
 (internal/application/decision) now blends Technical (0.55) + ML (0.30) + Portfolio-risk
 (0.15) into the overall score (Orchestrator.blendMLAndPortfolio, via NewOrchestratorWithML) —
-closer to the "Scoring Model" below than before, though the weights/heuristics are placeholders
-and ML itself is still a deterministic stub (see docs/ml.md). There is still no separate Risk
+closer to the "Scoring Model" below than before, though the weights/heuristics are placeholders.
+ML itself is now a real trained model (XGBoost correction-probability classifier, via ONNX —
+see docs/ml.md) when one is loaded (`MODEL_PATH` set), falling back to the same deterministic
+RSI-derived stub as before when it isn't. There is still no separate Risk
 Engine stage, and the engine only ever emits BUY/SELL/HOLD (not ACCUMULATE/REDUCE/WAIT). The
 real Recommendation object is `{Symbol, Action, Confidence, Reason, Score, TechnicalScore,
 MLScore, PortfolioScore, ModelVersion}` — no separate risk score or timestamp field yet (risk

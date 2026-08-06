@@ -6,20 +6,22 @@ import (
 )
 
 type Config struct {
-	HTTPAddr          string
-	LogLevel          string
-	DatabaseHost      string
-	DatabasePort      string
-	DatabaseName      string
-	DatabaseUser      string
-	DatabasePassword  string
-	RedisHost         string
-	RedisPort         string
-	PrometheusEnabled bool
-	MarketProvider    string
-	DiscordWebhookURL string
-	CollectorWindow   int
-	AlertPollSeconds  int
+	HTTPAddr           string
+	LogLevel           string
+	DatabaseHost       string
+	DatabasePort       string
+	DatabaseName       string
+	DatabaseUser       string
+	DatabasePassword   string
+	RedisHost          string
+	RedisPort          string
+	PrometheusEnabled  bool
+	MarketProvider     string
+	DiscordWebhookURL  string
+	CollectorWindow    int
+	AlertPollSeconds   int
+	ModelPath          string
+	LibOnnxRuntimePath string
 }
 
 func Load() Config {
@@ -45,6 +47,11 @@ func Load() Config {
 		// providers/yahoo.go's User-Agent workaround for why that's a real concern here).
 		// internal/app/alerts_loop.go duplicates this as a fallback for the same reason.
 		AlertPollSeconds: envOrDefaultInt("ALERT_POLL_INTERVAL_SECONDS", 300),
+		// Both default to "": absent means "no trained model available", which is a normal,
+		// non-fatal startup state (see internal/application/ml) — Atlas falls back to the
+		// deterministic RSI-derived stub rather than failing to start. See training/README.md.
+		ModelPath:          envOrDefault("MODEL_PATH", ""),
+		LibOnnxRuntimePath: envOrDefault("LIBONNXRUNTIME_PATH", ""),
 	}
 }
 

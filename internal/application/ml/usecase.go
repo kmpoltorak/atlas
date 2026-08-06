@@ -1,16 +1,29 @@
 package ml
 
 import (
+	"math"
+
 	analyzerUC "atlas/internal/application/analyzer"
 	"atlas/internal/domain/market"
 	"atlas/internal/domain/ml"
 )
 
-// UseCase defines the first ML contract boundary for feature generation and prediction.
-type UseCase struct{}
+// UseCase defines the ML contract boundary for feature generation and prediction. Model is
+// optional (nil-safe, matching decision.Orchestrator's ML/Portfolio pattern): when unset,
+// Predict falls back to the deterministic RSI-derived stub rather than failing to start —
+// see training/README.md for how to produce a real model and NewUseCaseWithModel to wire it in.
+type UseCase struct {
+	Model *OnnxModel
+}
 
 func NewUseCase() *UseCase {
 	return &UseCase{}
+}
+
+// NewUseCaseWithModel wires a loaded ONNX model in, enabling real correction-probability
+// inference in Predict.
+func NewUseCaseWithModel(model *OnnxModel) *UseCase {
+	return &UseCase{Model: model}
 }
 
 // GenerateFeatures returns the provided feature vectors unchanged in the first milestone.
@@ -56,12 +69,33 @@ func BuildFeatureVector(analyzer *analyzerUC.UseCase, symbol string, bars []mark
 	return feature
 }
 
-// Predict returns a deterministic placeholder prediction object.
+// Predict runs real ONNX inference when a model is loaded (u.Model != nil), otherwise falls
+// back to a deterministic RSI-derived placeholder. A loaded model's inference error is
+// returned as-is rather than silently falling back to the stub — a broken model at request
+// time should be loud, not masked as a working prediction.
 func (u *UseCase) Predict(features ml.FeatureVector) (ml.Prediction, error) {
+	if u.Model == nil {
+		return ml.Prediction{
+			Score:        features.RSI / 100,
+			Confidence:   0.72,
+			ModelVersion: ml.StubModelVersion,
+		}, nil
+	}
+
+	correctionProbability, err := u.Model.PredictCorrectionProbability(features)
+	if err != nil {
+		return ml.Prediction{}, err
+	}
 	return ml.Prediction{
-		Symbol:       "",
-		Score:        features.RSI / 100,
-		Confidence:   0.72,
-		ModelVersion: "stub-v0",
+		// Score stays a bullish-lean signal for decision.Orchestrator.blendMLAndPortfolio's
+		// existing >=0.6/<=0.4 thresholds: a high correction probability should read as
+		// bearish (low Score), the inverse of the raw model output.
+		Score:                 1 - correctionProbability,
+		CorrectionProbability: correctionProbability,
+		// Distance from 0.5 as a confidence proxy: a probability near 0 or 1 is a confident
+		// prediction, one near 0.5 is not. No other confidence signal is available from a
+		// binary classifier's probability output alone.
+		Confidence:   math.Abs(correctionProbability-0.5) * 2,
+		ModelVersion: u.Model.Version,
 	}, nil
 }

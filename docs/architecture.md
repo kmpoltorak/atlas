@@ -2,11 +2,14 @@
 
 **Implementation status** (as of this pass — see PROJECT_CONTEXT.md for the up-to-date
 per-module breakdown): Collector, Analyzer (minus ADX), Decision Engine (technical + ML +
-portfolio-risk blend), Notification Service, Metrics, REST API, and TimescaleDB storage for
+portfolio-risk blend), ML Engine (real XGBoost→ONNX training pipeline and Go inference, falling
+back to a deterministic stub when no model is loaded — see docs/ml.md), Notification Service,
+Metrics, REST API, and TimescaleDB storage for
 prices/portfolio/watchlist/recommendations/predictions are real and wired end-to-end. Still
-aspirational: ML Engine (deterministic stub, no training pipeline), Decision Engine's
-ACCUMULATE/REDUCE/WAIT actions (only BUY/SELL/HOLD exist), a Risk Engine stage, and persistence
-for indicators (table exists, nothing writes to it yet).
+aspirational: ML Engine's recovery-probability/market-condition outputs (only correction
+probability + confidence are real), Decision Engine's ACCUMULATE/REDUCE/WAIT actions (only
+BUY/SELL/HOLD exist), a Risk Engine stage, and persistence for indicators (table exists,
+nothing writes to it yet).
 
 ## Core Modules
 
@@ -55,6 +58,10 @@ The ML Engine predicts:
 The ML Engine is executed in the Go production runtime.
 
 ML models are trained externally using Python.
+
+Implementation status: correction probability and confidence score are real (XGBoost, exported
+to ONNX, loaded via `github.com/yalue/onnxruntime_go` — see docs/ml.md and
+training/README.md). Recovery probability and market condition are not implemented.
 
 
 ### Portfolio Engine

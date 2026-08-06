@@ -20,3 +20,10 @@ chat.json
 
 # Claude
 .claude
+
+# ML training artifacts (locally/CI-generated, not committed source — see training/README.md)
+training/.venv/
+training/data/
+training/models/
+__pycache__/
+*.pyc
