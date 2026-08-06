@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -51,14 +52,38 @@ func (r *statusRecorder) WriteHeader(statusCode int) {
 	r.ResponseWriter.WriteHeader(statusCode)
 }
 
+// healthHandler pings the real database and cache connections, per the response shape
+// documented in docs/deployment.md ({"status":"healthy","database":"ok","redis":"ok"}).
+// Returns 503 when either dependency is unreachable, so this is a meaningful signal for
+// Docker/Kubernetes health probes (see deploy/deployment.yaml), not just a liveness check.
 func (a *Application) healthHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	databaseStatus := "ok"
+	if err := a.Storage.Ping(ctx); err != nil {
+		databaseStatus = "error"
+	}
+	redisStatus := "ok"
+	if err := a.Cache.Ping(ctx); err != nil {
+		redisStatus = "error"
+	}
+
+	overallStatus := "healthy"
+	httpStatus := http.StatusOK
+	if databaseStatus != "ok" || redisStatus != "ok" {
+		overallStatus = "unhealthy"
+		httpStatus = http.StatusServiceUnavailable
+	}
+
 	status := domain.HealthStatus{
-		Status:   "healthy",
+		Status:   overallStatus,
 		Service:  "atlas-api",
-		Database: "unknown",
-		Redis:    "unknown",
+		Database: databaseStatus,
+		Redis:    redisStatus,
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(httpStatus)
 	_ = json.NewEncoder(w).Encode(status)
 }
 

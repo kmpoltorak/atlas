@@ -35,7 +35,7 @@ func (u *UseCase) Evaluate() ([]alerts.Alert, error) {
 	result := make([]alerts.Alert, 0)
 	var collected error
 	for _, item := range items {
-		bars, err := u.Collector.Collect(item.Symbol, u.Window)
+		bars, _, err := u.Collector.Collect(item.Symbol, u.Window)
 		if err != nil {
 			collected = errors.Join(collected, err)
 			continue
