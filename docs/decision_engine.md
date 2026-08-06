@@ -1,14 +1,17 @@
 # Decision Engine
 
 **Implementation status**: this document describes the target design. The actual engine
-(internal/application/decision) today only combines technical analysis into a score — it does
-not read ML predictions or portfolio state (Orchestrator.Portfolio is wired but unused), has
-no Risk Engine stage, and only ever emits BUY/SELL/HOLD (not ACCUMULATE/REDUCE/WAIT). The real
-Recommendation object is `{Symbol, Action, Confidence, Reason}` — no score, risk, timestamp, or
-per-component (technical/ml/portfolio/risk) breakdown. Nothing is persisted to the
-`recommendations` table described below — it exists in migrations/001 but nothing writes to
-it. Discord notifications exist (internal/app/alerts_loop.go) but aren't gated by action type
-the way "Notifications" below describes.
+(internal/application/decision) now blends Technical (0.55) + ML (0.30) + Portfolio-risk
+(0.15) into the overall score (Orchestrator.blendMLAndPortfolio, via NewOrchestratorWithML) —
+closer to the "Scoring Model" below than before, though the weights/heuristics are placeholders
+and ML itself is still a deterministic stub (see docs/ml.md). There is still no separate Risk
+Engine stage, and the engine only ever emits BUY/SELL/HOLD (not ACCUMULATE/REDUCE/WAIT). The
+real Recommendation object is `{Symbol, Action, Confidence, Reason}` — no score, risk,
+timestamp, or per-component (technical/ml/portfolio/risk) breakdown; Reason does list which of
+ML/portfolio meaningfully influenced the result. Nothing is persisted to the `recommendations`
+table described below — it exists in migrations/001 but nothing writes to it. Discord
+notifications exist (internal/app/alerts_loop.go) but aren't gated by action type the way
+"Notifications" below describes.
 
 ## Overview
 The Decision Engine is the core intelligence layer of Atlas.

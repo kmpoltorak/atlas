@@ -132,10 +132,11 @@ It produces:
 
 Every recommendation must explain WHY.
 
-Implementation status: the current decision engine (internal/application/decision) only
-combines technical analysis into a score; ML and portfolio state are not yet read by it
-(Orchestrator.Portfolio is wired but unused). It only ever emits BUY/SELL/HOLD — ACCUMULATE,
-REDUCE, and WAIT are not implemented.
+Implementation status: the current decision engine (internal/application/decision) now blends
+technical analysis, ML prediction, and portfolio risk context into its score (see
+docs/decision_engine.md), though ML itself is still a stub and the blend weights are
+placeholders. It only ever emits BUY/SELL/HOLD — ACCUMULATE, REDUCE, and WAIT are not
+implemented.
 
 ---
 

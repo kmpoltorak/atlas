@@ -4,18 +4,22 @@ import (
 	"math"
 
 	analyzerUC "atlas/internal/application/analyzer"
+	mlUC "atlas/internal/application/ml"
 	portfolioUC "atlas/internal/application/portfolio"
 	domainDecision "atlas/internal/domain/decision"
 	"atlas/internal/domain/market"
+	"atlas/internal/domain/portfolio"
 )
 
-// Orchestrator composes the analyzer and decision use cases into an explainable recommendation
-// workflow. Portfolio is held for future portfolio-aware scoring (per docs/decision_engine.md's
-// intended design) but is not yet read anywhere — recommendations are technical-score-only today.
+// Orchestrator composes the analyzer, ML, portfolio, and decision use cases into an explainable
+// recommendation workflow, per docs/decision_engine.md's "Scoring Model" (Technical + ML +
+// Portfolio + Risk). ML is optional (nil-safe) since most callers/tests only care about the
+// technical path; use NewOrchestratorWithML to wire the full blend.
 type Orchestrator struct {
 	Analyzer  *analyzerUC.UseCase
 	Portfolio *portfolioUC.UseCase
 	Decision  *UseCase
+	ML        *mlUC.UseCase
 }
 
 func NewOrchestrator(analyzerUC *analyzerUC.UseCase, portfolioUC *portfolioUC.UseCase, decisionUC *UseCase) *Orchestrator {
@@ -24,6 +28,15 @@ func NewOrchestrator(analyzerUC *analyzerUC.UseCase, portfolioUC *portfolioUC.Us
 		Portfolio: portfolioUC,
 		Decision:  decisionUC,
 	}
+}
+
+// NewOrchestratorWithML wires the ML use case in as well, enabling the full Technical+ML+
+// Portfolio blend in buildTechnicalScore. Kept separate from NewOrchestrator so existing
+// technical-only call sites and tests don't need an ML use case they don't care about.
+func NewOrchestratorWithML(analyzerUC *analyzerUC.UseCase, portfolioUC *portfolioUC.UseCase, decisionUC *UseCase, mlUC *mlUC.UseCase) *Orchestrator {
+	o := NewOrchestrator(analyzerUC, portfolioUC, decisionUC)
+	o.ML = mlUC
+	return o
 }
 
 // BuildRecommendationFromBars builds a recommendation from OHLCV bars, a portfolio snapshot, and the decision engine.
@@ -35,11 +48,14 @@ func (o *Orchestrator) BuildRecommendationFromBars(symbol string, bars []market.
 		return domainDecision.Recommendation{Symbol: symbol, Action: "HOLD", Confidence: 0.5, Reason: []string{"Decision engine unavailable"}}, nil
 	}
 	technical := o.buildTechnicalScore(symbol, bars)
+	var extraReasons []string
+	technical.Overall, extraReasons = o.blendMLAndPortfolio(symbol, bars, technical)
 	recommendation, err := o.Decision.BuildRecommendation(technical)
 	if err != nil {
 		return domainDecision.Recommendation{}, err
 	}
 	recommendation.Symbol = symbol
+	recommendation.Reason = append(recommendation.Reason, extraReasons...)
 	return recommendation, nil
 }
 
@@ -98,6 +114,76 @@ func (o *Orchestrator) buildTechnicalScore(symbol string, bars []market.Bar) dom
 	}
 
 	return technical
+}
+
+// blendMLAndPortfolio folds the ML prediction and portfolio risk context into the technical
+// score, per docs/decision_engine.md's Technical+ML+Portfolio scoring model. Both are optional
+// (nil-safe) and neutral (0.5) when unavailable, so the blend degrades to technical-only
+// exactly as before when ML/Portfolio aren't wired in (see NewOrchestrator vs
+// NewOrchestratorWithML).
+func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, technical domainDecision.TechnicalScore) (float64, []string) {
+	overall := technical.Overall
+	var reasons []string
+
+	mlScore := 0.5
+	if o.ML != nil {
+		feature := mlUC.BuildFeatureVector(o.Analyzer, symbol, bars)
+		if prediction, err := o.ML.Predict(feature); err == nil {
+			mlScore = prediction.Score
+		}
+	}
+
+	portfolioScore := 0.5
+	if o.Portfolio != nil {
+		if positions, err := o.Portfolio.GetPositions(); err == nil {
+			portfolioScore = portfolioRiskSignal(symbol, positions)
+		}
+	}
+
+	// Gated on ML specifically (not "ML or Portfolio"): every existing NewOrchestrator call
+	// site already passes a non-nil Portfolio, so gating on either would have silently
+	// changed behavior everywhere instead of only where NewOrchestratorWithML opts in.
+	// Portfolio's non-nil-ness on its own does not enable the blend.
+	if o.ML != nil {
+		// Technical stays dominant; ML and portfolio are secondary/tertiary signals. ML is
+		// currently RSI-derived too (see ml.UseCase.Predict), so this is partly redundant
+		// with the RSI blend in buildTechnicalScore until a real trained model exists —
+		// wiring the composition now means Atlas picks up a genuine ML signal automatically
+		// the moment Predict() stops being a stub, with no further orchestration changes.
+		overall = clamp01(technical.Overall*0.55 + mlScore*0.30 + portfolioScore*0.15)
+	}
+
+	if mlScore >= 0.6 {
+		reasons = append(reasons, "ML signal supportive")
+	} else if mlScore <= 0.4 {
+		reasons = append(reasons, "ML signal cautious")
+	}
+	if portfolioScore < 0.5 {
+		reasons = append(reasons, "Portfolio risk context reduces conviction")
+	}
+
+	return overall, reasons
+}
+
+// portfolioRiskSignal is a placeholder heuristic: a large unrealized loss is a risk signal
+// (bias away from adding to a losing position), a large unrealized gain is a profit-taking
+// signal (bias away from chasing further, since Atlas has no REDUCE action yet — see
+// docs/decision_engine.md). No position, or a middling P&L, is neutral.
+func portfolioRiskSignal(symbol string, positions []portfolio.Position) float64 {
+	for _, position := range positions {
+		if position.Symbol != symbol || position.AverageCost <= 0 {
+			continue
+		}
+		roi := (position.CurrentPrice - position.AverageCost) / position.AverageCost
+		if roi <= -0.10 {
+			return 0.3
+		}
+		if roi >= 0.20 {
+			return 0.4
+		}
+		return 0.5
+	}
+	return 0.5
 }
 
 // overallScore is a placeholder momentum/volume heuristic pending real threshold tuning.
