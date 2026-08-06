@@ -52,12 +52,23 @@ before trusting the model it produces.
 
 ## 4. Point Atlas at the model
 
+Via Docker Compose (docker-compose.yml already mounts `./training/models` read-only into the
+`atlas-api` container at `/models`, so reference the container path, not the host path):
+
+```
+MODEL_PATH=/models/atlas-ml-<version>.onnx docker compose up -d
+```
+
+Or running the API directly (no Docker; `LIBONNXRUNTIME_PATH` must point at a real
+`libonnxruntime.so`/`.dylib` you have locally — the pip `onnxruntime` package bundles one, e.g.
+`.venv/lib/python3.11/site-packages/onnxruntime/capi/libonnxruntime.<version>.dylib`):
+
 ```
 MODEL_PATH=training/models/atlas-ml-<version>.onnx \
-LIBONNXRUNTIME_PATH=/usr/lib/libonnxruntime.so \
+LIBONNXRUNTIME_PATH=/path/to/libonnxruntime.so \
   go run ./cmd/api
 ```
 
-If `MODEL_PATH` is unset or the file can't be loaded, Atlas falls back to the existing
-deterministic RSI-derived stub prediction (logged clearly at startup) rather than failing to
-start — see `internal/application/ml`'s doc comments.
+If `MODEL_PATH` is unset (the default in both cases above) or the file can't be loaded, Atlas
+falls back to the existing deterministic RSI-derived stub prediction (logged clearly at
+startup) rather than failing to start — see `internal/application/ml`'s doc comments.
