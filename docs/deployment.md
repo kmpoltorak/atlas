@@ -81,9 +81,11 @@ Stores:
 - predictions
 - alerts
 
-Implementation status: prices, portfolio (positions, transactions, watchlist), predictions, and
-recommendations are all actually persisted; indicators are still computed fresh per request and
-not yet written; there is no alerts table.
+Implementation status: prices, portfolio (positions, transactions, watchlist), predictions,
+recommendations, and backtest runs are all actually persisted. Indicators are now written too
+(migrations/006, internal/infrastructure/persistence/indicators.go), but only from
+GET /recommendations — the alert-poll loop's Evaluate() doesn't currently expose per-symbol bars
+to persist against, so background snapshots aren't taken; there is no alerts table.
 ## redis
 Used for:
 - caching

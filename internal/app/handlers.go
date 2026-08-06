@@ -13,6 +13,7 @@ import (
 	"atlas/internal/domain/market"
 	mlDomain "atlas/internal/domain/ml"
 	"atlas/internal/domain/portfolio"
+	"atlas/internal/infrastructure/persistence"
 
 	"go.uber.org/zap"
 )
@@ -84,6 +85,57 @@ func (a *Application) persistPrediction(pred mlDomain.Prediction) {
 	}
 	if err := a.Storage.SavePrediction(pred); err != nil {
 		a.Logger.Error("failed to persist prediction", zap.String("symbol", pred.Symbol), zap.Error(err))
+	}
+}
+
+// persistIndicatorSnapshot best-effort computes and writes the full indicator set (RSI, EMA,
+// MACD, ATR, Volume, OBV, ADX, Bollinger Bands) for a symbol at the current moment to the
+// indicators table (migrations/001, migrations/006). Only wired into recommendationsHandler for
+// now — a live recommendation is the one place Atlas already has fresh bars in hand for a single
+// symbol on demand; the alert-poll loop's Evaluate() doesn't currently expose bars per symbol,
+// so background snapshots aren't taken (see docs/deployment.md's Implementation status note).
+func (a *Application) persistIndicatorSnapshot(symbol string, bars []market.Bar) {
+	if a.Storage == nil || a.Analyzer == nil {
+		return
+	}
+
+	points := make([]persistence.IndicatorPoint, 0, 10)
+	addLatest := func(indicatorType string, series []float64) {
+		if len(series) == 0 {
+			return
+		}
+		points = append(points, persistence.IndicatorPoint{Type: indicatorType, Value: series[len(series)-1]})
+	}
+
+	if series, err := a.Analyzer.ComputeRSI(symbol, bars); err == nil {
+		addLatest("rsi", series)
+	}
+	if series, err := a.Analyzer.ComputeEMA(symbol, bars); err == nil {
+		addLatest("ema", series)
+	}
+	if series, err := a.Analyzer.ComputeMACD(symbol, bars); err == nil {
+		addLatest("macd", series)
+	}
+	if series, err := a.Analyzer.ComputeATR(symbol, bars); err == nil {
+		addLatest("atr", series)
+	}
+	if series, err := a.Analyzer.ComputeVolume(symbol, bars); err == nil {
+		addLatest("volume", series)
+	}
+	if series, err := a.Analyzer.ComputeOBV(symbol, bars); err == nil {
+		addLatest("obv", series)
+	}
+	if series, err := a.Analyzer.ComputeADX(symbol, bars); err == nil {
+		addLatest("adx", series)
+	}
+	if bands, err := a.Analyzer.ComputeBollingerBands(symbol, bars); err == nil {
+		addLatest("bollinger_upper", bands.Upper)
+		addLatest("bollinger_middle", bands.Middle)
+		addLatest("bollinger_lower", bands.Lower)
+	}
+
+	if err := a.Storage.SaveIndicatorSnapshot(symbol, time.Now().UTC(), points); err != nil {
+		a.Logger.Error("failed to persist indicator snapshot", zap.String("symbol", symbol), zap.Error(err))
 	}
 }
 
@@ -238,6 +290,7 @@ func (a *Application) recommendationsHandler(w http.ResponseWriter, r *http.Requ
 	}
 	a.Metrics.RecommendationsTotal.WithLabelValues(recommendation.Action).Inc()
 	a.persistRecommendation(recommendation)
+	a.persistIndicatorSnapshot(symbol, bars)
 	writeJSON(w, http.StatusOK, recommendation)
 }
 
