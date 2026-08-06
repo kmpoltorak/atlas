@@ -1,7 +1,8 @@
 # Architecture
 
 **Implementation status** (as of this pass — see PROJECT_CONTEXT.md for the up-to-date
-per-module breakdown): Collector, Analyzer (minus ADX), Decision Engine (technical + ML +
+per-module breakdown): Collector, Analyzer (RSI/EMA/MACD/ATR/Volume/OBV/ADX/Bollinger Bands —
+the last three not yet blended into Decision Engine scoring), Decision Engine (technical + ML +
 portfolio-risk blend), ML Engine (real XGBoost→ONNX training pipeline and Go inference, falling
 back to a deterministic stub when no model is loaded — see docs/ml.md), Notification Service,
 Metrics, REST API, and TimescaleDB storage for
@@ -41,7 +42,15 @@ Indicators:
 - MACD
 - ATR
 - ADX
+- OBV
+- Bollinger Bands
 - Volume analysis
+
+Implementation status: all of the above are implemented (internal/application/analyzer). OBV,
+ADX, and Bollinger Bands are new — real, tested computations, but not yet consumed anywhere
+(Decision Engine scoring and ml.FeatureVector still only use RSI/EMA/MACD/ATR/Volume). "detecting
+trends" beyond what individual indicators already show (e.g. a consolidated trend/volatility
+summary score) isn't implemented.
 
 
 ### ML Engine

@@ -8,4 +8,7 @@ type Service interface {
 	ComputeMACD(symbol string, bars []market.Bar) ([]float64, error)
 	ComputeATR(symbol string, bars []market.Bar) ([]float64, error)
 	ComputeVolume(symbol string, bars []market.Bar) ([]float64, error)
+	ComputeOBV(symbol string, bars []market.Bar) ([]float64, error)
+	ComputeADX(symbol string, bars []market.Bar) ([]float64, error)
+	ComputeBollingerBands(symbol string, bars []market.Bar) (BollingerBands, error)
 }

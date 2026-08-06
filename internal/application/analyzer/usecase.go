@@ -118,6 +118,154 @@ func (u *UseCase) ComputeVolume(symbol string, bars []market.Bar) ([]float64, er
 	return result, nil
 }
 
+// ComputeOBV returns the On-Balance Volume series: a running total that adds a bar's volume on
+// an up close, subtracts it on a down close, and carries forward unchanged on an unchanged
+// close. The first value is seeded at 0 — OBV is a relative/trend indicator; its absolute level
+// has no meaning on its own, only its direction of change.
+func (u *UseCase) ComputeOBV(symbol string, bars []market.Bar) ([]float64, error) {
+	if len(bars) == 0 {
+		return nil, nil
+	}
+	result := make([]float64, len(bars))
+	for i := 1; i < len(bars); i++ {
+		switch {
+		case bars[i].Close > bars[i-1].Close:
+			result[i] = result[i-1] + bars[i].Volume
+		case bars[i].Close < bars[i-1].Close:
+			result[i] = result[i-1] - bars[i].Volume
+		default:
+			result[i] = result[i-1]
+		}
+	}
+	return result, nil
+}
+
+// adxPeriod is the standard Wilder smoothing period for ADX and its +DI/-DI components.
+const adxPeriod = 14
+
+// ComputeADX returns Wilder's 14-period Average Directional Index, a trend-STRENGTH indicator
+// (not direction — a rising ADX means a strengthening trend, up or down alike; pair it with
+// +DI/-DI, not exposed separately here, to read direction). Needs at least 2*adxPeriod bars
+// (14 to smooth +DM/-DM/TR, another 14 to smooth DX into the first ADX value); returns
+// (nil, nil) before that, matching ComputeRSI's insufficient-history stance. Indices before the
+// warm-up point are left at zero rather than omitted, matching ComputeATR's convention —
+// callers reading only the latest (last) value just need len(bars) >= the minimum.
+func (u *UseCase) ComputeADX(symbol string, bars []market.Bar) ([]float64, error) {
+	if len(bars) < 2*adxPeriod {
+		return nil, nil
+	}
+
+	n := len(bars)
+	plusDM := make([]float64, n)
+	minusDM := make([]float64, n)
+	tr := make([]float64, n)
+	for i := 1; i < n; i++ {
+		upMove := bars[i].High - bars[i-1].High
+		downMove := bars[i-1].Low - bars[i].Low
+		if upMove > downMove && upMove > 0 {
+			plusDM[i] = upMove
+		}
+		if downMove > upMove && downMove > 0 {
+			minusDM[i] = downMove
+		}
+		tr[i] = math.Max(bars[i].High-bars[i].Low,
+			math.Max(math.Abs(bars[i].High-bars[i-1].Close), math.Abs(bars[i].Low-bars[i-1].Close)))
+	}
+
+	smoothedPlusDM := wilderSmooth(plusDM, adxPeriod)
+	smoothedMinusDM := wilderSmooth(minusDM, adxPeriod)
+	smoothedTR := wilderSmooth(tr, adxPeriod)
+
+	dx := make([]float64, n)
+	for i := adxPeriod; i < n; i++ {
+		if smoothedTR[i] == 0 {
+			continue
+		}
+		plusDI := 100 * smoothedPlusDM[i] / smoothedTR[i]
+		minusDI := 100 * smoothedMinusDM[i] / smoothedTR[i]
+		sum := plusDI + minusDI
+		if sum == 0 {
+			continue
+		}
+		dx[i] = 100 * math.Abs(plusDI-minusDI) / sum
+	}
+
+	result := make([]float64, n)
+	firstADXIndex := 2*adxPeriod - 1 // e.g. 27 for period=14: Wilder-averages dx[14..27]
+	result[firstADXIndex] = average(dx[adxPeriod : firstADXIndex+1])
+	for i := firstADXIndex + 1; i < n; i++ {
+		result[i] = (result[i-1]*(adxPeriod-1) + dx[i]) / adxPeriod
+	}
+	return result, nil
+}
+
+// wilderSmooth applies Wilder's smoothing (the same recurrence ComputeRSI uses inline): the
+// first smoothed value is a plain sum of the first `period` inputs starting at index 1 (index 0
+// has no prior bar to diff against, so it's always 0 in ComputeADX's plusDM/minusDM/tr inputs),
+// then each subsequent value decays the prior smoothed value by 1/period and adds the new raw
+// input.
+func wilderSmooth(values []float64, period int) []float64 {
+	result := make([]float64, len(values))
+	if len(values) <= period {
+		return result
+	}
+	sum := 0.0
+	for i := 1; i <= period; i++ {
+		sum += values[i]
+	}
+	result[period] = sum
+	for i := period + 1; i < len(values); i++ {
+		result[i] = result[i-1] - result[i-1]/float64(period) + values[i]
+	}
+	return result
+}
+
+const (
+	bollingerPeriod           = 20
+	bollingerStdDevMultiplier = 2.0
+)
+
+// BollingerBands holds the upper, middle (SMA), and lower band series from
+// ComputeBollingerBands. All three slices are the same length and indexed 1:1 with each other.
+type BollingerBands struct {
+	Upper  []float64
+	Middle []float64
+	Lower  []float64
+}
+
+// ComputeBollingerBands returns 20-period Bollinger Bands (SMA +/- 2 standard deviations, the
+// standard default parameters). Unlike ComputeATR/ComputeEMA (full-length, zero/naive-padded
+// from bar 0), this returns one entry per fully-formed 20-bar window, oldest first — matching
+// ComputeRSI's "don't manufacture a band from a partial window" stance, since a stddev computed
+// over fewer than the intended period isn't the same statistic. Returns a zero-value
+// BollingerBands (empty slices) when there isn't a single full window yet (len(bars) < 20).
+func (u *UseCase) ComputeBollingerBands(symbol string, bars []market.Bar) (BollingerBands, error) {
+	if len(bars) < bollingerPeriod {
+		return BollingerBands{}, nil
+	}
+
+	n := len(bars) - bollingerPeriod + 1
+	bands := BollingerBands{
+		Upper:  make([]float64, n),
+		Middle: make([]float64, n),
+		Lower:  make([]float64, n),
+	}
+	for i := 0; i < n; i++ {
+		window := bars[i : i+bollingerPeriod]
+		mean := average(closeSeries(window))
+		variance := 0.0
+		for _, bar := range window {
+			diff := bar.Close - mean
+			variance += diff * diff
+		}
+		stdDev := math.Sqrt(variance / float64(bollingerPeriod))
+		bands.Middle[i] = mean
+		bands.Upper[i] = mean + bollingerStdDevMultiplier*stdDev
+		bands.Lower[i] = mean - bollingerStdDevMultiplier*stdDev
+	}
+	return bands, nil
+}
+
 func average(values []float64) float64 {
 	total := 0.0
 	for _, value := range values {

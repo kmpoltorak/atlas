@@ -81,9 +81,9 @@ Stores:
 - predictions
 - alerts
 
-Implementation status: prices and portfolio (positions, transactions, watchlist) are
-actually persisted; indicators/predictions are computed fresh per request and not yet
-written; there is no alerts table.
+Implementation status: prices, portfolio (positions, transactions, watchlist), predictions, and
+recommendations are all actually persisted; indicators are still computed fresh per request and
+not yet written; there is no alerts table.
 ## redis
 Used for:
 - caching

@@ -18,10 +18,12 @@ Per `docs/deployment.md`'s Backup Strategy:
 | Configuration | On every change | This Git repository (`docker-compose.yml`, `deploy/`, `.env` is gitignored by design) |
 | Grafana dashboards | On every change | Already in Git: `grafana/dashboards/`, provisioned automatically — a `git checkout` restores them |
 | Prometheus config | On every change | Already in Git: `prometheus/prometheus.yml` — a `git checkout` restores it |
-| ML models | Versioned storage | Not applicable yet — no trained model artifacts exist (see docs/ml.md; the current ML path is a deterministic stub) |
+| ML models | Versioned storage | Real trained artifacts now exist (`training/models/atlas-ml-<version>.onnx` + `.json` metadata sidecar — see docs/ml.md), but they're gitignored (locally/CI-generated, not committed source) and have **no backup/versioned-storage procedure yet** — a lost model directory means re-running `training/` end to end, which is reproducible from TimescaleDB's own price history but not instant. Atlas runs without a model at all until `MODEL_PATH` is set (falls back to the deterministic RSI stub), so this isn't yet a service-availability risk, just a lost-work risk. |
 
-The practical takeaway: **the only thing that actually needs an active backup procedure right
-now is TimescaleDB.** Everything else recovers by redeploying from this Git repository.
+The practical takeaway: **TimescaleDB is the only thing with an active backup procedure today.**
+Everything else recovers by redeploying from this Git repository — except ML model artifacts,
+which recover by re-running training/ (reproducible, not instant) since they aren't committed
+or backed up anywhere yet.
 
 ## TimescaleDB backup (manual, until automated)
 

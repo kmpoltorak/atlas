@@ -69,8 +69,13 @@ Indicators include:
 - Volume analysis
 - Volatility metrics
 
-Implementation status: RSI, EMA, MACD, ATR, and volume analysis are implemented
-(internal/application/analyzer). ADX and broader volatility metrics are not yet implemented.
+Implementation status: RSI, EMA, MACD, ATR, volume analysis, OBV, ADX, and Bollinger Bands are
+all implemented (internal/application/analyzer). None of these are wired into the decision
+engine's scoring yet beyond what was already there (RSI, momentum/volume) — they're available,
+tested analyzer capabilities, not yet blended into Orchestrator.buildTechnicalScore or
+ml.FeatureVector (see docs/decision_engine.md). Broader volatility/trend *summary* metrics
+(e.g. a single consolidated risk/trend score) are still not implemented — only the individual
+indicator series are.
 
 ---
 
