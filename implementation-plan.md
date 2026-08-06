@@ -125,6 +125,18 @@ Deliverables:
 - result summaries,
 - strategy version metadata.
 
+**Implementation status**: the backtest runner (internal/application/backtesting), performance
+metrics (Returns/Sharpe/Volatility/Max Drawdown/Win Rate), and result summaries are all real —
+see docs/backtesting.md. Two gaps closed in this pass: the historical simulation now judges
+ACCUMULATE/REDUCE/WAIT from its own simulated position instead of leaking live portfolio state
+(a real, previously-documented bug — see docs/backtesting.md's Implementation status note), and
+model/strategy evaluation before promotion is now real — every run scores the loaded ML model's
+predictions against realized outcomes (Accuracy/Precision/Recall/F1/ROC AUC) and persists to
+`backtest_runs` (migrations/005), queryable via `GET /backtests/history`. Not yet done:
+walk-forward train/validate/test date-range splitting (only "no lookahead within one run"
+exists) and parameter optimization — both still require a scoping discussion before building,
+same caution applied to ACCUMULATE/REDUCE/WAIT and ComputeRisk.
+
 ## 9. Phase 7 — Production Readiness
 
 Scope:

@@ -4,22 +4,40 @@
 simulation (no future *bar* data leakage, verified by regression test) of exactly one fixed
 all-in/all-out strategy driven by the live Decision Engine — not the pluggable Strategy
 interface described below, and no other example strategies exist. It computes Returns, Max
-Drawdown, Volatility, Sharpe Ratio, and Win Rate. Not yet implemented: the train/validate/test
-Walk Forward Testing date-range splitting described below (the "no lookahead" guarantee is
-real for price bars; the separate train/validate/test period concept is not), ML Evaluation
-metrics (Accuracy/Precision/Recall/F1/ROC AUC), parameter Optimization, and all of the Database
-Tables listed below — nothing is persisted, results are returned as JSON only
-(GET /backtests).
+Drawdown, Volatility, Sharpe Ratio, and Win Rate. ML Evaluation (Accuracy/Precision/Recall/F1/
+ROC AUC — see `UseCase.evaluateML`) and persistence (`backtest_runs`, see below) are also real
+now. Still not implemented: the train/validate/test Walk Forward Testing date-range splitting
+described below (the "no lookahead" guarantee is real for price bars within a single run; the
+separate train/validate/test period concept is not) and parameter Optimization.
 
-A real caveat, not yet fixed: because backtesting reuses the exact same Orchestrator instance as
-live recommendations (see internal/app/app.go), every simulated recommendation's
-`decision.RecommendationInput.HasPosition` (see docs/decision_engine.md's ACCUMULATE/REDUCE/WAIT
-differentiation) reflects the **live, real, present-day** portfolio, not the backtest's own
-simulated position built up bar-by-bar in the simulation loop. This can make a backtest's action
-sequence (BUY vs. ACCUMULATE, SELL vs. REDUCE) depend on unrelated present-day portfolio state —
-a form of leakage this doc's "No Future Data Leakage" principle doesn't cover, since it's not
-about *bar* data. Fixing it properly needs the backtest loop to feed the Orchestrator its own
-simulated position instead of querying the live Portfolio use case — not done here.
+**Portfolio-state leakage — fixed**: backtesting previously reused the exact same Orchestrator
+instance as live recommendations (see internal/app/app.go), so every simulated
+recommendation's `decision.RecommendationInput.HasPosition` (see docs/decision_engine.md's
+ACCUMULATE/REDUCE/WAIT differentiation) reflected the **live, real, present-day** portfolio, not
+the backtest's own simulated position built up bar-by-bar. `UseCase.Run` now constructs its own
+`portfolio.UseCase` (`simPortfolio`, no Repository — never touches TimescaleDB) and its own
+Orchestrator around it (`simOrchestrator`, reusing the live Analyzer/Decision/ML, which are
+stateless with respect to any specific portfolio), syncing `simPortfolio.Positions` to the
+simulation's own quantity/entry price before every bar's recommendation. A backtest's action
+sequence (BUY vs. ACCUMULATE, SELL vs. REDUCE) is now independent of whatever the live portfolio
+holds — see `TestRunDoesNotLeakLivePortfolioState`.
+
+**ML Evaluation**: when a real trained model is loaded (`MLModel != nil` — see docs/ml.md), every
+backtest run also scores that model's correction-probability predictions against what actually
+happened afterward (`ml.ComputeCorrectionLabel`, the same label definition used in training),
+reporting Accuracy/Precision/Recall/F1/ROC AUC (ROC AUC via the rank-sum/Mann-Whitney method) in
+the response's `ml_evaluation` field. This is `nil`, not a fabricated struct, when no real model
+is loaded — evaluating the deterministic RSI-derived stub's made-up "correction probability"
+against reality would be a meaningless number, not a real one.
+
+**Persistence**: every `/backtests` call is now also written to `backtest_runs`
+(migrations/005), append-only like recommendations/predictions, and `GET /backtests/history`
+lists a symbol's past runs. Unlike the five-table target design below (backtests,
+backtest_runs, trades, performance_metrics, strategy_versions), this collapses trades and
+performance metrics into a single JSONB `result_summary` column rather than normalizing them
+into their own tables — a deliberate simplification, not a partial implementation of all five;
+see migrations/005's comment for the reasoning. `strategy_versions` isn't a real versioning
+concept either, just a caller-supplied tag string per run.
 
 ## Overview
 The Backtesting Engine is responsible for evaluating investment strategies using historical market data.

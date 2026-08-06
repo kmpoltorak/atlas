@@ -11,17 +11,18 @@ Engine stage. The engine now emits all six action types below (BUY/SELL/HOLD plu
 ACCUMULATE/REDUCE/WAIT — see decision.UseCase.BuildRecommendation's threshold bands), gated on
 real portfolio position state (BUY vs. ACCUMULATE, SELL vs. REDUCE) and ML confidence (HOLD vs.
 WAIT) — see this doc's "Recommendation Types" below and PROJECT_CONTEXT.md for the exact rules
-and thresholds. Backtesting has a real, undocumented-until-now caveat here — see
-docs/backtesting.md's Implementation status note. The
+and thresholds. Backtesting previously leaked live portfolio state into simulated HasPosition —
+fixed now, see docs/backtesting.md's Implementation status note. The
 real Recommendation object is `{Symbol, Action, Confidence, Reason, Score, TechnicalScore,
 MLScore, PortfolioScore, ModelVersion}` — no separate risk score or timestamp field yet (risk
 score has nothing to compute from without a Risk Engine stage); Reason does list which of
 ML/portfolio meaningfully influenced the result. Every live recommendation (GET /recommendations,
 GET /alerts, and the background alert-poll loop) is now persisted to the `recommendations`
 table below (see internal/infrastructure/persistence/decision.go) as an append-only history
-log — `risk_score` stays NULL there for the same no-Risk-Engine reason. Backtesting's simulated
-recommendations are deliberately NOT persisted (see internal/application/backtesting/usecase.go)
-since they're hypothetical past decisions, not real ones. Discord notifications
+log — `risk_score` stays NULL there for the same no-Risk-Engine reason. Backtesting's individual
+simulated recommendations are still deliberately NOT persisted one-by-one (see
+internal/application/backtesting/usecase.go) since they're hypothetical past decisions, not real
+ones — but each full backtest run's summary now is (see docs/backtesting.md). Discord notifications
 (internal/app/alerts_loop.go) are now gated to BUY/SELL/REDUCE only
 (isHighPriorityAction), matching "Notifications" below — GET /alerts itself is unaffected and
 still surfaces every non-HOLD action, including ACCUMULATE/WAIT; only the push notification is

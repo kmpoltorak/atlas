@@ -8,6 +8,7 @@ import (
 	"time"
 
 	mlUC "atlas/internal/application/ml"
+	backtestingDomain "atlas/internal/domain/backtesting"
 	"atlas/internal/domain/decision"
 	"atlas/internal/domain/market"
 	mlDomain "atlas/internal/domain/ml"
@@ -83,6 +84,19 @@ func (a *Application) persistPrediction(pred mlDomain.Prediction) {
 	}
 	if err := a.Storage.SavePrediction(pred); err != nil {
 		a.Logger.Error("failed to persist prediction", zap.String("symbol", pred.Symbol), zap.Error(err))
+	}
+}
+
+// persistBacktestRun best-effort writes a backtest result to the history log (see
+// migrations/005's backtest_runs table). Same non-fatal stance as persistRecommendation: a
+// simulation the caller already received a truthful answer for shouldn't fail just because the
+// audit log couldn't be written.
+func (a *Application) persistBacktestRun(result backtestingDomain.StrategyResult) {
+	if a.Storage == nil {
+		return
+	}
+	if err := a.Storage.SaveBacktestRun(result); err != nil {
+		a.Logger.Error("failed to persist backtest run", zap.String("symbol", result.Symbol), zap.Error(err))
 	}
 }
 
@@ -303,5 +317,36 @@ func (a *Application) backtestsHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	a.persistBacktestRun(result)
 	writeJSON(w, http.StatusOK, result)
+}
+
+const backtestHistoryDefaultLimit = 20
+
+// backtestHistoryHandler lists previously persisted backtest runs for a symbol (migrations/005's
+// backtest_runs table), newest first — distinct from backtestsHandler, which always executes a
+// fresh simulation.
+func (a *Application) backtestHistoryHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		writeError(w, http.StatusBadRequest, errors.New("symbol query parameter is required"))
+		return
+	}
+	limit := backtestHistoryDefaultLimit
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	runs, err := a.Storage.ListBacktestRuns(symbol, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"runs": runs})
 }
