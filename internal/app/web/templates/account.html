@@ -4,13 +4,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Atlas — Account</title>
+  <title>{{T .Lang "account.title"}}</title>
   {{template "head" .}}
 </head>
 <body>
   {{template "nav" .}}
   <main class="container pb-5">
-    <h1 class="h3 mb-4">Account</h1>
+    <h1 class="h3 mb-4">{{T .Lang "account.heading"}}</h1>
 
     {{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
     {{if .Success}}<div class="alert alert-success">{{.Success}}</div>{{end}}
@@ -18,8 +18,8 @@
     <div class="table-responsive">
       <table class="table">
         <tbody>
-          <tr><th>Username</th><td>{{.Username}}</td></tr>
-          <tr><th>Two-factor authentication</th><td>{{if .TOTPEnabled}}<span class="badge text-bg-success">Enabled</span>{{else}}<span class="badge text-bg-secondary">Disabled</span>{{end}}</td></tr>
+          <tr><th>{{T .Lang "table.username"}}</th><td>{{.Username}}</td></tr>
+          <tr><th>{{T .Lang "account.two_factor"}}</th><td>{{if .TOTPEnabled}}<span class="badge text-bg-success">{{T .Lang "common.enabled"}}</span>{{else}}<span class="badge text-bg-secondary">{{T .Lang "common.disabled"}}</span>{{end}}</td></tr>
         </tbody>
       </table>
     </div>
@@ -27,20 +27,20 @@
     <div class="card mt-3" style="max-width: 28rem;">
       <div class="card-body">
         {{if .TOTPEnabled}}
-        <h2 class="h5 card-title">Disable two-factor authentication</h2>
-        <p class="text-body-secondary small">Requires your current password to confirm.</p>
+        <h2 class="h5 card-title">{{T .Lang "account.disable_2fa"}}</h2>
+        <p class="text-body-secondary small">{{T .Lang "account.disable_2fa_hint"}}</p>
         <form method="post" action="/dashboard/account/totp/disable">
           <div class="mb-3">
-            <label class="form-label">Current password</label>
+            <label class="form-label">{{T .Lang "account.current_password"}}</label>
             <input type="password" class="form-control" name="password" autocomplete="current-password" required>
           </div>
-          <button type="submit" class="btn btn-outline-danger">Disable 2FA</button>
+          <button type="submit" class="btn btn-outline-danger">{{T .Lang "account.disable_submit"}}</button>
         </form>
         {{else}}
-        <h2 class="h5 card-title">Enable two-factor authentication</h2>
-        <p class="text-body-secondary small">Adds a verification code from an authenticator app (Google Authenticator, Authy, etc.) to every login.</p>
+        <h2 class="h5 card-title">{{T .Lang "account.enable_2fa"}}</h2>
+        <p class="text-body-secondary small">{{T .Lang "account.enable_2fa_hint"}}</p>
         <form method="get" action="/dashboard/account/totp/setup">
-          <button type="submit" class="btn btn-primary">Set up 2FA</button>
+          <button type="submit" class="btn btn-primary">{{T .Lang "account.setup_submit"}}</button>
         </form>
         {{end}}
       </div>

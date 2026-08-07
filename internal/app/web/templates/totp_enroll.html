@@ -4,32 +4,32 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Atlas — Set up 2FA</title>
+  <title>{{T .Lang "totp.title"}}</title>
   {{template "head" .}}
 </head>
 <body>
   {{template "nav" .}}
   <main class="container pb-5">
-    <h1 class="h3 mb-4">Set up two-factor authentication</h1>
+    <h1 class="h3 mb-4">{{T .Lang "totp.heading"}}</h1>
 
     {{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
 
     <div class="card" style="max-width: 28rem;">
       <div class="card-body">
-        <p>Scan this QR code with an authenticator app (Google Authenticator, Authy, etc.):</p>
+        <p>{{T .Lang "totp.scan_hint"}}</p>
         <img src="/dashboard/account/totp/qr.png" alt="TOTP QR code" width="220" height="220" class="border rounded mb-3">
 
-        <p class="text-body-secondary small mb-1">Can't scan? Enter this key manually:</p>
+        <p class="text-body-secondary small mb-1">{{T .Lang "totp.manual_hint"}}</p>
         <p><code>{{.Secret}}</code></p>
 
-        <h2 class="h6 mt-4">Confirm</h2>
-        <p class="text-body-secondary small">Enter the current 6-digit code from the app to finish enabling 2FA.</p>
+        <h2 class="h6 mt-4">{{T .Lang "totp.confirm_heading"}}</h2>
+        <p class="text-body-secondary small">{{T .Lang "totp.confirm_hint"}}</p>
         <form method="post" action="/dashboard/account/totp/confirm">
           <div class="mb-3">
-            <label class="form-label">Verification code</label>
+            <label class="form-label">{{T .Lang "totp.verification_code"}}</label>
             <input type="text" class="form-control" name="code" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" required autofocus>
           </div>
-          <button type="submit" class="btn btn-primary">Confirm and enable</button>
+          <button type="submit" class="btn btn-primary">{{T .Lang "totp.submit"}}</button>
         </form>
       </div>
     </div>

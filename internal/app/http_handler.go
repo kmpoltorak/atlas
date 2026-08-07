@@ -30,6 +30,7 @@ func (a *Application) NewHandler() http.Handler {
 	// Server-rendered dashboard (Phase 8 — see implementation-plan.md and internal/app/web).
 	mux.HandleFunc("/login", a.loginPageHandler)
 	mux.HandleFunc("/logout", a.logoutPageHandler)
+	mux.HandleFunc("/dashboard/lang", a.langSetHandler)
 	mux.HandleFunc("/dashboard", a.dashboardPageHandler)
 	mux.HandleFunc("/dashboard/portfolio", a.portfolioPageHandler)
 	mux.HandleFunc("/dashboard/portfolio/delete", a.portfolioDeleteHandler)

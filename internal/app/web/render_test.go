@@ -38,6 +38,37 @@ func TestRenderDashboardPage(t *testing.T) {
 	if !strings.Contains(body, "AAPL") || !strings.Contains(body, "200.00") {
 		t.Fatalf("expected position row with computed P&L (200.00) in rendered dashboard, got %s", body)
 	}
+	// Default (zero-value) Lang must render English, not blank/raw keys.
+	if !strings.Contains(body, "Dashboard") || !strings.Contains(body, "Portfolio Risk") {
+		t.Fatalf("expected English text with a zero-value Lang, got %s", body)
+	}
+}
+
+func TestRenderDashboardPageInPolish(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Render(rec, "dashboard", DashboardPage{Lang: LangPL})
+	if rec.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "Panel główny") || !strings.Contains(body, "Ryzyko portfela") {
+		t.Fatalf("expected Polish text with Lang: LangPL, got %s", body)
+	}
+	if !strings.Contains(body, "Brak otwartych pozycji") {
+		t.Fatalf("expected the Polish no-positions message (with its embedded link), got %s", body)
+	}
+}
+
+func TestRenderNavLanguageSwitcherMarksActiveLanguage(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Render(rec, "dashboard", DashboardPage{Lang: LangPL})
+	body := rec.Body.String()
+	if !strings.Contains(body, `value="pl"`) || !strings.Contains(body, `value="en"`) {
+		t.Fatalf("expected both language options in the nav switcher, got %s", body)
+	}
+	if !strings.Contains(body, `dropdown-item active">Polski`) {
+		t.Fatalf("expected the Polish option to be marked active when Lang is pl, got %s", body)
+	}
 }
 
 func TestRenderPortfolioPage(t *testing.T) {

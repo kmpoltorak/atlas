@@ -4,13 +4,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Atlas — Watchlist</title>
+  <title>{{T .Lang "watchlist.title"}}</title>
   {{template "head" .}}
 </head>
 <body>
   {{template "nav" .}}
   <main class="container pb-5">
-    <h1 class="h3 mb-4">Watchlist</h1>
+    <h1 class="h3 mb-4">{{T .Lang "watchlist.heading"}}</h1>
 
     {{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
     {{if .Success}}<div class="alert alert-success">{{.Success}}</div>{{end}}
@@ -18,7 +18,7 @@
     {{if .Items}}
     <div class="table-responsive">
       <table class="table table-striped table-hover align-middle">
-        <thead><tr><th>Symbol</th><th>Added</th><th></th></tr></thead>
+        <thead><tr><th>{{T .Lang "table.symbol"}}</th><th>{{T .Lang "table.added"}}</th><th></th></tr></thead>
         <tbody>
         {{range .Items}}
         <tr>
@@ -27,7 +27,7 @@
           <td class="text-end">
             <form method="post" action="/dashboard/watchlist/delete">
               <input type="hidden" name="symbol" value="{{.Symbol}}">
-              <button type="submit" class="btn btn-outline-danger btn-sm">Remove</button>
+              <button type="submit" class="btn btn-outline-danger btn-sm">{{T $.Lang "common.remove"}}</button>
             </form>
           </td>
         </tr>
@@ -36,18 +36,18 @@
       </table>
     </div>
     {{else}}
-    <p class="text-body-secondary">Watchlist is empty.</p>
+    <p class="text-body-secondary">{{T .Lang "watchlist.empty"}}</p>
     {{end}}
 
     <div class="card mt-4" style="max-width: 24rem;">
       <div class="card-body">
-        <h2 class="h5 card-title">Add a symbol</h2>
+        <h2 class="h5 card-title">{{T .Lang "watchlist.add_symbol"}}</h2>
         <form method="post" action="/dashboard/watchlist">
           <div class="mb-3">
-            <label class="form-label">Symbol</label>
+            <label class="form-label">{{T .Lang "table.symbol"}}</label>
             <input type="text" class="form-control text-uppercase" name="symbol" required>
           </div>
-          <button type="submit" class="btn btn-primary">Add</button>
+          <button type="submit" class="btn btn-primary">{{T .Lang "watchlist.add_submit"}}</button>
         </form>
       </div>
     </div>

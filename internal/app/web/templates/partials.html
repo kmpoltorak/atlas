@@ -39,24 +39,41 @@
     </button>
     <div class="collapse navbar-collapse" id="navbarContent">
       <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-        <li class="nav-item"><a class="nav-link" href="/dashboard">Dashboard</a></li>
-        <li class="nav-item"><a class="nav-link" href="/dashboard/portfolio">Portfolio</a></li>
-        <li class="nav-item"><a class="nav-link" href="/dashboard/recommendations">Recommendations</a></li>
-        <li class="nav-item"><a class="nav-link" href="/dashboard/alerts">Alerts</a></li>
-        <li class="nav-item"><a class="nav-link" href="/dashboard/backtests">Backtests</a></li>
-        <li class="nav-item"><a class="nav-link" href="/dashboard/watchlist">Watchlist</a></li>
-        <li class="nav-item"><a class="nav-link" href="/dashboard/account">Account</a></li>
+        <li class="nav-item"><a class="nav-link" href="/dashboard">{{T .Lang "nav.dashboard"}}</a></li>
+        <li class="nav-item"><a class="nav-link" href="/dashboard/portfolio">{{T .Lang "nav.portfolio"}}</a></li>
+        <li class="nav-item"><a class="nav-link" href="/dashboard/recommendations">{{T .Lang "nav.recommendations"}}</a></li>
+        <li class="nav-item"><a class="nav-link" href="/dashboard/alerts">{{T .Lang "nav.alerts"}}</a></li>
+        <li class="nav-item"><a class="nav-link" href="/dashboard/backtests">{{T .Lang "nav.backtests"}}</a></li>
+        <li class="nav-item"><a class="nav-link" href="/dashboard/watchlist">{{T .Lang "nav.watchlist"}}</a></li>
+        <li class="nav-item"><a class="nav-link" href="/dashboard/account">{{T .Lang "nav.account"}}</a></li>
       </ul>
       <div class="d-flex align-items-center gap-2">
         <div class="dropdown">
-          <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Theme</button>
+          <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">{{T .Lang "nav.theme"}}</button>
           <ul class="dropdown-menu dropdown-menu-end">
-            <li><button class="dropdown-item" type="button" data-theme-value="light">Light</button></li>
-            <li><button class="dropdown-item" type="button" data-theme-value="dark">Dark</button></li>
-            <li><button class="dropdown-item" type="button" data-theme-value="auto">Auto (system)</button></li>
+            <li><button class="dropdown-item" type="button" data-theme-value="light">{{T .Lang "nav.theme_light"}}</button></li>
+            <li><button class="dropdown-item" type="button" data-theme-value="dark">{{T .Lang "nav.theme_dark"}}</button></li>
+            <li><button class="dropdown-item" type="button" data-theme-value="auto">{{T .Lang "nav.theme_auto"}}</button></li>
           </ul>
         </div>
-        <form method="post" action="/logout" class="mb-0"><button class="btn btn-outline-danger btn-sm" type="submit">Log out</button></form>
+        <div class="dropdown">
+          <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">{{T .Lang "nav.language"}}</button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li>
+              <form method="post" action="/dashboard/lang" class="px-1">
+                <input type="hidden" name="lang" value="en">
+                <button type="submit" class="dropdown-item{{if eq .Lang "en"}} active{{end}}">{{T .Lang "nav.language_en"}}</button>
+              </form>
+            </li>
+            <li>
+              <form method="post" action="/dashboard/lang" class="px-1">
+                <input type="hidden" name="lang" value="pl">
+                <button type="submit" class="dropdown-item{{if eq .Lang "pl"}} active{{end}}">{{T .Lang "nav.language_pl"}}</button>
+              </form>
+            </li>
+          </ul>
+        </div>
+        <form method="post" action="/logout" class="mb-0"><button class="btn btn-outline-danger btn-sm" type="submit">{{T .Lang "nav.logout"}}</button></form>
       </div>
     </div>
   </div>

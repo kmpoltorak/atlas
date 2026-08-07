@@ -4,13 +4,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Atlas — Portfolio</title>
+  <title>{{T .Lang "portfolio.title"}}</title>
   {{template "head" .}}
 </head>
 <body>
   {{template "nav" .}}
   <main class="container pb-5">
-    <h1 class="h3 mb-4">Portfolio</h1>
+    <h1 class="h3 mb-4">{{T .Lang "portfolio.heading"}}</h1>
 
     {{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
     {{if .Success}}<div class="alert alert-success">{{.Success}}</div>{{end}}
@@ -18,7 +18,7 @@
     {{if .Positions}}
     <div class="table-responsive">
       <table class="table table-striped table-hover align-middle">
-        <thead><tr><th>Symbol</th><th>Quantity</th><th>Avg. Cost</th><th>Current Price</th><th>P&amp;L</th><th></th></tr></thead>
+        <thead><tr><th>{{T .Lang "table.symbol"}}</th><th>{{T .Lang "table.quantity"}}</th><th>{{T .Lang "table.avg_cost"}}</th><th>{{T .Lang "table.current_price"}}</th><th>{{T .Lang "table.pnl"}}</th><th></th></tr></thead>
         <tbody>
         {{range .Positions}}
         <tr>
@@ -28,9 +28,9 @@
           <td>{{printf "%.2f" .CurrentPrice}}</td>
           <td>{{printf "%.2f" (pnl .)}}</td>
           <td class="text-end">
-            <form method="post" action="/dashboard/portfolio/delete" onsubmit="return confirm('Remove {{.Symbol}} entirely? Transaction history is kept, only the current position is cleared.');">
+            <form method="post" action="/dashboard/portfolio/delete" onsubmit="return confirm('{{printf (T $.Lang "confirm.remove_position") .Symbol}}');">
               <input type="hidden" name="symbol" value="{{.Symbol}}">
-              <button type="submit" class="btn btn-outline-danger btn-sm">Remove</button>
+              <button type="submit" class="btn btn-outline-danger btn-sm">{{T $.Lang "common.remove"}}</button>
             </form>
           </td>
         </tr>
@@ -39,26 +39,26 @@
       </table>
     </div>
     {{else}}
-    <p class="text-body-secondary">No open positions yet.</p>
+    <p class="text-body-secondary">{{T .Lang "portfolio.no_positions"}}</p>
     {{end}}
 
-    <h2 class="h4 mt-5">Transaction History</h2>
+    <h2 class="h4 mt-5">{{T .Lang "portfolio.transaction_history"}}</h2>
     {{if .Transactions}}
     <div class="table-responsive">
       <table class="table table-striped table-hover align-middle">
-        <thead><tr><th>Symbol</th><th>Type</th><th>Quantity</th><th>Price</th><th>Timestamp</th><th></th></tr></thead>
+        <thead><tr><th>{{T .Lang "table.symbol"}}</th><th>{{T .Lang "table.type"}}</th><th>{{T .Lang "table.quantity"}}</th><th>{{T .Lang "table.price"}}</th><th>{{T .Lang "table.timestamp"}}</th><th></th></tr></thead>
         <tbody>
         {{range .Transactions}}
         <tr>
           <td>{{.Symbol}}</td>
-          <td class="{{actionClass .Type}}">{{.Type}}</td>
+          <td class="{{actionClass .Type}}">{{actionLabel $.Lang .Type}}</td>
           <td>{{printf "%.4f" .Quantity}}</td>
           <td>{{printf "%.2f" .Price}}</td>
           <td>{{.Timestamp}}</td>
           <td class="text-end">
-            <form method="post" action="/dashboard/portfolio/transactions/delete" onsubmit="return confirm('Remove this transaction and recompute {{.Symbol}}\'s position from what remains?');">
+            <form method="post" action="/dashboard/portfolio/transactions/delete" onsubmit="return confirm('{{printf (T $.Lang "confirm.remove_transaction") .Symbol}}');">
               <input type="hidden" name="id" value="{{.ID}}">
-              <button type="submit" class="btn btn-outline-danger btn-sm">Remove</button>
+              <button type="submit" class="btn btn-outline-danger btn-sm">{{T $.Lang "common.remove"}}</button>
             </form>
           </td>
         </tr>
@@ -67,34 +67,34 @@
       </table>
     </div>
     {{else}}
-    <p class="text-body-secondary">No transactions recorded yet.</p>
+    <p class="text-body-secondary">{{T .Lang "portfolio.no_transactions"}}</p>
     {{end}}
 
     <div class="card mt-4" style="max-width: 28rem;">
       <div class="card-body">
-        <h2 class="h5 card-title">Record a transaction</h2>
-        <p class="text-body-secondary small">The only real portfolio-write path — matches <code>POST /portfolio</code>.</p>
+        <h2 class="h5 card-title">{{T .Lang "portfolio.record_transaction"}}</h2>
+        <p class="text-body-secondary small">{{T .Lang "portfolio.record_transaction_hint" | safeHTML}}</p>
         <form method="post" action="/dashboard/portfolio">
           <div class="mb-3">
-            <label class="form-label">Symbol</label>
+            <label class="form-label">{{T .Lang "table.symbol"}}</label>
             <input type="text" class="form-control text-uppercase" name="symbol" required>
           </div>
           <div class="mb-3">
-            <label class="form-label">Type</label>
+            <label class="form-label">{{T .Lang "table.type"}}</label>
             <select class="form-select" name="type">
-              <option value="BUY">BUY</option>
-              <option value="SELL">SELL</option>
+              <option value="BUY">{{T .Lang "action.BUY"}}</option>
+              <option value="SELL">{{T .Lang "action.SELL"}}</option>
             </select>
           </div>
           <div class="mb-3">
-            <label class="form-label">Quantity</label>
+            <label class="form-label">{{T .Lang "table.quantity"}}</label>
             <input type="number" step="any" min="0" class="form-control" name="quantity" required>
           </div>
           <div class="mb-3">
-            <label class="form-label">Price</label>
+            <label class="form-label">{{T .Lang "table.price"}}</label>
             <input type="number" step="any" min="0" class="form-control" name="price" required>
           </div>
-          <button type="submit" class="btn btn-primary">Record transaction</button>
+          <button type="submit" class="btn btn-primary">{{T .Lang "portfolio.record_submit"}}</button>
         </form>
       </div>
     </div>

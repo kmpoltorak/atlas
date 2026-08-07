@@ -4,26 +4,26 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Atlas — Alerts</title>
+  <title>{{T .Lang "alerts.title"}}</title>
   {{template "head" .}}
 </head>
 <body>
   {{template "nav" .}}
   <main class="container pb-5">
-    <h1 class="h3 mb-1">Alerts</h1>
-    <p class="text-body-secondary small mb-4">Every watchlist symbol whose current recommendation isn't HOLD.</p>
+    <h1 class="h3 mb-1">{{T .Lang "alerts.heading"}}</h1>
+    <p class="text-body-secondary small mb-4">{{T .Lang "alerts.subtitle"}}</p>
 
     {{if .Warning}}<div class="alert alert-danger">{{.Warning}}</div>{{end}}
 
     {{if .Alerts}}
     <div class="table-responsive">
       <table class="table table-striped table-hover align-middle">
-        <thead><tr><th>Symbol</th><th>Action</th><th>Confidence</th><th>Triggered At</th><th>Reason</th></tr></thead>
+        <thead><tr><th>{{T .Lang "table.symbol"}}</th><th>{{T .Lang "table.action"}}</th><th>{{T .Lang "table.confidence"}}</th><th>{{T .Lang "table.triggered_at"}}</th><th>{{T .Lang "table.reason"}}</th></tr></thead>
         <tbody>
         {{range .Alerts}}
         <tr>
           <td>{{.Recommendation.Symbol}}</td>
-          <td class="{{actionClass .Recommendation.Action}}">{{.Recommendation.Action}}</td>
+          <td class="{{actionClass .Recommendation.Action}}">{{actionLabel $.Lang .Recommendation.Action}}</td>
           <td>{{printf "%.0f%%" (percent .Recommendation.Confidence)}}</td>
           <td>{{.TriggeredAt}}</td>
           <td>{{join .Recommendation.Reason}}</td>
@@ -33,7 +33,7 @@
       </table>
     </div>
     {{else}}
-    <p class="text-body-secondary">No active alerts — every watched symbol is currently HOLD, or the watchlist is empty.</p>
+    <p class="text-body-secondary">{{T .Lang "alerts.empty"}}</p>
     {{end}}
   </main>
   {{template "scripts" .}}

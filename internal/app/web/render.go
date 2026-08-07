@@ -38,6 +38,14 @@ var funcMap = template.FuncMap{
 	// plain custom class can beat without !important of its own, so fighting that with more
 	// custom CSS is the wrong tool here.
 	"actionClass": actionClass,
+	// T and actionLabel are the i18n lookups (see i18n.go) — every page passes its own .Lang
+	// through so these can be called as {{T .Lang "key"}} / {{actionLabel .Lang .Action}}.
+	"T":           T,
+	"actionLabel": actionLabel,
+	// safeHTML marks a translation value as pre-trusted HTML (a static <a>/<code> tag baked into
+	// translations.go, never user input) so html/template doesn't escape it — see i18n.go's
+	// translations doc comment for the safety contract this depends on.
+	"safeHTML": func(s string) template.HTML { return template.HTML(s) }, //nolint:gosec // trusted, hardcoded translation strings only
 }
 
 func actionClass(action string) string {

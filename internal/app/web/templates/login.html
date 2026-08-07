@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Atlas — Log in</title>
+  <title>{{T .Lang "login.title"}}</title>
   {{template "head" .}}
 </head>
 <body>
@@ -12,24 +12,24 @@
     <div class="card shadow-sm" style="width: 100%; max-width: 24rem;">
       <div class="card-body p-4">
         <h1 class="h4 mb-1">Atlas</h1>
-        <p class="text-body-secondary small mb-3">AI portfolio decision support — sign in to continue.</p>
+        <p class="text-body-secondary small mb-3">{{T .Lang "login.subtitle"}}</p>
         {{if .Error}}<div class="alert alert-danger py-2">{{.Error}}</div>{{end}}
         <form method="post" action="/login">
           <div class="mb-3">
-            <label class="form-label">Username</label>
+            <label class="form-label">{{T .Lang "login.username"}}</label>
             <input type="text" class="form-control" name="username" autocomplete="username" required autofocus>
           </div>
           <div class="mb-3">
-            <label class="form-label">Password</label>
+            <label class="form-label">{{T .Lang "login.password"}}</label>
             <input type="password" class="form-control" name="password" autocomplete="current-password" required>
           </div>
           {{if .RequiresTOTP}}
           <div class="mb-3">
-            <label class="form-label">2FA code</label>
+            <label class="form-label">{{T .Lang "login.totp_code"}}</label>
             <input type="text" class="form-control" name="totp" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" required>
           </div>
           {{end}}
-          <button type="submit" class="btn btn-primary w-100">Log in</button>
+          <button type="submit" class="btn btn-primary w-100">{{T .Lang "login.submit"}}</button>
         </form>
       </div>
     </div>

@@ -19,6 +19,7 @@ import (
 // fresh from TOTPStore on every request (a.Auth.TOTPStatus()), not fixed at startup — 2FA can
 // be enabled/disabled from the dashboard at any time.
 func (a *Application) loginPageHandler(w http.ResponseWriter, r *http.Request) {
+	lang := a.resolveLang(r)
 	switch r.Method {
 	case http.MethodGet:
 		if !a.Auth.Enabled() {
@@ -30,11 +31,11 @@ func (a *Application) loginPageHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		web.Render(w, "login", web.LoginPage{RequiresTOTP: requiresTOTP})
+		web.Render(w, "login", web.LoginPage{Lang: lang, RequiresTOTP: requiresTOTP})
 	case http.MethodPost:
 		requiresTOTP, statusErr := a.Auth.TOTPStatus()
 		if err := r.ParseForm(); err != nil {
-			web.Render(w, "login", web.LoginPage{Error: "Invalid form submission.", RequiresTOTP: requiresTOTP})
+			web.Render(w, "login", web.LoginPage{Lang: lang, Error: "Invalid form submission.", RequiresTOTP: requiresTOTP})
 			return
 		}
 		token, err := a.Auth.Login(r.Context(), r.FormValue("username"), r.FormValue("password"), r.FormValue("totp"))
@@ -43,7 +44,7 @@ func (a *Application) loginPageHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, statusErr.Error(), http.StatusInternalServerError)
 				return
 			}
-			web.Render(w, "login", web.LoginPage{Error: "Invalid username, password, or verification code.", RequiresTOTP: requiresTOTP})
+			web.Render(w, "login", web.LoginPage{Lang: lang, Error: "Invalid username, password, or verification code.", RequiresTOTP: requiresTOTP})
 			return
 		}
 		http.SetCookie(w, &http.Cookie{
@@ -86,7 +87,7 @@ func (a *Application) dashboardPageHandler(w http.ResponseWriter, r *http.Reques
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	web.Render(w, "dashboard", web.DashboardPage{Positions: positions, Risk: risk})
+	web.Render(w, "dashboard", web.DashboardPage{Lang: a.resolveLang(r), Positions: positions, Risk: risk})
 }
 
 // portfolioPageHandler lists positions (GET) and records a transaction (POST) — the dashboard
@@ -95,16 +96,16 @@ func (a *Application) dashboardPageHandler(w http.ResponseWriter, r *http.Reques
 func (a *Application) portfolioPageHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		a.renderPortfolioPage(w, "", "")
+		a.renderPortfolioPage(w, r, "", "")
 	case http.MethodPost:
 		if err := r.ParseForm(); err != nil {
-			a.renderPortfolioPage(w, "Invalid form submission.", "")
+			a.renderPortfolioPage(w, r, "Invalid form submission.", "")
 			return
 		}
 		quantity, qErr := strconv.ParseFloat(r.FormValue("quantity"), 64)
 		price, pErr := strconv.ParseFloat(r.FormValue("price"), 64)
 		if qErr != nil || pErr != nil {
-			a.renderPortfolioPage(w, "Quantity and price must both be numbers.", "")
+			a.renderPortfolioPage(w, r, "Quantity and price must both be numbers.", "")
 			return
 		}
 		tx := portfolio.Transaction{
@@ -114,10 +115,10 @@ func (a *Application) portfolioPageHandler(w http.ResponseWriter, r *http.Reques
 			Price:    price,
 		}
 		if err := a.Portfolio.RecordTransaction(tx); err != nil {
-			a.renderPortfolioPage(w, err.Error(), "")
+			a.renderPortfolioPage(w, r, err.Error(), "")
 			return
 		}
-		a.renderPortfolioPage(w, "", "Transaction recorded.")
+		a.renderPortfolioPage(w, r, "", "Transaction recorded.")
 	default:
 		methodNotAllowed(w)
 	}
@@ -133,15 +134,15 @@ func (a *Application) portfolioDeleteHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		a.renderPortfolioPage(w, "Invalid form submission.", "")
+		a.renderPortfolioPage(w, r, "Invalid form submission.", "")
 		return
 	}
 	symbol := strings.ToUpper(strings.TrimSpace(r.FormValue("symbol")))
 	if err := a.Portfolio.RemovePosition(symbol); err != nil {
-		a.renderPortfolioPage(w, err.Error(), "")
+		a.renderPortfolioPage(w, r, err.Error(), "")
 		return
 	}
-	a.renderPortfolioPage(w, "", "Removed "+symbol+" from your positions.")
+	a.renderPortfolioPage(w, r, "", "Removed "+symbol+" from your positions.")
 }
 
 // portfolioTransactionDeleteHandler removes one historical transaction by id (see
@@ -155,18 +156,18 @@ func (a *Application) portfolioTransactionDeleteHandler(w http.ResponseWriter, r
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		a.renderPortfolioPage(w, "Invalid form submission.", "")
+		a.renderPortfolioPage(w, r, "Invalid form submission.", "")
 		return
 	}
 	id := r.FormValue("id")
 	if err := a.Portfolio.RemoveTransaction(id); err != nil {
-		a.renderPortfolioPage(w, err.Error(), "")
+		a.renderPortfolioPage(w, r, err.Error(), "")
 		return
 	}
-	a.renderPortfolioPage(w, "", "Transaction removed and position recomputed.")
+	a.renderPortfolioPage(w, r, "", "Transaction removed and position recomputed.")
 }
 
-func (a *Application) renderPortfolioPage(w http.ResponseWriter, errMsg, successMsg string) {
+func (a *Application) renderPortfolioPage(w http.ResponseWriter, r *http.Request, errMsg, successMsg string) {
 	positions, err := a.Portfolio.GetPositions()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -183,7 +184,7 @@ func (a *Application) renderPortfolioPage(w http.ResponseWriter, errMsg, success
 		return
 	}
 	web.Render(w, "portfolio", web.PortfolioPage{
-		Positions: positions, Transactions: transactions, Risk: risk, Error: errMsg, Success: successMsg,
+		Lang: a.resolveLang(r), Positions: positions, Transactions: transactions, Risk: risk, Error: errMsg, Success: successMsg,
 	})
 }
 
@@ -211,7 +212,7 @@ func (a *Application) recommendationsPageHandler(w http.ResponseWriter, r *http.
 		return
 	}
 	symbol := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("symbol")))
-	data := web.RecommendationsPage{Symbol: symbol}
+	data := web.RecommendationsPage{Lang: a.resolveLang(r), Symbol: symbol}
 	if symbols, err := a.watchlistSymbols(); err == nil {
 		data.Symbols = symbols
 	}
@@ -241,7 +242,7 @@ func (a *Application) alertsPageHandler(w http.ResponseWriter, r *http.Request) 
 	for _, alert := range result {
 		a.persistRecommendation(alert.Recommendation)
 	}
-	data := web.AlertsPage{Alerts: result}
+	data := web.AlertsPage{Lang: a.resolveLang(r), Alerts: result}
 	if err != nil {
 		data.Warning = err.Error()
 	}
@@ -270,7 +271,7 @@ func (a *Application) backtestsPageHandler(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	data := web.BacktestsPage{Symbol: symbol, Window: window, Capital: capital}
+	data := web.BacktestsPage{Lang: a.resolveLang(r), Symbol: symbol, Window: window, Capital: capital}
 	if symbols, err := a.watchlistSymbols(); err == nil {
 		data.Symbols = symbols
 	}
@@ -293,18 +294,18 @@ func (a *Application) backtestsPageHandler(w http.ResponseWriter, r *http.Reques
 func (a *Application) watchlistPageHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		a.renderWatchlistPage(w, "", "")
+		a.renderWatchlistPage(w, r, "", "")
 	case http.MethodPost:
 		if err := r.ParseForm(); err != nil {
-			a.renderWatchlistPage(w, "Invalid form submission.", "")
+			a.renderWatchlistPage(w, r, "Invalid form submission.", "")
 			return
 		}
 		symbol := strings.ToUpper(strings.TrimSpace(r.FormValue("symbol")))
 		if err := a.Watchlist.Add(symbol, time.Now().UTC().Format(time.RFC3339)); err != nil {
-			a.renderWatchlistPage(w, err.Error(), "")
+			a.renderWatchlistPage(w, r, err.Error(), "")
 			return
 		}
-		a.renderWatchlistPage(w, "", "Added "+symbol+" to the watchlist.")
+		a.renderWatchlistPage(w, r, "", "Added "+symbol+" to the watchlist.")
 	default:
 		methodNotAllowed(w)
 	}
@@ -318,24 +319,24 @@ func (a *Application) watchlistDeleteHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		a.renderWatchlistPage(w, "Invalid form submission.", "")
+		a.renderWatchlistPage(w, r, "Invalid form submission.", "")
 		return
 	}
 	symbol := strings.ToUpper(strings.TrimSpace(r.FormValue("symbol")))
 	if err := a.Watchlist.Remove(symbol); err != nil {
-		a.renderWatchlistPage(w, err.Error(), "")
+		a.renderWatchlistPage(w, r, err.Error(), "")
 		return
 	}
-	a.renderWatchlistPage(w, "", "Removed "+symbol+" from the watchlist.")
+	a.renderWatchlistPage(w, r, "", "Removed "+symbol+" from the watchlist.")
 }
 
-func (a *Application) renderWatchlistPage(w http.ResponseWriter, errMsg, successMsg string) {
+func (a *Application) renderWatchlistPage(w http.ResponseWriter, r *http.Request, errMsg, successMsg string) {
 	items, err := a.Watchlist.List()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	web.Render(w, "watchlist", web.WatchlistPage{Items: items, Error: errMsg, Success: successMsg})
+	web.Render(w, "watchlist", web.WatchlistPage{Lang: a.resolveLang(r), Items: items, Error: errMsg, Success: successMsg})
 }
 
 // accountPageHandler shows the current 2FA status and the enable/disable entry points — see
@@ -346,16 +347,16 @@ func (a *Application) accountPageHandler(w http.ResponseWriter, r *http.Request)
 		methodNotAllowed(w)
 		return
 	}
-	a.renderAccountPage(w, "", "")
+	a.renderAccountPage(w, r, "", "")
 }
 
-func (a *Application) renderAccountPage(w http.ResponseWriter, errMsg, successMsg string) {
+func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, errMsg, successMsg string) {
 	enabled, err := a.Auth.TOTPStatus()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	web.Render(w, "account", web.AccountPage{Username: a.Auth.Username, TOTPEnabled: enabled, Error: errMsg, Success: successMsg})
+	web.Render(w, "account", web.AccountPage{Lang: a.resolveLang(r), Username: a.Auth.Username, TOTPEnabled: enabled, Error: errMsg, Success: successMsg})
 }
 
 // totpSetupHandler starts a new enrollment (authUC.UseCase.BeginTOTPEnrollment) and renders the
@@ -376,7 +377,7 @@ func (a *Application) totpSetupHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	web.Render(w, "totp_enroll", web.TOTPEnrollPage{Secret: secret})
+	web.Render(w, "totp_enroll", web.TOTPEnrollPage{Lang: a.resolveLang(r), Secret: secret})
 }
 
 // totpQRHandler serves the pending enrollment's QR code as a PNG image — rendered via
@@ -429,15 +430,15 @@ func (a *Application) totpConfirmHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		web.Render(w, "totp_enroll", web.TOTPEnrollPage{Error: "Invalid form submission."})
+		web.Render(w, "totp_enroll", web.TOTPEnrollPage{Lang: a.resolveLang(r), Error: "Invalid form submission."})
 		return
 	}
 	if err := a.Auth.ConfirmTOTPEnrollment(r.Context(), cookie.Value, r.FormValue("code")); err != nil {
 		secret, _, _ := a.Auth.PendingTOTPSecret(r.Context(), cookie.Value)
-		web.Render(w, "totp_enroll", web.TOTPEnrollPage{Secret: secret, Error: "Incorrect code — try again."})
+		web.Render(w, "totp_enroll", web.TOTPEnrollPage{Lang: a.resolveLang(r), Secret: secret, Error: "Incorrect code — try again."})
 		return
 	}
-	a.renderAccountPage(w, "", "Two-factor authentication is now enabled.")
+	a.renderAccountPage(w, r, "", "Two-factor authentication is now enabled.")
 }
 
 // totpDisableHandler turns 2FA off after re-verifying the current password (authUC.UseCase.
@@ -449,12 +450,12 @@ func (a *Application) totpDisableHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		a.renderAccountPage(w, "Invalid form submission.", "")
+		a.renderAccountPage(w, r, "Invalid form submission.", "")
 		return
 	}
 	if err := a.Auth.DisableTOTP(r.FormValue("password")); err != nil {
-		a.renderAccountPage(w, "Incorrect password.", "")
+		a.renderAccountPage(w, r, "Incorrect password.", "")
 		return
 	}
-	a.renderAccountPage(w, "", "Two-factor authentication has been disabled.")
+	a.renderAccountPage(w, r, "", "Two-factor authentication has been disabled.")
 }

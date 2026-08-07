@@ -1,0 +1,59 @@
+package app
+
+import (
+	"net/http"
+
+	"atlas/internal/app/web"
+)
+
+// langCookieName holds the dashboard's display-language preference (see web.Lang) — separate
+// from sessionCookieName since it's a UI preference, not an auth credential, and (unlike the
+// session) should survive logout and persist for a long time.
+const langCookieName = "atlas_lang"
+
+// langCookieMaxAge is a year: a display preference, not a session, so it should stick around.
+const langCookieMaxAge = 365 * 24 * 60 * 60
+
+// resolveLang reads the caller's language preference from langCookieName, defaulting to
+// web.DefaultLang when the cookie is absent or holds a value Atlas doesn't have translations
+// for (e.g. a stale cookie from a removed language, or tampering).
+func (a *Application) resolveLang(r *http.Request) web.Lang {
+	cookie, err := r.Cookie(langCookieName)
+	if err != nil {
+		return web.DefaultLang
+	}
+	lang := web.Lang(cookie.Value)
+	if !web.ValidLang(lang) {
+		return web.DefaultLang
+	}
+	return lang
+}
+
+// langSetHandler sets the language cookie and redirects back to whatever page the switcher was
+// submitted from (the nav's language dropdown, present on every dashboard page) — see
+// templates/partials.html's "nav" block. Switching language needs a real page reload (unlike
+// the theme switch, which is pure client-side CSS), since translated text is rendered
+// server-side.
+func (a *Application) langSetHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+		return
+	}
+	lang := web.Lang(r.FormValue("lang"))
+	if !web.ValidLang(lang) {
+		lang = web.DefaultLang
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: langCookieName, Value: string(lang), Path: "/",
+		MaxAge: langCookieMaxAge, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+	})
+	redirect := r.Referer()
+	if redirect == "" {
+		redirect = "/dashboard"
+	}
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
+}
