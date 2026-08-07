@@ -32,12 +32,34 @@ and `REDIS_HOST` in `configmap.yaml` at wherever those end up living.
 kubectl apply -f deploy/namespace.yaml
 kubectl create secret generic atlas-api-secrets -n atlas \
   --from-literal=DATABASE_PASSWORD='...' \
-  --from-literal=DISCORD_WEBHOOK_URL='...'
+  --from-literal=DISCORD_WEBHOOK_URL='...' \
+  --from-literal=ADMIN_PASSWORD_HASH='...'
 kubectl apply -f deploy/ -n atlas
 ```
 
 (The explicit `kubectl create secret` step is deliberate — `secret.yaml`'s placeholder values
 should never actually be applied as-is.)
+
+Omit `ADMIN_PASSWORD_HASH` (and leave `ADMIN_USERNAME` unset in `configmap.yaml`) to deploy with
+no login gate at all, matching local Docker Compose's default. See "Login credentials" below for
+how to generate the hash.
+
+## Login credentials
+
+The dashboard/API login gate is opt-in (see `configmap.yaml`'s `ADMIN_USERNAME` and this
+directory's `ADMIN_PASSWORD_HASH`, above). To set your own:
+
+```bash
+go run ./cmd/generate-admin-credentials
+# prompts for a password on stderr, prints ADMIN_PASSWORD_HASH=$2a$... on stdout
+```
+
+Then set `ADMIN_USERNAME` to whatever you want in `configmap.yaml`, and pass the printed hash as
+`ADMIN_PASSWORD_HASH` to the `kubectl create secret` command above (or, for local Docker Compose,
+export both as env vars before `docker compose up` — see `docker-compose.yml`'s comment next to
+`ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH`). 2FA is not configured here at all — once logged in, turn
+it on from the dashboard's Account page (Account → Set up 2FA → scan the QR code with an
+authenticator app).
 
 ## Not yet done
 
