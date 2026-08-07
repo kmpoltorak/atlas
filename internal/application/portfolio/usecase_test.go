@@ -315,3 +315,67 @@ func TestRemoveTransactionRejectsEmptyID(t *testing.T) {
 		t.Fatal("expected error for empty id")
 	}
 }
+
+// TestRemoveTransactionsDeletesAcrossSymbols proves a bulk delete recomputes every affected
+// symbol correctly, not just the first one — each id goes through the same RemoveTransaction
+// path individually, so a batch spanning AAPL and MSFT must leave both positions as if only
+// their own remaining transactions had ever been recorded.
+func TestRemoveTransactionsDeletesAcrossSymbols(t *testing.T) {
+	uc := NewUseCase()
+	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Timestamp: "2026-01-01T00:00:00Z"})
+	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 5, Price: 200, Timestamp: "2026-01-02T00:00:00Z"})
+	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "MSFT", Type: "BUY", Quantity: 3, Price: 300, Timestamp: "2026-01-03T00:00:00Z"})
+
+	aaplSecondBuyID := uc.Transactions[1].ID
+	msftBuyID := uc.Transactions[2].ID
+
+	if err := uc.RemoveTransactions([]string{aaplSecondBuyID, msftBuyID}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(uc.Transactions) != 1 {
+		t.Fatalf("expected only the first AAPL BUY left, got %+v", uc.Transactions)
+	}
+	positions, _ := uc.GetPositions()
+	if len(positions) != 2 {
+		t.Fatalf("expected both positions to still be present rows, got %+v", positions)
+	}
+	aapl := positions[findPositionIndex(positions, "AAPL")]
+	if aapl.Quantity != 10 || aapl.AverageCost != 100 {
+		t.Fatalf("expected AAPL 10@100 (as if the second BUY never happened), got %+v", aapl)
+	}
+	msft := positions[findPositionIndex(positions, "MSFT")]
+	if msft.Quantity != 0 {
+		// recomputePosition zeroes out (rather than removes) a position once its last
+		// transaction is gone — the same behavior a single RemoveTransaction already has;
+		// RemovePosition is the separate explicit action that actually drops the row.
+		t.Fatalf("expected MSFT zeroed out (its only transaction was removed), got %+v", msft)
+	}
+}
+
+// TestRemoveTransactionsJoinsErrorsButDeletesTheRest proves one bad id in a batch doesn't block
+// the others from being removed.
+func TestRemoveTransactionsJoinsErrorsButDeletesTheRest(t *testing.T) {
+	uc := NewUseCase()
+	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Timestamp: "2026-01-01T00:00:00Z"})
+	realID := uc.Transactions[0].ID
+
+	err := uc.RemoveTransactions([]string{"", realID})
+	if err == nil {
+		t.Fatal("expected an error for the empty id")
+	}
+	if len(uc.Transactions) != 0 {
+		t.Fatalf("expected the real id to still be deleted despite the other error, got %+v", uc.Transactions)
+	}
+}
+
+func TestRemoveTransactionsEmptyListIsANoop(t *testing.T) {
+	uc := NewUseCase()
+	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Timestamp: "2026-01-01T00:00:00Z"})
+	if err := uc.RemoveTransactions(nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(uc.Transactions) != 1 {
+		t.Fatalf("expected the existing transaction untouched, got %+v", uc.Transactions)
+	}
+}

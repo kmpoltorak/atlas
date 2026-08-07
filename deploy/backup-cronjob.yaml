@@ -35,8 +35,17 @@ spec:
       template:
         spec:
           restartPolicy: OnFailure
+          # runAsUser/fsGroup are explicit, not left to the image's default — confirmed live on
+          # a real cluster (minikube) that timescale/timescaledb has no non-root default user
+          # (unlike this repo's own atlas-api image), so runAsNonRoot alone made every backup Job
+          # fail immediately ("image will run as root"), and fsGroup is what actually makes the
+          # mounted PVC writable by that non-root UID (this container never runs the Postgres
+          # server itself, just pg_dump/find as a client, so no other image-specific permissions
+          # are needed).
           securityContext:
             runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
             seccompProfile:
               type: RuntimeDefault
           containers:

@@ -44,30 +44,39 @@
 
     <h2 class="h4 mt-5">{{T .Lang "portfolio.transaction_history"}}</h2>
     {{if .Transactions}}
-    <div class="table-responsive">
-      <table class="table table-striped table-hover align-middle">
-        <thead><tr><th>{{T .Lang "table.symbol"}}</th><th>{{T .Lang "table.type"}}</th><th>{{T .Lang "table.quantity"}}</th><th>{{T .Lang "table.price"}}</th><th>{{T .Lang "table.currency"}}</th><th>{{T .Lang "table.pln_equivalent"}}</th><th>{{T .Lang "table.timestamp"}}</th><th></th></tr></thead>
-        <tbody>
-        {{range .Transactions}}
-        <tr>
-          <td>{{.Symbol}}</td>
-          <td class="{{actionClass .Type}}">{{actionLabel $.Lang .Type}}</td>
-          <td>{{printf "%.4f" .Quantity}}</td>
-          <td>{{printf "%.2f" .Price}}</td>
-          <td>{{.Currency}}</td>
-          <td>{{printf "%.2f" .PriceInPLN}}</td>
-          <td>{{.Timestamp}}</td>
-          <td class="text-end">
-            <form method="post" action="/dashboard/portfolio/transactions/delete" onsubmit="return confirm('{{printf (T $.Lang "confirm.remove_transaction") .Symbol}}');">
-              <input type="hidden" name="id" value="{{.ID}}">
-              <button type="submit" class="btn btn-outline-danger btn-sm">{{T $.Lang "common.remove"}}</button>
-            </form>
-          </td>
-        </tr>
-        {{end}}
-        </tbody>
-      </table>
-    </div>
+    <form method="post" action="/dashboard/portfolio/transactions/bulk-delete" id="transactionsForm"
+          data-confirm-bulk="{{T .Lang "confirm.remove_transactions_bulk"}}">
+      <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle">
+          <thead><tr>
+            <th><input type="checkbox" class="form-check-input" id="selectAllTransactions" aria-label="{{T .Lang "table.select_all"}}"></th>
+            <th>{{T .Lang "table.symbol"}}</th><th>{{T .Lang "table.type"}}</th><th>{{T .Lang "table.quantity"}}</th><th>{{T .Lang "table.price"}}</th><th>{{T .Lang "table.currency"}}</th><th>{{T .Lang "table.pln_equivalent"}}</th><th>{{T .Lang "table.timestamp"}}</th><th></th>
+          </tr></thead>
+          <tbody>
+          {{range .Transactions}}
+          <tr>
+            <td><input type="checkbox" class="form-check-input transaction-checkbox" name="ids" value="{{.ID}}"></td>
+            <td>{{.Symbol}}</td>
+            <td class="{{actionClass .Type}}">{{actionLabel $.Lang .Type}}</td>
+            <td>{{printf "%.4f" .Quantity}}</td>
+            <td>{{printf "%.2f" .Price}}</td>
+            <td>{{.Currency}}</td>
+            <td>{{printf "%.2f" .PriceInPLN}}</td>
+            <td>{{.Timestamp}}</td>
+            <td class="text-end">
+              <button type="submit" formaction="/dashboard/portfolio/transactions/delete" name="id" value="{{.ID}}"
+                      class="btn btn-outline-danger btn-sm"
+                      onclick="return confirm('{{printf (T $.Lang "confirm.remove_transaction") .Symbol}}');">{{T $.Lang "common.remove"}}</button>
+            </td>
+          </tr>
+          {{end}}
+          </tbody>
+        </table>
+      </div>
+      <button type="submit" class="btn btn-outline-danger" id="bulkDeleteTransactionsBtn" disabled>
+        {{T .Lang "portfolio.delete_selected"}} (<span id="selectedTransactionCount">0</span>)
+      </button>
+    </form>
     {{else}}
     <p class="text-body-secondary">{{T .Lang "portfolio.no_transactions"}}</p>
     {{end}}
@@ -112,6 +121,43 @@
     </div>
   </main>
   {{template "scripts" .}}
+  {{if .Transactions}}
+  <script>
+    (() => {
+      'use strict'
+      const form = document.getElementById('transactionsForm')
+      const selectAll = document.getElementById('selectAllTransactions')
+      const rowBoxes = () => Array.from(document.querySelectorAll('.transaction-checkbox'))
+      const bulkBtn = document.getElementById('bulkDeleteTransactionsBtn')
+      const countEl = document.getElementById('selectedTransactionCount')
+
+      const refresh = () => {
+        const checked = rowBoxes().filter(cb => cb.checked)
+        countEl.textContent = checked.length
+        bulkBtn.disabled = checked.length === 0
+        selectAll.checked = checked.length > 0 && checked.length === rowBoxes().length
+        selectAll.indeterminate = checked.length > 0 && checked.length < rowBoxes().length
+      }
+
+      selectAll.addEventListener('change', () => {
+        rowBoxes().forEach(cb => { cb.checked = selectAll.checked })
+        refresh()
+      })
+      rowBoxes().forEach(cb => cb.addEventListener('change', refresh))
+
+      form.addEventListener('submit', event => {
+        // Only intercept the bulk-delete submit — per-row Remove buttons use their own
+        // formaction + onclick confirm and should submit unconditionally.
+        if (document.activeElement !== bulkBtn) return
+        const count = rowBoxes().filter(cb => cb.checked).length
+        const message = form.dataset.confirmBulk.replace('%d', count)
+        if (!confirm(message)) event.preventDefault()
+      })
+
+      refresh()
+    })()
+  </script>
+  {{end}}
 </body>
 </html>
 {{end}}

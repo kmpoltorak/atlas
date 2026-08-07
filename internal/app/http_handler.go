@@ -35,6 +35,7 @@ func (a *Application) NewHandler() http.Handler {
 	mux.HandleFunc("/dashboard/portfolio", a.portfolioPageHandler)
 	mux.HandleFunc("/dashboard/portfolio/delete", a.portfolioDeleteHandler)
 	mux.HandleFunc("/dashboard/portfolio/transactions/delete", a.portfolioTransactionDeleteHandler)
+	mux.HandleFunc("/dashboard/portfolio/transactions/bulk-delete", a.portfolioTransactionBulkDeleteHandler)
 	mux.HandleFunc("/dashboard/recommendations", a.recommendationsPageHandler)
 	mux.HandleFunc("/dashboard/alerts", a.alertsPageHandler)
 	mux.HandleFunc("/dashboard/backtests", a.backtestsPageHandler)

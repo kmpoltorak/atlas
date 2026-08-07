@@ -133,6 +133,12 @@ var translations = map[string]map[Lang]string{
 		LangEN: "Remove this transaction and recompute %s's position from what remains?",
 		LangPL: "Usunąć tę transakcję i przeliczyć pozycję %s na podstawie pozostałych?",
 	},
+	"confirm.remove_transactions_bulk": {
+		LangEN: "Remove %d selected transaction(s) and recompute the affected positions from what remains?",
+		LangPL: "Usunąć %d wybranych transakcji i przeliczyć dotknięte pozycje na podstawie pozostałych?",
+	},
+	"portfolio.delete_selected": {LangEN: "Delete selected", LangPL: "Usuń zaznaczone"},
+	"table.select_all":          {LangEN: "Select all", LangPL: "Zaznacz wszystkie"},
 
 	// Recommendations (recommendations.html)
 	"recommendations.title":     {LangEN: "Atlas — Recommendations", LangPL: "Atlas — Rekomendacje"},
