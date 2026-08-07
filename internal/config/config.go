@@ -21,6 +21,7 @@ type Config struct {
 	CollectorWindow    int
 	AlertPollSeconds   int
 	ModelPath          string
+	RecoveryModelPath  string
 	LibOnnxRuntimePath string
 	AdminUsername      string
 	AdminPasswordHash  string
@@ -49,10 +50,13 @@ func Load() Config {
 		// providers/yahoo.go's User-Agent workaround for why that's a real concern here).
 		// internal/app/alerts_loop.go duplicates this as a fallback for the same reason.
 		AlertPollSeconds: envOrDefaultInt("ALERT_POLL_INTERVAL_SECONDS", 300),
-		// Both default to "": absent means "no trained model available", which is a normal,
+		// All three default to "": absent means "no trained model available", which is a normal,
 		// non-fatal startup state (see internal/application/ml) — Atlas falls back to the
-		// deterministic RSI-derived stub rather than failing to start. See training/README.md.
+		// deterministic RSI-derived stub (correction) / stays 0 (recovery) rather than failing
+		// to start. See training/README.md. RecoveryModelPath is a genuinely separate, optional
+		// model from ModelPath — either, both, or neither can be loaded independently.
 		ModelPath:          envOrDefault("MODEL_PATH", ""),
+		RecoveryModelPath:  envOrDefault("RECOVERY_MODEL_PATH", ""),
 		LibOnnxRuntimePath: envOrDefault("LIBONNXRUNTIME_PATH", ""),
 		// Both default to "": absent means auth is disabled and Atlas runs with no login gate at
 		// all, exactly as it did before this feature existed — the same non-fatal-optional

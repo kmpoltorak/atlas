@@ -17,14 +17,32 @@ backtesting gap, now real — see docs/backtesting.md); and `expected_duration`/
 (the predictions table columns beyond `correction_probability`) still stay NULL — no model
 produces those yet.
 
-**Recovery probability**: `ml.Prediction.RecoveryProbability` exists as a field, and
-`ml.ComputeRecoveryLabel`/`RecoveryLabelParams` (internal/application/ml/labels.go) is a real,
-tested label definition — "did a correction recover to its pre-drop price within N bars of the
-breach" — ready for `cmd/export-training-data` to use. No model trains against it yet: as of this
-note the real accumulated dataset is 1 symbol, a few hundred bars — nowhere near enough real
-correction+recovery events across enough symbols/history to train this honestly (see this
-project's standing rule against training on synthetic data). `RecoveryProbability` stays exactly
-0 in every real prediction until that changes — this is the contract, not the capability.
+**Recovery probability**: real now, trained on real accumulated history — `ml.
+ComputeRecoveryLabel`/`RecoveryLabelParams` (internal/application/ml/labels.go) defines "did a
+correction recover to its pre-drop price within N bars of the breach," `cmd/
+export-training-data -label-type=recovery` exports it (only rows where a correction actually
+occurred get a label — recovery isn't a meaningful question otherwise), and `training/train.py
+--target recovery` trains and exports it exactly like the correction model, via the same
+procedure (only the input CSV, output filename prefix, and metadata's label definition differ).
+Go inference loads it as a second, fully independent optional model
+(`RECOVERY_MODEL_PATH`/`OnnxModel` — separate from `MODEL_PATH`'s correction model; either, both,
+or neither can be loaded) — verified live end-to-end (train → export → load → real HTTP
+`/predictions` response → persisted `recovery_probability`/`recovery_model_version` row, not
+NULL — migrations/010).
+
+Caveats, honestly, and more pointed than the correction model's above: the real accumulated
+dataset as of this model's first training pass is 222 rows across 7 symbols — and because a
+recovery label is only meaningful conditional on a correction having happened at all, those 222
+rows are themselves a small, skewed subset of a modest correction history, not 222 independent
+observations (many are overlapping rolling windows around the same handful of actual price
+moves). 3 of those 7 symbols (AAPL, NVDA, ORCL) have **zero** recovered examples in the data at
+all, meaning the model may be partly learning "which symbol is this" rather than genuine recovery
+dynamics. First holdout: AUC 0.83, accuracy 0.65 on an n=46 holdout — a real number, not
+fabricated, but one to read with real skepticism given the sample size and skew, not as a
+production-grade signal yet. This is the same honesty stance as `docs/backtesting.md`'s ML
+evaluation and the correction model's own first-pass caveats above — the number is printed and
+persisted to the metadata sidecar precisely so a small/overconfident model stays visible, not
+hidden.
 
 **Market condition**: real and usable today, but *not* a trained model —
 `ml.ClassifyMarketCondition` is a deterministic ADX+EMA technical-analysis rule (ADX below 20 =

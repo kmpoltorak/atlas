@@ -15,7 +15,9 @@ import (
 // training/train.py). correction_probability itself is only written when a real model produced
 // it — pred.CorrectionProbability is the unset zero value for the deterministic RSI-derived
 // stub (ml.StubModelVersion), and writing a literal 0 there would misrepresent "not computed"
-// as "computed as 0% probability."
+// as "computed as 0% probability." recovery_probability/recovery_model_version (migrations/010)
+// follow the identical convention, gated on pred.RecoveryModelVersion instead — a genuinely
+// separate, independently-optional model from the correction one above.
 func (t *TimescaleDB) SavePrediction(pred ml.Prediction) error {
 	ctx := context.Background()
 
@@ -35,10 +37,16 @@ func (t *TimescaleDB) SavePrediction(pred ml.Prediction) error {
 		correctionProbability = pred.CorrectionProbability
 	}
 
+	var recoveryProbability, recoveryModelVersion any
+	if pred.RecoveryModelVersion != "" {
+		recoveryProbability = pred.RecoveryProbability
+		recoveryModelVersion = pred.RecoveryModelVersion
+	}
+
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO predictions (symbol_id, ts, confidence, model_version, score, correction_probability)
-		 VALUES ($1, NOW(), $2, $3, $4, $5)`,
-		symbolID, pred.Confidence, pred.ModelVersion, pred.Score, correctionProbability); err != nil {
+		`INSERT INTO predictions (symbol_id, ts, confidence, model_version, score, correction_probability, recovery_probability, recovery_model_version)
+		 VALUES ($1, NOW(), $2, $3, $4, $5, $6, $7)`,
+		symbolID, pred.Confidence, pred.ModelVersion, pred.Score, correctionProbability, recoveryProbability, recoveryModelVersion); err != nil {
 		return fmt.Errorf("insert prediction for %s: %w", pred.Symbol, err)
 	}
 

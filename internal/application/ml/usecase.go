@@ -8,22 +8,32 @@ import (
 	"atlas/internal/domain/ml"
 )
 
-// UseCase defines the ML contract boundary for feature generation and prediction. Model is
-// optional (nil-safe, matching decision.Orchestrator's ML/Portfolio pattern): when unset,
-// Predict falls back to the deterministic RSI-derived stub rather than failing to start —
-// see training/README.md for how to produce a real model and NewUseCaseWithModel to wire it in.
+// UseCase defines the ML contract boundary for feature generation and prediction. Model and
+// RecoveryModel are both optional and independent (nil-safe, matching decision.Orchestrator's
+// ML/Portfolio pattern): when unset, Predict falls back to the deterministic RSI-derived stub
+// for correction probability, and leaves RecoveryProbability at 0, rather than failing to start
+// — see training/README.md for how to produce a real model and NewUseCaseWithModel(s) to wire
+// one/both in.
 type UseCase struct {
-	Model *OnnxModel
+	Model         *OnnxModel
+	RecoveryModel *OnnxModel
 }
 
 func NewUseCase() *UseCase {
 	return &UseCase{}
 }
 
-// NewUseCaseWithModel wires a loaded ONNX model in, enabling real correction-probability
-// inference in Predict.
+// NewUseCaseWithModel wires a loaded correction-probability ONNX model in, enabling real
+// inference in Predict. Leaves RecoveryModel unset — see NewUseCaseWithModels to wire both.
 func NewUseCaseWithModel(model *OnnxModel) *UseCase {
 	return &UseCase{Model: model}
+}
+
+// NewUseCaseWithModels wires both the correction-probability and recovery-probability models
+// in. Either may be nil independently — a nil recoveryModel behaves exactly like
+// NewUseCaseWithModel(model) alone.
+func NewUseCaseWithModels(model, recoveryModel *OnnxModel) *UseCase {
+	return &UseCase{Model: model, RecoveryModel: recoveryModel}
 }
 
 // GenerateFeatures returns the provided feature vectors unchanged in the first milestone.
@@ -86,12 +96,31 @@ func (u *UseCase) Predict(features ml.FeatureVector) (ml.Prediction, error) {
 	if err != nil {
 		return ml.Prediction{}, err
 	}
+
+	var recoveryProbability float64
+	var recoveryModelVersion string
+	if u.RecoveryModel != nil {
+		// Reuses the same PredictCorrectionProbability method: both models are binary XGBoost
+		// classifiers with an identical feature layout and ONNX export shape (see
+		// training/train.py) — only which label they were trained against differs, not the
+		// inference mechanics. A recovery-model inference error is non-fatal here, unlike the
+		// correction model's above: recovery is a secondary, always-optional signal (stays 0,
+		// its documented default), whereas a broken *correction* model failing loudly matters
+		// more since Score/Confidence derive from it directly.
+		if p, err := u.RecoveryModel.PredictCorrectionProbability(features); err == nil {
+			recoveryProbability = p
+			recoveryModelVersion = u.RecoveryModel.Version
+		}
+	}
+
 	return ml.Prediction{
 		// Score stays a bullish-lean signal for decision.Orchestrator.blendMLAndPortfolio's
 		// existing >=0.6/<=0.4 thresholds: a high correction probability should read as
 		// bearish (low Score), the inverse of the raw model output.
 		Score:                 1 - correctionProbability,
 		CorrectionProbability: correctionProbability,
+		RecoveryProbability:   recoveryProbability,
+		RecoveryModelVersion:  recoveryModelVersion,
 		// Distance from 0.5 as a confidence proxy: a probability near 0 or 1 is a confident
 		// prediction, one near 0.5 is not. No other confidence signal is available from a
 		// binary classifier's probability output alone.

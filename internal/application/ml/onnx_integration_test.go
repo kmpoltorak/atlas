@@ -68,3 +68,64 @@ func TestUseCasePredictWithRealModel(t *testing.T) {
 		t.Fatalf("expected Score = 1-CorrectionProbability (%v), got %v", wantScore, prediction.Score)
 	}
 }
+
+// TestUseCasePredictWithRecoveryModelPopulatesRecoveryProbability proves the second, independent
+// model wired via NewUseCaseWithModels actually flows into RecoveryProbability — reusing the same
+// smoketest fixture for both roles since this only exercises the wiring, not real recovery
+// accuracy (that's covered by training/train.py's own printed/persisted holdout metrics, not a
+// Go unit test).
+func TestUseCasePredictWithRecoveryModelPopulatesRecoveryProbability(t *testing.T) {
+	libPath := os.Getenv("TEST_ONNXRUNTIME_LIB_PATH")
+	if libPath == "" {
+		t.Skip("TEST_ONNXRUNTIME_LIB_PATH not set; skipping real ONNX Runtime integration test")
+	}
+
+	model, err := LoadOnnxModel("testdata/atlas-ml-smoketest.onnx", libPath)
+	if err != nil {
+		t.Fatalf("LoadOnnxModel failed: %v", err)
+	}
+	defer model.Close()
+
+	recoveryModel, err := LoadOnnxModel("testdata/atlas-ml-smoketest.onnx", libPath)
+	if err != nil {
+		t.Fatalf("LoadOnnxModel (recovery) failed: %v", err)
+	}
+	defer recoveryModel.Close()
+
+	uc := NewUseCaseWithModels(model, recoveryModel)
+	prediction, err := uc.Predict(domainml.FeatureVector{RSI: 65, EMA: 101, MACD: 0.3, ATR: 1.2, Volume: 1.1})
+	if err != nil {
+		t.Fatalf("Predict failed: %v", err)
+	}
+	if prediction.RecoveryProbability < 0 || prediction.RecoveryProbability > 1 {
+		t.Fatalf("expected RecoveryProbability in [0,1], got %v", prediction.RecoveryProbability)
+	}
+	if prediction.RecoveryProbability == 0 {
+		t.Fatal("expected a real (non-default-zero) RecoveryProbability from the loaded recovery model")
+	}
+}
+
+// TestUseCasePredictWithoutRecoveryModelLeavesRecoveryProbabilityZero proves the documented
+// default still holds when only the correction model is loaded (NewUseCaseWithModel, matching
+// existing callers that never mention recovery at all).
+func TestUseCasePredictWithoutRecoveryModelLeavesRecoveryProbabilityZero(t *testing.T) {
+	libPath := os.Getenv("TEST_ONNXRUNTIME_LIB_PATH")
+	if libPath == "" {
+		t.Skip("TEST_ONNXRUNTIME_LIB_PATH not set; skipping real ONNX Runtime integration test")
+	}
+
+	model, err := LoadOnnxModel("testdata/atlas-ml-smoketest.onnx", libPath)
+	if err != nil {
+		t.Fatalf("LoadOnnxModel failed: %v", err)
+	}
+	defer model.Close()
+
+	uc := NewUseCaseWithModel(model)
+	prediction, err := uc.Predict(domainml.FeatureVector{RSI: 65, EMA: 101, MACD: 0.3, ATR: 1.2, Volume: 1.1})
+	if err != nil {
+		t.Fatalf("Predict failed: %v", err)
+	}
+	if prediction.RecoveryProbability != 0 {
+		t.Fatalf("expected RecoveryProbability to stay 0 without a recovery model loaded, got %v", prediction.RecoveryProbability)
+	}
+}

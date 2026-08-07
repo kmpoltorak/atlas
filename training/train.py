@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Trains an XGBoost correction-probability classifier on the CSV produced by
-cmd/export-training-data and exports it to ONNX for Go inference.
+"""Trains an XGBoost classifier (correction-probability by default, or recovery-probability with
+--target recovery) on the CSV produced by cmd/export-training-data and exports it to ONNX for Go
+inference.
 
 Feature order (rsi, ema, macd, atr, volume) matches internal/domain/ml.FeatureVector's field
 order exactly and MUST stay in sync with internal/application/ml's ONNX-loading code — the
@@ -45,7 +46,21 @@ def main() -> int:
     parser.add_argument("--input", default="training/data/features.csv")
     parser.add_argument("--output-dir", default="training/models")
     parser.add_argument("--version", default=None, help="defaults to a timestamp-based version")
+    parser.add_argument("--target", choices=["correction", "recovery"], default="correction",
+                         help="which label this CSV contains — only affects the output model's "
+                              "filename prefix and metadata's label_definition text, the "
+                              "training procedure itself is identical either way")
     args = parser.parse_args()
+
+    model_prefix = "atlas-ml" if args.target == "correction" else "atlas-ml-recovery"
+    label_definition = (
+        "close drops >threshold_pct below the feature bar's close within horizon_bars forward "
+        "bars (see internal/application/ml.CorrectionLabelParams)"
+        if args.target == "correction" else
+        "given a correction occurred at the feature bar (see CorrectionLabelParams), whether "
+        "close recovered back to the pre-drop price within recovery_horizon_bars bars after the "
+        "correction threshold was breached (see internal/application/ml.RecoveryLabelParams)"
+    )
 
     df = pd.read_csv(args.input)
     missing = [c for c in FEATURE_ORDER + ["label"] if c not in df.columns]
@@ -93,8 +108,8 @@ def main() -> int:
     )
 
     version = args.version or ("v" + time.strftime("%Y%m%d%H%M%S"))
-    onnx_path = f"{args.output_dir}/atlas-ml-{version}.onnx"
-    metadata_path = f"{args.output_dir}/atlas-ml-{version}.json"
+    onnx_path = f"{args.output_dir}/{model_prefix}-{version}.onnx"
+    metadata_path = f"{args.output_dir}/{model_prefix}-{version}.json"
 
     with open(onnx_path, "wb") as f:
         f.write(onnx_model.SerializeToString())
@@ -109,8 +124,7 @@ def main() -> int:
         "label_distribution": {str(k): int(v) for k, v in class_counts.items()},
         "holdout_auc": auc,
         "holdout_accuracy": accuracy,
-        "label_definition": "close drops >threshold_pct below the feature bar's close within "
-                             "horizon_bars forward bars (see internal/application/ml.CorrectionLabelParams)",
+        "label_definition": label_definition,
     }
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
