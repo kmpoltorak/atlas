@@ -42,12 +42,32 @@ func TestRenderDashboardPage(t *testing.T) {
 
 func TestRenderPortfolioPage(t *testing.T) {
 	rec := httptest.NewRecorder()
-	Render(rec, "portfolio", PortfolioPage{Success: "Transaction recorded"})
+	Render(rec, "portfolio", PortfolioPage{
+		Success: "Transaction recorded",
+		Transactions: []portfolio.Transaction{
+			{ID: "tx-1", Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Timestamp: "2026-01-01T00:00:00Z"},
+		},
+	})
 	if rec.Code != 200 {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "Transaction recorded") {
-		t.Fatalf("expected success message in rendered portfolio page, got %s", rec.Body.String())
+	body := rec.Body.String()
+	if !strings.Contains(body, "Transaction recorded") {
+		t.Fatalf("expected success message in rendered portfolio page, got %s", body)
+	}
+	if !strings.Contains(body, "tx-1") || !strings.Contains(body, `action="/dashboard/portfolio/transactions/delete"`) {
+		t.Fatalf("expected the transaction row and its delete form in rendered portfolio page, got %s", body)
+	}
+}
+
+func TestRenderPortfolioPageWithoutTransactionsShowsEmptyState(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Render(rec, "portfolio", PortfolioPage{})
+	if rec.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "No transactions recorded yet.") {
+		t.Fatalf("expected an empty-state message, got %s", rec.Body.String())
 	}
 }
 

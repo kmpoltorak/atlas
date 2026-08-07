@@ -288,20 +288,31 @@ recommendations/alerts/backtest results, the full QR-code 2FA enrollment/login/d
 the Bootstrap redesign (light/dark, desktop/mobile) via real browser screenshots — all against
 the live TimescaleDB/Redis stack, not mocked.
 
-**Removing state, built in the same pass**: rather than deleting an individual historical
-transaction (which would need a transaction `id` — the domain type doesn't have one yet — and a
-real decision on how to recompute the affected position's average cost/quantity afterward),
-`portfolio.UseCase.RemovePosition`/`DELETE /portfolio`/the dashboard's "Remove" button clear a
-symbol's *current position* entirely — the actual "undo a test entry" need — while leaving the
-transaction history untouched (an append-only audit log, matching recommendations/predictions).
-`watchlist.UseCase.Remove`/`DELETE /watchlist`/the dashboard's "Remove" button do the equivalent
-for watchlist symbols. Both verified live via Docker (recorded, removed, confirmed gone from
-`GET /portfolio`/`GET /watchlist`).
+**Removing state, built in the same pass**: `portfolio.UseCase.RemovePosition`/`DELETE
+/portfolio`/the dashboard's "Remove" button clear a symbol's *current position* entirely — the
+"undo a test entry" need — while leaving the transaction history untouched (an append-only audit
+log, matching recommendations/predictions). `watchlist.UseCase.Remove`/`DELETE /watchlist`/the
+dashboard's "Remove" button do the equivalent for watchlist symbols. Both verified live via
+Docker (recorded, removed, confirmed gone from `GET /portfolio`/`GET /watchlist`).
+
+**Deleting an individual historical transaction, built in a later pass**: `Transaction` gained an
+`ID` field (`migrations/003` already had `transactions.id DEFAULT gen_random_uuid()` — nothing
+ever read it back). `portfolio.UseCase.RemoveTransaction`/`DELETE /transactions`/the dashboard's
+new Transaction History table (below Positions in `portfolio.html`, with its own "Remove" button
+per row) delete one transaction and recompute the affected symbol's position from scratch by
+replaying its remaining transactions in chronological order (`recomputePosition`/
+`applyTransaction`) — the only reliable way to undo a transaction's effect on weighted-average
+cost once later transactions have built on top of it; an in-place "subtract this one back out"
+can't be reversed cleanly in general. `GetTransactions`/`DeleteTransaction` were also added to
+the `Repository` interface and `TimescaleDB`, and `NewUseCaseWithRepository` now hydrates
+`Transactions` from storage on startup (it previously only hydrated `Positions` — transaction
+history was silently dropped on every restart before this pass, since nothing had ever needed to
+read it back). Verified live via Docker: recorded two BUYs (10@100, then 5@200, blending to a
+133.33 average cost), deleted the second, and confirmed the position recomputed to exactly
+10@100 — as if the second BUY had never happened, not some patched-up approximation.
 
 **Requirements gathered for a follow-up pass (not yet built — real design decisions needed
 first, same caution as everything else in this document)**:
-- Deleting an individual historical transaction (not just clearing the current position) — still
-  needs a transaction `id` and a decision on recomputation strategy, as above.
 - A display-language switcher (Polish/English at minimum) — needs an i18n mechanism (every
   template string routed through a lookup keyed by language, a way to persist the chosen
   language) that doesn't exist anywhere in this codebase yet; a meaningfully larger addition than

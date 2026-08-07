@@ -6,6 +6,9 @@ import "atlas/internal/domain/portfolio"
 type Repository interface {
 	GetPositions() ([]portfolio.Position, error)
 	SavePositions(positions []portfolio.Position) error
-	SaveTransaction(tx portfolio.Transaction) error
+	// SaveTransaction persists a transaction and returns its generated id.
+	SaveTransaction(tx portfolio.Transaction) (id string, err error)
+	GetTransactions() ([]portfolio.Transaction, error)
+	DeleteTransaction(id string) error
 	DeletePosition(symbol string) error
 }

@@ -101,18 +101,19 @@ func TestDeletePositionForUnknownSymbolIsANoop(t *testing.T) {
 	}
 }
 
-func TestSaveTransactionInsertsRecord(t *testing.T) {
+func TestSaveTransactionReturnsAGeneratedID(t *testing.T) {
 	db := connectTestDB(t)
 
 	tx := portfolio.Transaction{
 		Symbol: "TESTTX", Type: "BUY", Quantity: 4, Price: 25, Timestamp: "2026-08-06T00:00:00Z",
 	}
-	if err := db.SaveTransaction(tx); err != nil {
+	id, err := db.SaveTransaction(tx)
+	if err != nil {
 		t.Fatalf("SaveTransaction failed: %v", err)
 	}
-	// SaveTransaction has no read counterpart on the Repository interface (the use case
-	// keeps its own in-memory transaction log) — this only verifies the insert itself
-	// doesn't error, including the unparseable-timestamp fallback path below.
+	if id == "" {
+		t.Fatal("expected a non-empty generated id")
+	}
 }
 
 func TestSaveTransactionFallsBackOnUnparseableTimestamp(t *testing.T) {
@@ -121,7 +122,67 @@ func TestSaveTransactionFallsBackOnUnparseableTimestamp(t *testing.T) {
 	tx := portfolio.Transaction{
 		Symbol: "TESTTXBADTS", Type: "SELL", Quantity: 1, Price: 10, Timestamp: "not-a-timestamp",
 	}
-	if err := db.SaveTransaction(tx); err != nil {
+	if _, err := db.SaveTransaction(tx); err != nil {
 		t.Fatalf("expected an unparseable timestamp to fall back to now, not error: %v", err)
+	}
+}
+
+func TestGetTransactionsReturnsPersistedRows(t *testing.T) {
+	db := connectTestDB(t)
+
+	id, err := db.SaveTransaction(portfolio.Transaction{
+		Symbol: "TESTTXLIST", Type: "BUY", Quantity: 2, Price: 30, Timestamp: "2026-08-06T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("SaveTransaction failed: %v", err)
+	}
+
+	transactions, err := db.GetTransactions()
+	if err != nil {
+		t.Fatalf("GetTransactions failed: %v", err)
+	}
+	found := false
+	for _, tx := range transactions {
+		if tx.ID == id {
+			found = true
+			if tx.Symbol != "TESTTXLIST" || tx.Type != "BUY" || tx.Quantity != 2 || tx.Price != 30 {
+				t.Fatalf("unexpected transaction fields: %+v", tx)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected to find transaction %s in GetTransactions, got %+v", id, transactions)
+	}
+}
+
+func TestDeleteTransactionRemovesTheRow(t *testing.T) {
+	db := connectTestDB(t)
+
+	id, err := db.SaveTransaction(portfolio.Transaction{
+		Symbol: "TESTTXDEL", Type: "BUY", Quantity: 1, Price: 10, Timestamp: "2026-08-06T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("SaveTransaction failed: %v", err)
+	}
+
+	if err := db.DeleteTransaction(id); err != nil {
+		t.Fatalf("DeleteTransaction failed: %v", err)
+	}
+
+	transactions, err := db.GetTransactions()
+	if err != nil {
+		t.Fatalf("GetTransactions failed: %v", err)
+	}
+	for _, tx := range transactions {
+		if tx.ID == id {
+			t.Fatalf("expected transaction %s to be gone, still found: %+v", id, tx)
+		}
+	}
+}
+
+func TestDeleteTransactionForUnknownIDIsANoop(t *testing.T) {
+	db := connectTestDB(t)
+	if err := db.DeleteTransaction("00000000-0000-0000-0000-000000000000"); err != nil {
+		t.Fatalf("expected no error deleting a transaction that was never saved, got %v", err)
 	}
 }

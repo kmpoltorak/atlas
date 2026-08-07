@@ -136,3 +136,77 @@ func TestRemovePositionRejectsEmptySymbol(t *testing.T) {
 		t.Fatal("expected error for empty symbol")
 	}
 }
+
+func TestRecordTransactionAssignsAnID(t *testing.T) {
+	uc := NewUseCase()
+	tx := portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Timestamp: "2026-01-01T00:00:00Z"}
+	if err := uc.RecordTransaction(tx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(uc.Transactions) != 1 || uc.Transactions[0].ID == "" {
+		t.Fatalf("expected a non-empty generated id, got %+v", uc.Transactions)
+	}
+}
+
+func TestGetTransactionsReturnsRecorded(t *testing.T) {
+	uc := NewUseCase()
+	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Timestamp: "2026-01-01T00:00:00Z"})
+
+	transactions, err := uc.GetTransactions()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(transactions) != 1 || transactions[0].Symbol != "AAPL" {
+		t.Fatalf("expected one AAPL transaction, got %+v", transactions)
+	}
+}
+
+// TestRemoveTransactionRecomputesPosition proves the position is rebuilt from the remaining
+// transactions, not patched in place: removing the middle SELL of a BUY/SELL/BUY sequence must
+// produce the same weighted-average cost as if that SELL had never happened, not whatever an
+// incremental "undo" of the SELL's quantity delta would leave behind.
+func TestRemoveTransactionRecomputesPosition(t *testing.T) {
+	uc := NewUseCase()
+	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Timestamp: "2026-01-01T00:00:00Z"})
+	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "SELL", Quantity: 4, Price: 120, Timestamp: "2026-01-02T00:00:00Z"})
+	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 5, Price: 130, Timestamp: "2026-01-03T00:00:00Z"})
+
+	sellID := uc.Transactions[1].ID
+	if err := uc.RemoveTransaction(sellID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(uc.Transactions) != 2 {
+		t.Fatalf("expected the SELL to be gone from history, got %+v", uc.Transactions)
+	}
+	positions, _ := uc.GetPositions()
+	if len(positions) != 1 {
+		t.Fatalf("expected one AAPL position, got %+v", positions)
+	}
+	wantQuantity, wantAvgCost := 15.0, (100*10.0+130*5.0)/15.0
+	if positions[0].Quantity != wantQuantity {
+		t.Fatalf("expected quantity %v (as if the SELL never happened), got %v", wantQuantity, positions[0].Quantity)
+	}
+	if positions[0].AverageCost != wantAvgCost {
+		t.Fatalf("expected average cost %v, got %v", wantAvgCost, positions[0].AverageCost)
+	}
+}
+
+func TestRemoveTransactionForUnknownIDIsANoop(t *testing.T) {
+	uc := NewUseCase()
+	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Timestamp: "2026-01-01T00:00:00Z"})
+
+	if err := uc.RemoveTransaction("does-not-exist"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(uc.Transactions) != 1 {
+		t.Fatalf("expected the existing transaction to be untouched, got %+v", uc.Transactions)
+	}
+}
+
+func TestRemoveTransactionRejectsEmptyID(t *testing.T) {
+	uc := NewUseCase()
+	if err := uc.RemoveTransaction(""); err == nil {
+		t.Fatal("expected error for empty id")
+	}
+}

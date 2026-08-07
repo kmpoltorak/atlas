@@ -235,6 +235,35 @@ func (a *Application) portfolioHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// transactionsHandler lists every recorded transaction (GET) or removes one by id (DELETE),
+// recomputing the affected symbol's position from what remains (see
+// portfolio.UseCase.RemoveTransaction). Distinct from portfolioHandler's DELETE, which clears a
+// symbol's current position aggregate without touching transaction history.
+func (a *Application) transactionsHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		transactions, err := a.Portfolio.GetTransactions()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"transactions": transactions})
+	case http.MethodDelete:
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			writeError(w, http.StatusBadRequest, errors.New("id query parameter is required"))
+			return
+		}
+		if err := a.Portfolio.RemoveTransaction(id); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
+	default:
+		methodNotAllowed(w)
+	}
+}
+
 // watchlistHandler lists tracked symbols (GET), adds a new one (POST), or removes one (DELETE).
 func (a *Application) watchlistHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {

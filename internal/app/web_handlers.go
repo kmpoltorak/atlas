@@ -144,8 +144,35 @@ func (a *Application) portfolioDeleteHandler(w http.ResponseWriter, r *http.Requ
 	a.renderPortfolioPage(w, "", "Removed "+symbol+" from your positions.")
 }
 
+// portfolioTransactionDeleteHandler removes one historical transaction by id (see
+// portfolio.UseCase.RemoveTransaction) — the dashboard equivalent of DELETE /transactions.
+// Distinct from portfolioDeleteHandler: this touches the transaction history itself and
+// recomputes the affected position from what remains, rather than just clearing the current
+// aggregate.
+func (a *Application) portfolioTransactionDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		a.renderPortfolioPage(w, "Invalid form submission.", "")
+		return
+	}
+	id := r.FormValue("id")
+	if err := a.Portfolio.RemoveTransaction(id); err != nil {
+		a.renderPortfolioPage(w, err.Error(), "")
+		return
+	}
+	a.renderPortfolioPage(w, "", "Transaction removed and position recomputed.")
+}
+
 func (a *Application) renderPortfolioPage(w http.ResponseWriter, errMsg, successMsg string) {
 	positions, err := a.Portfolio.GetPositions()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	transactions, err := a.Portfolio.GetTransactions()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -155,7 +182,9 @@ func (a *Application) renderPortfolioPage(w http.ResponseWriter, errMsg, success
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	web.Render(w, "portfolio", web.PortfolioPage{Positions: positions, Risk: risk, Error: errMsg, Success: successMsg})
+	web.Render(w, "portfolio", web.PortfolioPage{
+		Positions: positions, Transactions: transactions, Risk: risk, Error: errMsg, Success: successMsg,
+	})
 }
 
 // watchlistSymbols returns the watchlist as a plain []string — used to populate the

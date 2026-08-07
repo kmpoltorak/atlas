@@ -42,6 +42,34 @@
     <p class="text-body-secondary">No open positions yet.</p>
     {{end}}
 
+    <h2 class="h4 mt-5">Transaction History</h2>
+    {{if .Transactions}}
+    <div class="table-responsive">
+      <table class="table table-striped table-hover align-middle">
+        <thead><tr><th>Symbol</th><th>Type</th><th>Quantity</th><th>Price</th><th>Timestamp</th><th></th></tr></thead>
+        <tbody>
+        {{range .Transactions}}
+        <tr>
+          <td>{{.Symbol}}</td>
+          <td class="{{actionClass .Type}}">{{.Type}}</td>
+          <td>{{printf "%.4f" .Quantity}}</td>
+          <td>{{printf "%.2f" .Price}}</td>
+          <td>{{.Timestamp}}</td>
+          <td class="text-end">
+            <form method="post" action="/dashboard/portfolio/transactions/delete" onsubmit="return confirm('Remove this transaction and recompute {{.Symbol}}\'s position from what remains?');">
+              <input type="hidden" name="id" value="{{.ID}}">
+              <button type="submit" class="btn btn-outline-danger btn-sm">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <p class="text-body-secondary">No transactions recorded yet.</p>
+    {{end}}
+
     <div class="card mt-4" style="max-width: 28rem;">
       <div class="card-body">
         <h2 class="h5 card-title">Record a transaction</h2>
