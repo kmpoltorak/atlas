@@ -25,6 +25,7 @@ and `REDIS_HOST` in `configmap.yaml` at wherever those end up living.
 | `ingress.yaml` | External routing — replace `atlas.example.com` and the cert-manager/ingress-class annotations with real values |
 | `hpa.yaml` | Horizontal autoscaling on CPU/memory (2–6 replicas) |
 | `pdb.yaml` | Keeps at least 1 pod available during voluntary disruptions (node drains, upgrades) |
+| `backup-cronjob.yaml` | Daily automated TimescaleDB `pg_dump`, 7-day retention on a PVC — see `RUNBOOK.md`'s Backup section |
 
 ## Apply
 

@@ -97,9 +97,21 @@ services:
     container_name: atlas-prometheus
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml
       - prometheus-data:/prometheus
     ports:
       - "9090:9090"
+    depends_on:
+      - alertmanager
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: atlas-alertmanager
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager-data:/alertmanager
+    ports:
+      - "9093:9093"
 
   grafana:
     image: grafana/grafana:11.4.0
@@ -119,3 +131,4 @@ volumes:
   redis-data:
   prometheus-data:
   grafana-data:
+  alertmanager-data:

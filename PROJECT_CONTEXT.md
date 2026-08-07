@@ -232,6 +232,17 @@ Metrics include:
 - ML metrics,
 - decision metrics.
 
+Implementation status: `/metrics` (Prometheus format, see `internal/observability/metrics.go`)
+exposes HTTP request/duration, provider, decision, ML, and Discord-alert counters, scraped by
+Prometheus (`prometheus/prometheus.yml`) and visualized in Grafana (`grafana/dashboards/`).
+Infrastructure-level alerting rules — distinct from the Discord alerts `internal/app/
+alerts_loop.go` sends for recommendation changes — now exist too (`prometheus/alerts.yml`:
+API-down, crash-loop/flapping, high error rate), routed through Alertmanager
+(`alertmanager/alertmanager.yml`); see `deploy/RUNBOOK.md`'s "Infrastructure alerting" section
+for the alert list and how to verify it. The Alertmanager receiver is still a placeholder
+(delivers nowhere) — which real destination to use is an infrastructure decision, not a code
+one, same reasoning as `deploy/secret.yaml`.
+
 ---
 
 # Technology Stack
