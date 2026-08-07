@@ -50,3 +50,64 @@ func ComputeCorrectionLabel(bars []market.Bar, i int, params CorrectionLabelPara
 	}
 	return 0, true
 }
+
+// RecoveryLabelParams configures how a historical training label is derived for "did a
+// correction recover" — see docs/ml.md's "recovery probability" target design. CorrectionParams
+// reuses the same correction definition ComputeCorrectionLabel already uses, since recovery is
+// only a meaningful question once a correction has actually happened.
+type RecoveryLabelParams struct {
+	CorrectionParams    CorrectionLabelParams
+	RecoveryHorizonBars int // how many bars after the correction breach to look for a recovery
+}
+
+// DefaultRecoveryLabelParams is a first-pass, documented choice — a 20-bar recovery window
+// after DefaultCorrectionLabelParams' correction — not a tuned threshold, same honesty stance as
+// DefaultCorrectionLabelParams.
+func DefaultRecoveryLabelParams() RecoveryLabelParams {
+	return RecoveryLabelParams{CorrectionParams: DefaultCorrectionLabelParams(), RecoveryHorizonBars: 20}
+}
+
+// ComputeRecoveryLabel reports whether a correction that started at bars[i] (per
+// params.CorrectionParams) recovered back to bars[i].Close (the pre-drop price) within
+// params.RecoveryHorizonBars bars after the correction threshold was first breached. ok is
+// false when no correction actually occurred at bars[i] at all (recovery isn't a meaningful
+// question without a correction to recover from — see ComputeCorrectionLabel) or when there
+// isn't enough forward history past the breach to know whether it recovered.
+//
+// This function has no caller yet: it's a real, tested label definition ready for
+// cmd/export-training-data to use once there's enough real accumulated history to train a
+// recovery-probability model honestly — see ml.Prediction.RecoveryProbability's doc comment and
+// docs/ml.md's Implementation status note.
+func ComputeRecoveryLabel(bars []market.Bar, i int, params RecoveryLabelParams) (label int, ok bool) {
+	correctionLabel, correctionOK := ComputeCorrectionLabel(bars, i, params.CorrectionParams)
+	if !correctionOK || correctionLabel == 0 {
+		return 0, false
+	}
+
+	base := bars[i].Close
+	threshold := base * (1 - params.CorrectionParams.ThresholdPct)
+	correctionEnd := i + params.CorrectionParams.HorizonBars
+
+	breachIndex := -1
+	for j := i + 1; j <= correctionEnd && j < len(bars); j++ {
+		if bars[j].Close <= threshold {
+			breachIndex = j
+			break
+		}
+	}
+	if breachIndex == -1 {
+		// Unreachable given correctionLabel == 1 above, but guarded rather than assumed.
+		return 0, false
+	}
+
+	recoveryEnd := breachIndex + params.RecoveryHorizonBars
+	if recoveryEnd >= len(bars) {
+		return 0, false
+	}
+	for _, bar := range bars[breachIndex+1 : recoveryEnd+1] {
+		if bar.Close >= base {
+			return 1, true
+		}
+	}
+	return 0, true
+}

@@ -100,9 +100,16 @@ state and ML confidence, not cosmetic renaming — see docs/decision_engine.md. 
 docs/decision_engine.md's "Scoring Model" (there's still no separate pipeline *stage* the way
 "Decision Flow" draws it — Risk is computed inline in the Orchestrator, not a standalone
 component). Scoped with Kris first (report-only vs. blended into scoring — blended was chosen,
-per the original docs/decision_engine.md design). Recovery-probability and market-condition ML
-outputs remain not done — real accumulated history is currently far too thin to train them
-honestly (1 symbol, 344 bars as of this pass — see docs/ml.md's Implementation status note).
+per the original docs/decision_engine.md design). Recovery-probability and market-condition —
+scoped with Kris as "build all three" alongside Risk Engine — turned out to need different
+treatment on closer look: recovery probability got its contract and a real, tested label
+definition (`ml.Prediction.RecoveryProbability`, `ml.ComputeRecoveryLabel`) but no trained model,
+since real accumulated history is currently far too thin to train one honestly (1 symbol, 344
+bars as of this pass — see docs/ml.md's Implementation status note); market condition turned out
+not to need a trained model at all — `ml.ClassifyMarketCondition` is a deterministic ADX+EMA
+technical rule, real and live today (`Recommendation.MarketCondition`), since regime
+classification via ADX+EMA is well-established technical analysis, not something that needs
+labeled historical outcomes to define.
 
 ## 7. Phase 5 — Observability and Notifications
 

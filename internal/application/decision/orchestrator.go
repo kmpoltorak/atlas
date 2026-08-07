@@ -72,6 +72,7 @@ func (o *Orchestrator) BuildRecommendationFromBars(symbol string, bars []market.
 	recommendation.MLScore = blend.MLScore
 	recommendation.PortfolioScore = blend.PortfolioScore
 	recommendation.RiskScore = blend.RiskScore
+	recommendation.MarketCondition = mlUC.ClassifyMarketCondition(o.Analyzer, symbol, bars)
 	recommendation.ModelVersion = EngineVersion
 	return recommendation, nil
 }
