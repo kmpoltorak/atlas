@@ -138,9 +138,56 @@ exists yet, so this was safe to run directly rather than against a throwaway cop
 5. Cleaned up: dropped `atlas_restored`, deleted the dump file (both the in-container `/tmp` copy
    and the host copy) — nothing left behind.
 
-Not yet exercised: the equivalent drill against a real Kubernetes deployment (the CronJob backup
-path, restoring onto a fresh PVC/cluster) — still open, since it needs real cluster
-infrastructure this repo doesn't have configured.
+### Recovery drill results (2026-08-07, real Kubernetes — minikube)
+
+Rehearsed against an actual local cluster (`minikube start --driver=docker`, not mocked or
+dry-run), since a real cluster was the one piece of infrastructure earlier passes couldn't
+provide. `atlas-api`'s image was built directly into minikube's Docker daemon (`eval $(minikube
+docker-env) && docker build ...`) so `deploy/deployment.yaml` could run it with
+`imagePullPolicy: Never`, no registry needed. TimescaleDB/Redis were deployed as throwaway
+test-only Deployments (not part of this repo's manifests — production TimescaleDB/Redis are a
+managed service per this file's Scope note; this was purely to have something for `deploy/`'s
+real manifests to point at).
+
+This surfaced two real bugs that were invisible in Docker Compose, because Compose doesn't
+enforce `runAsNonRoot` the way Kubernetes does:
+
+1. **`Dockerfile`'s `USER appuser`** — Kubernetes' `runAsNonRoot` check can't resolve `/etc/passwd`
+   inside the image before starting the container, so it requires the image's own `USER` to
+   already be numeric. Every `atlas-api` pod failed immediately (`cannot verify user is
+   non-root`, `CreateContainerConfigError`) until `useradd` was given an explicit
+   `--uid 10001` and `USER appuser` became `USER 10001`.
+2. **`deploy/backup-cronjob.yaml`'s `runAsNonRoot: true`** (with no `runAsUser`) — the official
+   `timescale/timescaledb` image has no non-root default user at all (it normally runs as root,
+   relying on Postgres's own privilege-drop for the actual server process), so every backup Job
+   failed the same way (`image will run as root`). Fixed by adding an explicit `runAsUser: 1000`
+   plus `fsGroup: 1000` (needed so the mounted PVC is actually writable by that UID — this
+   container only runs `pg_dump`/`find` as a client, never the Postgres server itself, so no
+   other image-specific permissions were needed).
+
+With both fixed, the full drill ran clean:
+
+1. Applied `deploy/namespace.yaml`, `configmap.yaml`, a `kubectl create secret` (per
+   `deploy/README.md`'s Apply section), `service.yaml`, `pdb.yaml`, `hpa.yaml`, and
+   `deployment.yaml` — `atlas-api` came up 2/2 `Running`, `/health` returned `{"status":
+   "healthy", "database":"ok","redis":"ok"}` through a real `kubectl port-forward`.
+2. Applied `deploy/backup-cronjob.yaml` — the `PersistentVolumeClaim` and `CronJob` both created
+   cleanly, correctly scheduled (`0 2 * * *`).
+3. Triggered a real run without waiting for 02:00: `kubectl create job --from=cronjob/
+   atlas-db-backup atlas-db-backup-manual -n atlas` — completed successfully, produced a real
+   `pg_dump` on the PVC, confirmed via the exact `busybox` browse command already documented
+   above (which needed no security-context changes itself — plain `busybox` has no non-root
+   requirement to satisfy).
+4. Copied the dump off the PVC (`kubectl cp`), restored it into a freshly created
+   `atlas_restored` database on the cluster's TimescaleDB (the same fresh-database procedure
+   verified in the Compose drill) — this dump had no `prices` rows yet (just a test `symbols`
+   row), so it restored with zero errors at all, not even the 2 ignorable ones from the Compose
+   run. Verified the restored data matched the original exactly.
+5. Cleaned up: dropped `atlas_restored`, deleted the manual Job and helper pods, `minikube
+   delete` to remove the whole test cluster — nothing left running.
+
+Both fixes are real, permanent corrections to `Dockerfile`/`deploy/backup-cronjob.yaml`, not
+drill-specific workarounds — any real deployment to any Kubernetes cluster would have hit them.
 
 ## Recovery priority (per docs/deployment.md)
 
@@ -209,7 +256,7 @@ Copied from `docs/deployment.md`, with the current, honest status of each item i
 - [x] Database backup configured — **automated in Kubernetes** (`deploy/backup-cronjob.yaml`: daily `pg_dump`, 7-day retention on a PVC — see the Backup section above); Docker Compose still only has the manual procedure (no scheduler in that stack). Off-cluster/object-storage copy of the dumps is still a follow-up (see above).
 - [x] Secrets secured — scoped with Kris first: manual `kubectl create secret` (already documented in `deploy/README.md`'s Apply section) is the deliberate approach for Kubernetes, not a placeholder awaiting a real secret manager — Sealed Secrets/External Secrets Operator/a cloud secret manager were considered and deliberately not adopted for this project's size. `deploy/secret.yaml` stays a template precisely so it can't be applied as-is by accident. Docker Compose secrets now come from a gitignored `.env` (see `.env.example`) instead of being hardcoded in `docker-compose.yml` — see "Local secrets (Docker Compose)" below.
 - [x] Alerts configured — Discord business alerts (`internal/app/alerts_loop.go`) plus infrastructure-level Prometheus alerting rules (`prometheus/alerts.yml`: `AtlasAPIDown`, `AtlasAPIFlapping`, `AtlasPodCrashLooping`, `AtlasHighErrorRate`) routed through Alertmanager to a separate Discord channel — see "Infrastructure alerting" above for how the webhook URL is configured (via `.env`, never committed) and the real `v0.27.0` bug that had to be worked around.
-- [x] Recovery tested — **Docker Compose only**: backup + restore rehearsed for real against the actual dev database (see "Recovery drill results" above), which is also how the restore procedure's `-c` bug against TimescaleDB hypertables was caught and fixed. The equivalent Kubernetes drill (CronJob backup → restore onto a fresh PVC/cluster) is still unexercised — needs real cluster infrastructure this repo doesn't have configured.
+- [x] Recovery tested — backup + restore rehearsed for real on **both** Docker Compose (against the actual dev database, which is how the restore procedure's `-c` bug against TimescaleDB hypertables was caught and fixed) **and a real Kubernetes cluster** (minikube — see "Recovery drill results" above, which is how two real `runAsNonRoot` bugs in `Dockerfile` and `deploy/backup-cronjob.yaml` were caught and fixed). Still not exercised against a real *production-scale* cluster (a managed/cloud one) — minikube is real Kubernetes, but single-node and local.
 
 Do not check the last box until it's actually been done — this table is meant to
 stay honest, not to look complete.

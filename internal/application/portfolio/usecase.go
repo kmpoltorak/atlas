@@ -198,6 +198,23 @@ func (u *UseCase) RemoveTransaction(id string) error {
 	return nil
 }
 
+// RemoveTransactions deletes several historical transactions by id (bulk delete from the
+// dashboard's checkbox selection). Each id goes through RemoveTransaction individually — not a
+// single batched repository call — because it's the affected symbols' *position recompute* that
+// matters, not the delete itself: recomputePosition already replays whatever remains after each
+// removal, so deleting one-at-a-time keeps that invariant trivially correct even when a batch
+// spans several symbols. A failure on one id doesn't stop the rest; all errors are joined and
+// returned together so the caller can report exactly which ones failed.
+func (u *UseCase) RemoveTransactions(ids []string) error {
+	var errs []error
+	for _, id := range ids {
+		if err := u.RemoveTransaction(id); err != nil {
+			errs = append(errs, fmt.Errorf("remove transaction %s: %w", id, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // recomputePosition rebuilds a symbol's position from scratch by replaying every remaining
 // transaction for that symbol in chronological order. Transactions with an unparseable
 // timestamp keep their existing relative order (stable sort) rather than being dropped or

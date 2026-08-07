@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -199,6 +200,33 @@ func (a *Application) portfolioTransactionDeleteHandler(w http.ResponseWriter, r
 		return
 	}
 	a.renderPortfolioPage(w, r, "", "Transaction removed and position recomputed.")
+}
+
+// portfolioTransactionBulkDeleteHandler removes several historical transactions at once — the
+// dashboard's checkbox-select "Delete selected" action (see portfolio.UseCase.RemoveTransactions).
+// Reads r.Form["ids"] rather than a single FormValue: the bulk-delete form submits one "ids"
+// field per checked checkbox (standard repeated-name form encoding), distinct from the per-row
+// delete buttons in the same template, which still submit a single "id" to
+// portfolioTransactionDeleteHandler via their own formaction.
+func (a *Application) portfolioTransactionBulkDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		a.renderPortfolioPage(w, r, "Invalid form submission.", "")
+		return
+	}
+	ids := r.Form["ids"]
+	if len(ids) == 0 {
+		a.renderPortfolioPage(w, r, "No transactions selected.", "")
+		return
+	}
+	if err := a.Portfolio.RemoveTransactions(ids); err != nil {
+		a.renderPortfolioPage(w, r, err.Error(), "")
+		return
+	}
+	a.renderPortfolioPage(w, r, "", fmt.Sprintf("%d transaction(s) removed and positions recomputed.", len(ids)))
 }
 
 func (a *Application) renderPortfolioPage(w http.ResponseWriter, r *http.Request, errMsg, successMsg string) {

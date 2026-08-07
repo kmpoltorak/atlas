@@ -267,12 +267,22 @@ needs. `deploy/secret.yaml` stays a template so it can't be applied as-is by acc
 Compose secrets moved out of `docker-compose.yml` into a gitignored `.env` (`.env.example`
 documents every var with its working default, so `docker compose up` still runs with zero setup).
 
+The recovery drill has now been rehearsed against a real Kubernetes cluster too (minikube — see
+`deploy/RUNBOOK.md`'s "Recovery drill results (real Kubernetes)"), closing the "needs real
+cluster infrastructure" gap this section previously flagged as blocking. This surfaced two more
+real bugs, both fixed: `Dockerfile`'s `USER appuser` (Kubernetes' `runAsNonRoot` check requires a
+numeric UID, not a username — every pod failed `CreateContainerConfigError` until it became
+`USER 10001`), and `deploy/backup-cronjob.yaml`'s `runAsNonRoot: true` with no `runAsUser` (the
+official `timescale/timescaledb` image has no non-root default user at all, so every backup Job
+failed the same way until an explicit `runAsUser`/`fsGroup` were added). Docker Compose never
+enforces `runAsNonRoot`, so neither bug was visible until tested on real Kubernetes.
+
 Not yet done, per `deploy/RUNBOOK.md`'s production checklist (kept deliberately unchecked rather
 than marked complete): off-cluster backup storage (the schedule exists, but dumps only live on
 an in-cluster PVC — which object storage to use is still an infrastructure/cost decision), and
-the equivalent recovery drill against a real Kubernetes deployment (needs real cluster
-infrastructure this repo doesn't have configured) — same caution as every other "requirements
-gathered, not built" item in this document.
+the same recovery drill against a real *production-scale* (managed/cloud) Kubernetes cluster —
+minikube is real Kubernetes, but single-node and local, so this isn't fully closed, just
+substantially de-risked.
 
 ## 10. Phase 8 — Frontend / UI
 
@@ -356,6 +366,21 @@ history was silently dropped on every restart before this pass, since nothing ha
 read it back). Verified live via Docker: recorded two BUYs (10@100, then 5@200, blending to a
 133.33 average cost), deleted the second, and confirmed the position recomputed to exactly
 10@100 — as if the second BUY had never happened, not some patched-up approximation.
+
+**Bulk-deleting transactions, built in a later pass**: the Transaction History table's per-row
+delete stayed as-is; a checkbox column plus a header "select all" checkbox and a "Delete
+selected" button were added around it (`portfolio.UseCase.RemoveTransactions`,
+`POST /dashboard/portfolio/transactions/bulk-delete`). Each selected id still goes through
+`RemoveTransaction` individually rather than a single batched repository call — it's the
+recompute-from-remaining-transactions invariant that matters, not the delete itself, and that
+stays trivially correct one-at-a-time even when a batch spans several symbols; errors from
+individual ids are joined (`errors.Join`) rather than aborting the whole batch. Both the per-row
+and bulk actions live in one `<form>` now (checkboxes can't cross a form boundary): each row's
+"Remove" button uses `formaction`/a named submit value to override where *that* click goes,
+independent of the bulk button's default action — verified live that both paths still work
+correctly from the same page. Verified live via Docker: recorded a BUY+SELL pair, selected both
+via checkboxes, bulk-deleted them in one request, confirmed both gone from the transaction table
+and the position recomputed to zero — the same recompute semantics as a single delete.
 
 **Display-language switcher, built in a later pass**: English/Polish, scoped with Kris first
 (hand-rolled `map[string]map[Lang]string` dictionary + a `T`/`actionLabel` template func pair,

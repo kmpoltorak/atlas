@@ -34,14 +34,19 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates libstdc++6 libgomp1 \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --no-create-home --shell /usr/sbin/nologin appuser
+    && useradd --system --no-create-home --shell /usr/sbin/nologin --uid 10001 appuser
 
 WORKDIR /app
 
 COPY --from=onnxruntime /onnxruntime/lib/libonnxruntime.so* /usr/lib/
 COPY --from=builder /out/atlas-api /app/atlas-api
 
-USER appuser
+# Numeric UID, not the username: Kubernetes' runAsNonRoot pod security check can't resolve
+# /etc/passwd inside the image before starting the container, so it requires the image's own
+# USER to already be numeric — confirmed live on a real cluster (minikube), where "USER appuser"
+# made every pod fail with "cannot verify user is non-root" and never start, a failure mode
+# Docker Compose never surfaces since it doesn't enforce runAsNonRoot at all.
+USER 10001
 
 EXPOSE 8080
 
