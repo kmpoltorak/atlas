@@ -311,12 +311,24 @@ read it back). Verified live via Docker: recorded two BUYs (10@100, then 5@200, 
 133.33 average cost), deleted the second, and confirmed the position recomputed to exactly
 10@100 — as if the second BUY had never happened, not some patched-up approximation.
 
-**Requirements gathered for a follow-up pass (not yet built — real design decisions needed
-first, same caution as everything else in this document)**:
-- A display-language switcher (Polish/English at minimum) — needs an i18n mechanism (every
-  template string routed through a lookup keyed by language, a way to persist the chosen
-  language) that doesn't exist anywhere in this codebase yet; a meaningfully larger addition than
-  the others.
+**Display-language switcher, built in a later pass**: English/Polish, scoped with Kris first
+(hand-rolled `map[string]map[Lang]string` dictionary + a `T`/`actionLabel` template func pair,
+not a third-party i18n library — consistent with this codebase's stance elsewhere of only
+reaching for a dependency when hand-rolling would be inappropriate, e.g. bcrypt/QR encoding but
+not TOTP). `internal/app/web/i18n.go` holds ~100 translation keys covering every page (nav,
+tables, forms, empty states, JS `confirm()` dialogs via `printf`-style `%s` interpolation for the
+transaction-symbol prompts, and a translated `actionLabel` for BUY/SELL/HOLD/ACCUMULATE/REDUCE/
+WAIT wherever a raw action value is displayed — kept separate from `actionClass`, which still
+matches on the untranslated value). The choice persists in an `atlas_lang` cookie (separate from
+the session cookie, survives logout, a year-long `MaxAge` since it's a preference not a session)
+set via `POST /dashboard/lang`, exempted from the auth gate like `/static/` so it works
+pre-login too. Switching language does a real page reload (a server round-trip to
+`/dashboard/lang`, redirecting back via `Referer`), unlike the theme switch, since translated
+text is rendered server-side, not toggled client-side. A `TestEveryTranslationKeyHasBothLanguages`
+test guards against a key added with only one language silently falling back to English.
+Verified live via Docker: every nav label, the portfolio page's transaction history table
+(BUY/SELL rendered as KUPNO/SPRZEDAŻ), and a JS `confirm()` dialog with a real interpolated
+symbol name ("Usunąć AAPL całkowicie?...") all render correctly server-side in Polish.
 
 Not done: multi-user accounts, OAuth2/OIDC, and a richer SPA frontend remain explicitly out of
 scope for this increment — revisit only if Atlas's use case actually changes from "personal tool"

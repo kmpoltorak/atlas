@@ -10,18 +10,21 @@ import (
 
 // LoginPage is the view model for templates/login.html.
 type LoginPage struct {
+	Lang         Lang
 	Error        string
 	RequiresTOTP bool
 }
 
 // DashboardPage is the view model for templates/dashboard.html.
 type DashboardPage struct {
+	Lang      Lang
 	Positions []portfolio.Position
 	Risk      portfolio.RiskSnapshot
 }
 
 // PortfolioPage is the view model for templates/portfolio.html.
 type PortfolioPage struct {
+	Lang         Lang
 	Positions    []portfolio.Position
 	Transactions []portfolio.Transaction
 	Risk         portfolio.RiskSnapshot
@@ -33,6 +36,7 @@ type PortfolioPage struct {
 // watchlist, offered as a dropdown so the common case doesn't require typing a ticker by hand —
 // see recommendationsPageHandler.
 type RecommendationsPage struct {
+	Lang           Lang
 	Symbol         string
 	Symbols        []string
 	Recommendation *decision.Recommendation
@@ -41,6 +45,7 @@ type RecommendationsPage struct {
 
 // AlertsPage is the view model for templates/alerts.html.
 type AlertsPage struct {
+	Lang    Lang
 	Alerts  []alerts.Alert
 	Warning string
 }
@@ -48,6 +53,7 @@ type AlertsPage struct {
 // BacktestsPage is the view model for templates/backtests.html. Symbols is the watchlist,
 // offered as a dropdown — see backtestsPageHandler.
 type BacktestsPage struct {
+	Lang    Lang
 	Symbol  string
 	Symbols []string
 	Window  int
@@ -58,6 +64,7 @@ type BacktestsPage struct {
 
 // WatchlistPage is the view model for templates/watchlist.html.
 type WatchlistPage struct {
+	Lang    Lang
 	Items   []watchlist.Item
 	Error   string
 	Success string
@@ -65,6 +72,7 @@ type WatchlistPage struct {
 
 // AccountPage is the view model for templates/account.html.
 type AccountPage struct {
+	Lang        Lang
 	Username    string
 	TOTPEnabled bool
 	Error       string
@@ -73,6 +81,7 @@ type AccountPage struct {
 
 // TOTPEnrollPage is the view model for templates/totp_enroll.html.
 type TOTPEnrollPage struct {
+	Lang   Lang
 	Secret string
 	Error  string
 }

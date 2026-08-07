@@ -13,9 +13,10 @@ const sessionCookieName = "atlas_session"
 // infra-facing (Kubernetes probes, Prometheus scraping) and shouldn't require a browser login,
 // and /login is obviously how you get a session in the first place.
 var publicPaths = map[string]bool{
-	"/health":  true,
-	"/metrics": true,
-	"/login":   true,
+	"/health":         true,
+	"/metrics":        true,
+	"/login":          true,
+	"/dashboard/lang": true, // a display-language preference, not sensitive — usable pre-login too
 }
 
 // requireAuth gates every route except publicPaths behind a valid session — a no-op passthrough

@@ -4,19 +4,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Atlas — Dashboard</title>
+  <title>{{T .Lang "dashboard.title"}}</title>
   {{template "head" .}}
 </head>
 <body>
   {{template "nav" .}}
   <main class="container pb-5">
-    <h1 class="h3 mb-4">Dashboard</h1>
+    <h1 class="h3 mb-4">{{T .Lang "dashboard.heading"}}</h1>
 
-    <h2 class="h5">Positions</h2>
+    <h2 class="h5">{{T .Lang "dashboard.positions"}}</h2>
     {{if .Positions}}
     <div class="table-responsive">
       <table class="table table-striped table-hover align-middle">
-        <thead><tr><th>Symbol</th><th>Quantity</th><th>Avg. Cost</th><th>Current Price</th><th>P&amp;L</th></tr></thead>
+        <thead><tr><th>{{T .Lang "table.symbol"}}</th><th>{{T .Lang "table.quantity"}}</th><th>{{T .Lang "table.avg_cost"}}</th><th>{{T .Lang "table.current_price"}}</th><th>{{T .Lang "table.pnl"}}</th></tr></thead>
         <tbody>
         {{range .Positions}}
         <tr>
@@ -31,13 +31,13 @@
       </table>
     </div>
     {{else}}
-    <p class="text-body-secondary">No open positions yet — see <a href="/dashboard/portfolio">Portfolio</a> to record a transaction.</p>
+    <p class="text-body-secondary">{{T .Lang "dashboard.no_positions" | safeHTML}}</p>
     {{end}}
 
-    <h2 class="h5 mt-4">Portfolio Risk</h2>
+    <h2 class="h5 mt-4">{{T .Lang "dashboard.portfolio_risk"}}</h2>
     <div class="table-responsive">
       <table class="table">
-        <thead><tr><th>Exposure</th><th>Drawdown</th><th>Volatility</th></tr></thead>
+        <thead><tr><th>{{T .Lang "table.exposure"}}</th><th>{{T .Lang "table.drawdown"}}</th><th>{{T .Lang "table.volatility"}}</th></tr></thead>
         <tbody>
         <tr>
           <td>{{printf "%.2f" .Risk.Exposure}}</td>
@@ -47,7 +47,7 @@
         </tbody>
       </table>
     </div>
-    <p class="text-body-secondary small">Decision-support only — Atlas never executes trades.</p>
+    <p class="text-body-secondary small">{{T .Lang "common.disclaimer"}}</p>
   </main>
   {{template "scripts" .}}
 </body>
