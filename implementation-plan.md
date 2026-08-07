@@ -218,15 +218,38 @@ ML model work) and `ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH` (added with Phase 8's 
 added to the Kubernetes manifests even though `docker-compose.yml` had them — fixed now, both
 optional/non-fatal-when-unset, matching their behavior everywhere else.
 
+Prometheus alerting rules (Alertmanager) for infrastructure-level conditions now exist too,
+scoped with Kris first (rules-only in this pass; delivery destination deliberately left a
+placeholder — see below): `prometheus/alerts.yml` defines `AtlasAPIDown`, `AtlasAPIFlapping`
+(a crash-loop proxy needing no extra scrape config), `AtlasPodCrashLooping` (the literal
+Kubernetes crash-loop signal, but inert until kube-state-metrics is scraped, which this repo
+doesn't configure — consistent with `deploy/README.md`'s Scope note that cluster-level
+add-ons/managed services are out of this repo's scope), and `AtlasHighErrorRate` — distinct
+from the existing Discord business-logic alerts in `internal/app/alerts_loop.go`. Wired end to
+end in Docker Compose: `prometheus/prometheus.yml` loads the rule file and forwards firing
+alerts to a new `alertmanager` service, configured (`alertmanager/alertmanager.yml`) with a
+`"null"` receiver — alerts fire and are visible in Alertmanager's UI, but are deliberately not
+delivered anywhere yet, since which real destination (Discord/Slack/webhook/email) to wire in is
+Kris's call, not a code decision (same reasoning as `secret.yaml`'s placeholder). See
+`deploy/RUNBOOK.md`'s "Infrastructure alerting" section for the full list and how to verify it.
+
+Scheduled database backups are now automated in Kubernetes too, scoped with Kris first (daily,
+7-day retention): `deploy/backup-cronjob.yaml` adds a `CronJob` that runs `pg_dump` against
+TimescaleDB every day at 02:00 and keeps the last 7 days of dumps on a new `PersistentVolumeClaim`
+(`atlas-db-backups`), pruning older ones on each run. Docker Compose has no CronJob equivalent, so
+its backup procedure is still the manual one in `deploy/RUNBOOK.md`. Deliberately not solved by
+this pass: copying dumps off-cluster to durable object storage (S3/GCS/etc.) — which target and
+schedule to use for that is an infrastructure/cost decision, not a code one, same reasoning as
+everything else still open below.
+
 Not yet done, per `deploy/RUNBOOK.md`'s production checklist (kept deliberately unchecked rather
-than marked complete): scheduled/automated database backups (today's procedure is manual,
-run-it-yourself `pg_dump`), real secret management wired up (`secret.yaml` is a placeholder
-template, not Sealed Secrets/External Secrets/a cloud secret manager), Prometheus alerting rules
-(Alertmanager) for infrastructure-level conditions (pod crash-looping, high error rate — distinct
-from the existing Discord business-logic alerts in `internal/app/alerts_loop.go`), and an actual
-end-to-end recovery-runbook rehearsal against a real deployment. None of these have real design
-decisions made yet (backup schedule/retention, which secret manager, Alertmanager receiver) —
-same caution as every other "requirements gathered, not built" item in this document.
+than marked complete): real secret management wired up (`secret.yaml` is a placeholder template,
+not Sealed Secrets/External Secrets/a cloud secret manager), a real Alertmanager receiver (see
+above — rules exist, delivery doesn't yet), off-cluster backup storage (see above — the schedule
+now exists, but dumps only live on an in-cluster PVC), and an actual end-to-end
+recovery-runbook rehearsal against a real deployment. None of these have real design decisions
+made yet (which secret manager, which Alertmanager receiver, which object storage) — same
+caution as every other "requirements gathered, not built" item in this document.
 
 ## 10. Phase 8 — Frontend / UI
 
