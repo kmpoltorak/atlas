@@ -108,24 +108,25 @@ func (t *TimescaleDB) DeletePosition(symbol string) error {
 	return nil
 }
 
-// SaveTransaction appends a transaction record. Transactions are append-only history, unlike
-// positions, so this is a plain insert rather than an upsert.
-func (t *TimescaleDB) SaveTransaction(transaction portfolio.Transaction) error {
+// SaveTransaction appends a transaction record and returns its generated id (see
+// migrations/003's `id` default). Transactions are append-only history, unlike positions, so
+// this is a plain insert rather than an upsert.
+func (t *TimescaleDB) SaveTransaction(transaction portfolio.Transaction) (string, error) {
 	ctx := context.Background()
 
 	tx, err := t.db.BeginTxx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin transaction: %w", err)
+		return "", fmt.Errorf("begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }() // no-op once Commit has succeeded below
 
 	portfolioID, err := t.defaultPortfolioID(ctx, tx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	symbolID, err := upsertSymbol(ctx, tx, transaction.Symbol)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Timestamp arrives as a client-supplied string (see domain/portfolio.Transaction); the
@@ -136,15 +137,64 @@ func (t *TimescaleDB) SaveTransaction(transaction portfolio.Transaction) error {
 		timestamp = time.Now().UTC()
 	}
 
-	if _, err := tx.ExecContext(ctx,
+	var id string
+	if err := tx.GetContext(ctx, &id,
 		`INSERT INTO transactions (portfolio_id, symbol_id, type, quantity, price, timestamp)
-		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		 VALUES ($1, $2, $3, $4, $5, $6)
+		 RETURNING id`,
 		portfolioID, symbolID, transaction.Type, transaction.Quantity, transaction.Price, timestamp); err != nil {
-		return fmt.Errorf("insert transaction for %s: %w", transaction.Symbol, err)
+		return "", fmt.Errorf("insert transaction for %s: %w", transaction.Symbol, err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit transaction: %w", err)
+		return "", fmt.Errorf("commit transaction: %w", err)
+	}
+	return id, nil
+}
+
+// GetTransactions returns every persisted transaction in the default portfolio across all
+// symbols, most recent first — the full activity log the dashboard's transaction history table
+// renders.
+func (t *TimescaleDB) GetTransactions() ([]portfolio.Transaction, error) {
+	ctx := context.Background()
+
+	var rows []struct {
+		ID        string    `db:"id"`
+		Ticker    string    `db:"ticker"`
+		Type      string    `db:"type"`
+		Quantity  float64   `db:"quantity"`
+		Price     float64   `db:"price"`
+		Timestamp time.Time `db:"timestamp"`
+	}
+	if err := t.db.SelectContext(ctx, &rows,
+		`SELECT tr.id, s.ticker, tr.type, tr.quantity, tr.price, tr.timestamp
+		 FROM transactions tr
+		 JOIN symbols s ON s.id = tr.symbol_id
+		 JOIN portfolios pf ON pf.id = tr.portfolio_id
+		 WHERE pf.name = $1
+		 ORDER BY tr.timestamp DESC`, defaultPortfolioName); err != nil {
+		return nil, fmt.Errorf("select transactions: %w", err)
+	}
+
+	transactions := make([]portfolio.Transaction, 0, len(rows))
+	for _, row := range rows {
+		transactions = append(transactions, portfolio.Transaction{
+			ID: row.ID, Symbol: row.Ticker, Type: row.Type,
+			Quantity: row.Quantity, Price: row.Price,
+			Timestamp: row.Timestamp.UTC().Format(time.RFC3339),
+		})
+	}
+	return transactions, nil
+}
+
+// DeleteTransaction removes one transaction by id (see portfolio.UseCase.RemoveTransaction).
+// Unlike DeletePosition, this does touch the append-only history — undoing a mistaken entry is
+// exactly what this is for; the caller is responsible for recomputing the affected position
+// afterward.
+func (t *TimescaleDB) DeleteTransaction(id string) error {
+	ctx := context.Background()
+	if _, err := t.db.ExecContext(ctx, `DELETE FROM transactions WHERE id = $1`, id); err != nil {
+		return fmt.Errorf("delete transaction %s: %w", id, err)
 	}
 	return nil
 }

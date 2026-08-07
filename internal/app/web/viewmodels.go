@@ -22,10 +22,11 @@ type DashboardPage struct {
 
 // PortfolioPage is the view model for templates/portfolio.html.
 type PortfolioPage struct {
-	Positions []portfolio.Position
-	Risk      portfolio.RiskSnapshot
-	Error     string
-	Success   string
+	Positions    []portfolio.Position
+	Transactions []portfolio.Transaction
+	Risk         portfolio.RiskSnapshot
+	Error        string
+	Success      string
 }
 
 // RecommendationsPage is the view model for templates/recommendations.html. Symbols is the

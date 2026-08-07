@@ -1,8 +1,13 @@
 package portfolio
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"math"
+	"sort"
+	"time"
 
 	"atlas/internal/domain/portfolio"
 )
@@ -33,12 +38,23 @@ func NewUseCaseWithRepository(repo Repository) (*UseCase, error) {
 		return nil, err
 	}
 	uc.Positions = positions
+	transactions, err := repo.GetTransactions()
+	if err != nil {
+		return nil, err
+	}
+	uc.Transactions = transactions
 	return uc, nil
 }
 
 // GetPositions returns the current snapshot held by the use case.
 func (u *UseCase) GetPositions() ([]portfolio.Position, error) {
 	return u.Positions, nil
+}
+
+// GetTransactions returns every recorded transaction held by the use case, most recent first
+// when Repository-backed (see TimescaleDB.GetTransactions); insertion order otherwise.
+func (u *UseCase) GetTransactions() ([]portfolio.Transaction, error) {
+	return u.Transactions, nil
 }
 
 // RecordTransaction appends a transaction and updates the in-memory position state.
@@ -52,21 +68,26 @@ func (u *UseCase) RecordTransaction(tx portfolio.Transaction) error {
 	if tx.Quantity == 0 {
 		return errors.New("transaction quantity must not be zero")
 	}
-
-	u.Transactions = append(u.Transactions, tx)
-	position := findPosition(u.Positions, tx.Symbol)
-	if tx.Type == "BUY" {
-		position.Quantity += tx.Quantity
-		position.AverageCost = ((position.AverageCost * (position.Quantity - tx.Quantity)) + (tx.Price * tx.Quantity)) / position.Quantity
-	} else if tx.Type == "SELL" {
-		position.Quantity -= tx.Quantity
-		if position.Quantity < 0 {
-			position.Quantity = 0
-		}
-	} else {
+	if tx.Type != "BUY" && tx.Type != "SELL" {
 		return errors.New("transaction type is unsupported")
 	}
-	position.CurrentPrice = tx.Price
+
+	if u.Repository != nil {
+		id, err := u.Repository.SaveTransaction(tx)
+		if err != nil {
+			return err
+		}
+		tx.ID = id
+	} else {
+		id, err := randomTransactionID()
+		if err != nil {
+			return err
+		}
+		tx.ID = id
+	}
+	u.Transactions = append(u.Transactions, tx)
+
+	position := applyTransaction(findPosition(u.Positions, tx.Symbol), tx)
 	if index := findPositionIndex(u.Positions, tx.Symbol); index >= 0 {
 		u.Positions[index] = position
 	} else {
@@ -74,9 +95,6 @@ func (u *UseCase) RecordTransaction(tx portfolio.Transaction) error {
 	}
 
 	if u.Repository != nil {
-		if err := u.Repository.SaveTransaction(tx); err != nil {
-			return err
-		}
 		if err := u.Repository.SavePositions(u.Positions); err != nil {
 			return err
 		}
@@ -105,6 +123,104 @@ func (u *UseCase) RemovePosition(symbol string) error {
 		return u.Repository.DeletePosition(symbol)
 	}
 	return nil
+}
+
+// RemoveTransaction deletes one historical transaction by id (e.g. a mis-entered trade) and
+// recomputes the affected symbol's position from scratch by replaying its remaining
+// transactions in chronological order — the only reliable way to undo a transaction's effect on
+// weighted-average cost once later transactions have layered on top of it; an in-place "subtract
+// this one back out" can't be reversed cleanly in general. Removing an unknown id is a no-op,
+// matching RemovePosition's convention.
+func (u *UseCase) RemoveTransaction(id string) error {
+	if id == "" {
+		return errors.New("id is required")
+	}
+	index := -1
+	for i, t := range u.Transactions {
+		if t.ID == id {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return nil
+	}
+	symbol := u.Transactions[index].Symbol
+	u.Transactions = append(u.Transactions[:index:index], u.Transactions[index+1:]...)
+
+	if u.Repository != nil {
+		if err := u.Repository.DeleteTransaction(id); err != nil {
+			return err
+		}
+	}
+
+	u.recomputePosition(symbol)
+
+	if u.Repository != nil {
+		return u.Repository.SavePositions(u.Positions)
+	}
+	return nil
+}
+
+// recomputePosition rebuilds a symbol's position from scratch by replaying every remaining
+// transaction for that symbol in chronological order. Transactions with an unparseable
+// timestamp keep their existing relative order (stable sort) rather than being dropped or
+// erroring — the same "don't fail a trade record over a cosmetic field" stance RecordTransaction
+// already takes for persistence.
+func (u *UseCase) recomputePosition(symbol string) {
+	var symbolTx []portfolio.Transaction
+	for _, t := range u.Transactions {
+		if t.Symbol == symbol {
+			symbolTx = append(symbolTx, t)
+		}
+	}
+	sort.SliceStable(symbolTx, func(i, j int) bool {
+		ti, iErr := time.Parse(time.RFC3339, symbolTx[i].Timestamp)
+		tj, jErr := time.Parse(time.RFC3339, symbolTx[j].Timestamp)
+		if iErr != nil || jErr != nil {
+			return false
+		}
+		return ti.Before(tj)
+	})
+
+	position := portfolio.Position{Symbol: symbol}
+	for _, t := range symbolTx {
+		position = applyTransaction(position, t)
+	}
+
+	if index := findPositionIndex(u.Positions, symbol); index >= 0 {
+		u.Positions[index] = position
+	} else if len(symbolTx) > 0 {
+		u.Positions = append(u.Positions, position)
+	}
+}
+
+// applyTransaction folds one transaction's effect into a position: weighted-average cost on
+// BUY, quantity reduction floored at zero on SELL. Shared between RecordTransaction (append
+// path) and recomputePosition (replay-after-delete path) so the two can never drift apart.
+// Callers are responsible for validating tx.Type beforehand (RecordTransaction does); any other
+// type is a no-op here.
+func applyTransaction(position portfolio.Position, tx portfolio.Transaction) portfolio.Position {
+	switch tx.Type {
+	case "BUY":
+		position.Quantity += tx.Quantity
+		position.AverageCost = ((position.AverageCost * (position.Quantity - tx.Quantity)) + (tx.Price * tx.Quantity)) / position.Quantity
+	case "SELL":
+		position.Quantity -= tx.Quantity
+		if position.Quantity < 0 {
+			position.Quantity = 0
+		}
+	}
+	position.CurrentPrice = tx.Price
+	return position
+}
+
+func randomTransactionID() (string, error) {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("generate transaction id: %w", err)
+	}
+	return hex.EncodeToString(raw), nil
 }
 
 // ComputeROI calculates the weighted ROI across positions.

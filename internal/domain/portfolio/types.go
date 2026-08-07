@@ -8,6 +8,9 @@ type Position struct {
 }
 
 type Transaction struct {
+	// ID is empty for a transaction not yet recorded (e.g. a caller-built value passed to
+	// RecordTransaction); RecordTransaction assigns one before it's stored.
+	ID        string  `json:"id"`
 	Symbol    string  `json:"symbol"`
 	Type      string  `json:"type"`
 	Quantity  float64 `json:"quantity"`
