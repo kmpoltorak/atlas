@@ -68,6 +68,9 @@ func TestEvaluateSurfacesNonHoldAlerts(t *testing.T) {
 	if result[0].TriggeredAt == "" {
 		t.Fatal("expected TriggeredAt to be set")
 	}
+	if len(result[0].Bars) == 0 {
+		t.Fatal("expected Bars to carry the bars the recommendation was built from, for indicator-snapshot persistence")
+	}
 }
 
 func TestEvaluateReturnsEmptyWhenWatchlistIsEmpty(t *testing.T) {
