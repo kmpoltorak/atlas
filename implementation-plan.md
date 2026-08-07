@@ -277,12 +277,13 @@ official `timescale/timescaledb` image has no non-root default user at all, so e
 failed the same way until an explicit `runAsUser`/`fsGroup` were added). Docker Compose never
 enforces `runAsNonRoot`, so neither bug was visible until tested on real Kubernetes.
 
+Testing against a real managed/cloud production cluster is explicitly out of scope for this
+project (scoped with the Author: no production-cluster testing) — minikube is real Kubernetes,
+and that's the level of rehearsal this repo's recovery drill is scoped to.
+
 Not yet done, per `deploy/RUNBOOK.md`'s production checklist (kept deliberately unchecked rather
 than marked complete): off-cluster backup storage (the schedule exists, but dumps only live on
-an in-cluster PVC — which object storage to use is still an infrastructure/cost decision), and
-the same recovery drill against a real *production-scale* (managed/cloud) Kubernetes cluster —
-minikube is real Kubernetes, but single-node and local, so this isn't fully closed, just
-substantially de-risked.
+an in-cluster PVC — which object storage to use is still an infrastructure/cost decision).
 
 ## 10. Phase 8 — Frontend / UI
 
