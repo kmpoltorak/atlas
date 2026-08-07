@@ -7,4 +7,5 @@ type Repository interface {
 	GetPositions() ([]portfolio.Position, error)
 	SavePositions(positions []portfolio.Position) error
 	SaveTransaction(tx portfolio.Transaction) error
+	DeletePosition(symbol string) error
 }

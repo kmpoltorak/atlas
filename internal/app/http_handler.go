@@ -6,12 +6,14 @@ import (
 	"net/http"
 	"time"
 
+	"atlas/internal/app/web"
 	"atlas/internal/domain"
 )
 
 func (a *Application) NewHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", a.Metrics.Handler())
+	mux.Handle("/static/", http.FileServer(http.FS(web.StaticFS)))
 	mux.HandleFunc("/health", a.healthHandler)
 	mux.HandleFunc("/symbols", a.symbolsHandler)
 	mux.HandleFunc("/prices", a.pricesHandler)
@@ -23,8 +25,26 @@ func (a *Application) NewHandler() http.Handler {
 	mux.HandleFunc("/backtests", a.backtestsHandler)
 	mux.HandleFunc("/backtests/history", a.backtestHistoryHandler)
 	mux.HandleFunc("/backtests/walkforward", a.backtestWalkForwardHandler)
+
+	// Server-rendered dashboard (Phase 8 — see implementation-plan.md and internal/app/web).
+	mux.HandleFunc("/login", a.loginPageHandler)
+	mux.HandleFunc("/logout", a.logoutPageHandler)
+	mux.HandleFunc("/dashboard", a.dashboardPageHandler)
+	mux.HandleFunc("/dashboard/portfolio", a.portfolioPageHandler)
+	mux.HandleFunc("/dashboard/portfolio/delete", a.portfolioDeleteHandler)
+	mux.HandleFunc("/dashboard/recommendations", a.recommendationsPageHandler)
+	mux.HandleFunc("/dashboard/alerts", a.alertsPageHandler)
+	mux.HandleFunc("/dashboard/backtests", a.backtestsPageHandler)
+	mux.HandleFunc("/dashboard/watchlist", a.watchlistPageHandler)
+	mux.HandleFunc("/dashboard/watchlist/delete", a.watchlistDeleteHandler)
+	mux.HandleFunc("/dashboard/account", a.accountPageHandler)
+	mux.HandleFunc("/dashboard/account/totp/setup", a.totpSetupHandler)
+	mux.HandleFunc("/dashboard/account/totp/qr.png", a.totpQRHandler)
+	mux.HandleFunc("/dashboard/account/totp/confirm", a.totpConfirmHandler)
+	mux.HandleFunc("/dashboard/account/totp/disable", a.totpDisableHandler)
+
 	mux.HandleFunc("/", a.rootHandler)
-	return a.instrument(mux)
+	return a.instrument(a.requireAuth(mux))
 }
 
 // instrument records request count and latency for every route except /metrics itself,

@@ -6,4 +6,5 @@ import "atlas/internal/domain/watchlist"
 type Repository interface {
 	GetItems() ([]watchlist.Item, error)
 	SaveItem(item watchlist.Item) error
+	DeleteItem(symbol string) error
 }

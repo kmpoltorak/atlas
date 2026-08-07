@@ -95,3 +95,44 @@ func TestComputeRiskDrawdownIsZeroWithNoLosingPositions(t *testing.T) {
 		t.Fatalf("expected zero drawdown with only winning positions, got %v", risk.Drawdown)
 	}
 }
+
+func TestRemovePositionDeletesIt(t *testing.T) {
+	uc := NewUseCase()
+	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Timestamp: "2024-01-01"})
+	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "MSFT", Type: "BUY", Quantity: 5, Price: 300, Timestamp: "2024-01-01"})
+
+	if err := uc.RemovePosition("AAPL"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	positions, _ := uc.GetPositions()
+	if len(positions) != 1 || positions[0].Symbol != "MSFT" {
+		t.Fatalf("expected only MSFT to remain, got %+v", positions)
+	}
+	// The transaction history is an append-only audit log — removing the position must not
+	// erase what actually happened.
+	if len(uc.Transactions) != 2 {
+		t.Fatalf("expected transaction history to be untouched, got %d transactions", len(uc.Transactions))
+	}
+}
+
+func TestRemovePositionForUnknownSymbolIsANoop(t *testing.T) {
+	uc := NewUseCase()
+	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Timestamp: "2024-01-01"})
+
+	if err := uc.RemovePosition("MSFT"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	positions, _ := uc.GetPositions()
+	if len(positions) != 1 || positions[0].Symbol != "AAPL" {
+		t.Fatalf("expected AAPL to remain untouched, got %+v", positions)
+	}
+}
+
+func TestRemovePositionRejectsEmptySymbol(t *testing.T) {
+	uc := NewUseCase()
+	if err := uc.RemovePosition(""); err == nil {
+		t.Fatal("expected error for empty symbol")
+	}
+}

@@ -84,6 +84,29 @@ func (u *UseCase) RecordTransaction(tx portfolio.Transaction) error {
 	return nil
 }
 
+// RemovePosition deletes a symbol's current position entirely (e.g. a test entry recorded by
+// mistake) — for correcting/removing state, not for recording a real SELL, which is what
+// RecordTransaction is for. Removing a symbol with no position is a no-op. The transaction
+// history for that symbol is deliberately left untouched (an append-only audit log, matching
+// recommendations/predictions elsewhere in this codebase), so this only clears the current
+// aggregate, not the record of what happened.
+func (u *UseCase) RemovePosition(symbol string) error {
+	if symbol == "" {
+		return errors.New("symbol is required")
+	}
+	kept := u.Positions[:0:0]
+	for _, position := range u.Positions {
+		if position.Symbol != symbol {
+			kept = append(kept, position)
+		}
+	}
+	u.Positions = kept
+	if u.Repository != nil {
+		return u.Repository.DeletePosition(symbol)
+	}
+	return nil
+}
+
 // ComputeROI calculates the weighted ROI across positions.
 func (u *UseCase) ComputeROI() (float64, error) {
 	if len(u.Positions) == 0 {

@@ -57,3 +57,22 @@ func (u *UseCase) Add(symbol string, addedAt string) error {
 func (u *UseCase) List() ([]watchlist.Item, error) {
 	return u.Items, nil
 }
+
+// Remove untracks a symbol. Removing a symbol that isn't tracked is a no-op, matching Add's
+// idempotent stance.
+func (u *UseCase) Remove(symbol string) error {
+	if symbol == "" {
+		return errors.New("symbol is required")
+	}
+	kept := u.Items[:0:0]
+	for _, item := range u.Items {
+		if item.Symbol != symbol {
+			kept = append(kept, item)
+		}
+	}
+	u.Items = kept
+	if u.Repository != nil {
+		return u.Repository.DeleteItem(symbol)
+	}
+	return nil
+}

@@ -81,3 +81,19 @@ func (t *TimescaleDB) SaveItem(item watchlist.Item) error {
 	}
 	return nil
 }
+
+// DeleteItem removes a symbol from the default watchlist (see watchlist.UseCase.Remove).
+// Removing an untracked symbol is a no-op — DELETE simply affects zero rows.
+func (t *TimescaleDB) DeleteItem(symbol string) error {
+	ctx := context.Background()
+
+	if _, err := t.db.ExecContext(ctx, `
+		DELETE FROM watchlist_items
+		USING symbols s, watchlists w
+		WHERE watchlist_items.symbol_id = s.id AND watchlist_items.watchlist_id = w.id
+		  AND s.ticker = $1 AND w.name = $2`,
+		symbol, defaultWatchlistName); err != nil {
+		return fmt.Errorf("delete watchlist item for %s: %w", symbol, err)
+	}
+	return nil
+}

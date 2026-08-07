@@ -51,3 +51,9 @@ func (c *RedisClient) Get(ctx context.Context, key string) (value string, found 
 	}
 	return value, true, nil
 }
+
+// Delete removes a key. Deleting an already-absent key is not an error (used by auth.UseCase
+// to invalidate a session on logout, where the key may have already expired on its own).
+func (c *RedisClient) Delete(ctx context.Context, key string) error {
+	return c.client.Del(ctx, key).Err()
+}

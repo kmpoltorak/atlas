@@ -70,6 +70,37 @@ func TestSavePositionsIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestDeletePositionRemovesTheRow(t *testing.T) {
+	db := connectTestDB(t)
+
+	if err := db.SavePositions([]portfolio.Position{
+		{Symbol: "TESTDELPOS", Quantity: 1, AverageCost: 50, CurrentPrice: 55},
+	}); err != nil {
+		t.Fatalf("SavePositions failed: %v", err)
+	}
+
+	if err := db.DeletePosition("TESTDELPOS"); err != nil {
+		t.Fatalf("DeletePosition failed: %v", err)
+	}
+
+	stored, err := db.GetPositions()
+	if err != nil {
+		t.Fatalf("GetPositions failed: %v", err)
+	}
+	for _, p := range stored {
+		if p.Symbol == "TESTDELPOS" {
+			t.Fatalf("expected TESTDELPOS to be gone, still found: %+v", p)
+		}
+	}
+}
+
+func TestDeletePositionForUnknownSymbolIsANoop(t *testing.T) {
+	db := connectTestDB(t)
+	if err := db.DeletePosition("TESTDELPOSNEVEREXISTED"); err != nil {
+		t.Fatalf("expected no error deleting a position that was never saved, got %v", err)
+	}
+}
+
 func TestSaveTransactionInsertsRecord(t *testing.T) {
 	db := connectTestDB(t)
 

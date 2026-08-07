@@ -1,0 +1,52 @@
+{{define "account"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atlas — Account</title>
+  {{template "head" .}}
+</head>
+<body>
+  {{template "nav" .}}
+  <main class="container pb-5">
+    <h1 class="h3 mb-4">Account</h1>
+
+    {{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
+    {{if .Success}}<div class="alert alert-success">{{.Success}}</div>{{end}}
+
+    <div class="table-responsive">
+      <table class="table">
+        <tbody>
+          <tr><th>Username</th><td>{{.Username}}</td></tr>
+          <tr><th>Two-factor authentication</th><td>{{if .TOTPEnabled}}<span class="badge text-bg-success">Enabled</span>{{else}}<span class="badge text-bg-secondary">Disabled</span>{{end}}</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card mt-3" style="max-width: 28rem;">
+      <div class="card-body">
+        {{if .TOTPEnabled}}
+        <h2 class="h5 card-title">Disable two-factor authentication</h2>
+        <p class="text-body-secondary small">Requires your current password to confirm.</p>
+        <form method="post" action="/dashboard/account/totp/disable">
+          <div class="mb-3">
+            <label class="form-label">Current password</label>
+            <input type="password" class="form-control" name="password" autocomplete="current-password" required>
+          </div>
+          <button type="submit" class="btn btn-outline-danger">Disable 2FA</button>
+        </form>
+        {{else}}
+        <h2 class="h5 card-title">Enable two-factor authentication</h2>
+        <p class="text-body-secondary small">Adds a verification code from an authenticator app (Google Authenticator, Authy, etc.) to every login.</p>
+        <form method="get" action="/dashboard/account/totp/setup">
+          <button type="submit" class="btn btn-primary">Set up 2FA</button>
+        </form>
+        {{end}}
+      </div>
+    </div>
+  </main>
+  {{template "scripts" .}}
+</body>
+</html>
+{{end}}

@@ -1,0 +1,40 @@
+{{define "login"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atlas — Log in</title>
+  {{template "head" .}}
+</head>
+<body>
+  <div class="container d-flex align-items-center justify-content-center" style="min-height: 100vh;">
+    <div class="card shadow-sm" style="width: 100%; max-width: 24rem;">
+      <div class="card-body p-4">
+        <h1 class="h4 mb-1">Atlas</h1>
+        <p class="text-body-secondary small mb-3">AI portfolio decision support — sign in to continue.</p>
+        {{if .Error}}<div class="alert alert-danger py-2">{{.Error}}</div>{{end}}
+        <form method="post" action="/login">
+          <div class="mb-3">
+            <label class="form-label">Username</label>
+            <input type="text" class="form-control" name="username" autocomplete="username" required autofocus>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Password</label>
+            <input type="password" class="form-control" name="password" autocomplete="current-password" required>
+          </div>
+          {{if .RequiresTOTP}}
+          <div class="mb-3">
+            <label class="form-label">2FA code</label>
+            <input type="text" class="form-control" name="totp" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" required>
+          </div>
+          {{end}}
+          <button type="submit" class="btn btn-primary w-100">Log in</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {{template "scripts" .}}
+</body>
+</html>
+{{end}}
