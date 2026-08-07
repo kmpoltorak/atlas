@@ -137,7 +137,14 @@ curve over time, which needs snapshot persistence (not implemented). The Decisio
 does consume this risk snapshot in its scoring too (`computeRiskScore`, weight 0.10 — see
 docs/decision_engine.md), alongside `portfolioRiskSignal` (P&L-based, a separate, narrower,
 symbol-specific heuristic that's still its own component, weight 0.15) — the two aren't the same
-signal and both contribute independently.
+signal and both contribute independently. Multi-currency is real too: `Transaction.Currency`
+(PLN/EUR/USD — see internal/domain/currency) is converted to a PLN `PriceInPLN` at the moment
+it's recorded (via `internal/application/exchangerate`, backed by NBP Table A — see docs/
+deployment.md), and `Position.AverageCost`/`CurrentPrice` are always in PLN regardless of what
+currency the underlying transactions were entered in, so a symbol bought partly in USD and
+partly in PLN still has one mathematically coherent cost basis. Everything downstream (this risk
+calc, ROI, Decision Engine scoring, backtesting) reads plain PLN numbers and never needs to know
+multi-currency exists — only the recording/display layer does.
 
 ---
 
@@ -358,6 +365,17 @@ met the hourly-granularity requirement anyway. Yahoo (unofficial) is now the sol
 just not as a provider selector, since there's nothing left to select.
 
 ---
+
+## Exchange Rates (NBP)
+
+Real: `internal/infrastructure/exchangerate.NBPProvider` fetches Table A (the average/mid
+reference rate) from `https://api.nbp.pl/api/exchangerates/tables/A/`, NBP's real, free, keyless
+API — used to convert non-PLN portfolio transactions to PLN (see Portfolio Engine section above).
+Like Yahoo, NBP's endpoint returns HTTP 403 for Go's default `Go-http-client/*` User-Agent
+specifically (confirmed live — curl with the same UA also gets 403); a bare, generic
+`Mozilla/5.0` override is enough and is deliberately all this sends, no app-identifying details.
+NBP itself only republishes Table A once per business day (~11:45 CET) — Atlas's hourly Redis
+cache bounds how often it calls out, not how fresh the underlying rate can be.
 
 ## Future Providers
 

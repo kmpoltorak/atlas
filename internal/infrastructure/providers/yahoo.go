@@ -24,8 +24,9 @@ func NewYahooFinanceProvider() *YahooFinanceProvider {
 }
 
 // yahooUserAgent is required: Yahoo's unofficial chart endpoint returns HTTP 429 for
-// requests without a browser-like User-Agent, regardless of host or query parameters.
-const yahooUserAgent = "Mozilla/5.0 (compatible; AtlasPortfolioAdvisor/1.0)"
+// requests without a browser-like User-Agent, regardless of host or query parameters. A bare,
+// generic UA with no app-identifying details is enough and is deliberately all this sends.
+const yahooUserAgent = "Mozilla/5.0"
 
 // interval is hourly, not daily: daily bars are too coarse for the trading-oriented use this
 // engine targets. Yahoo's unofficial chart endpoint keeps roughly 730 days of 1h history; window

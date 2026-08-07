@@ -44,6 +44,45 @@ func TestRenderDashboardPage(t *testing.T) {
 	}
 }
 
+func TestMoneyShowsPLNOnlyWithoutRates(t *testing.T) {
+	got := string(money(100, nil))
+	if got != "100.00 PLN" {
+		t.Fatalf("expected plain PLN with no rates, got %q", got)
+	}
+}
+
+func TestMoneyShowsEURAndUSDConversion(t *testing.T) {
+	got := string(money(400, map[string]float64{"EUR": 4.0, "USD": 3.73}))
+	if !strings.Contains(got, "400.00 PLN") {
+		t.Fatalf("expected the primary PLN figure, got %q", got)
+	}
+	if !strings.Contains(got, "100.00 EUR") {
+		t.Fatalf("expected 400/4.0 = 100.00 EUR, got %q", got)
+	}
+	if !strings.Contains(got, "107.24 USD") {
+		t.Fatalf("expected 400/3.73 ≈ 107.24 USD, got %q", got)
+	}
+}
+
+func TestMoneyIgnoresAZeroOrMissingRate(t *testing.T) {
+	got := string(money(100, map[string]float64{"EUR": 0}))
+	if strings.Contains(got, "EUR") {
+		t.Fatalf("expected a zero rate to be skipped rather than divide-by-zero, got %q", got)
+	}
+}
+
+func TestRenderDashboardPageShowsCurrencyConversion(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Render(rec, "dashboard", DashboardPage{
+		Positions: []portfolio.Position{{Symbol: "AAPL", Quantity: 10, AverageCost: 100, CurrentPrice: 120}},
+		Rates:     map[string]float64{"EUR": 4.0, "USD": 3.73},
+	})
+	body := rec.Body.String()
+	if !strings.Contains(body, "25.00 EUR") { // 100 PLN avg cost / 4.0
+		t.Fatalf("expected the position's average cost converted to EUR, got %s", body)
+	}
+}
+
 func TestRenderDashboardPageInPolish(t *testing.T) {
 	rec := httptest.NewRecorder()
 	Render(rec, "dashboard", DashboardPage{Lang: LangPL})
@@ -88,6 +127,26 @@ func TestRenderPortfolioPage(t *testing.T) {
 	}
 	if !strings.Contains(body, "tx-1") || !strings.Contains(body, `action="/dashboard/portfolio/transactions/delete"`) {
 		t.Fatalf("expected the transaction row and its delete form in rendered portfolio page, got %s", body)
+	}
+}
+
+func TestRenderPortfolioPageShowsCurrencyDropdownAndTransactionCurrency(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Render(rec, "portfolio", PortfolioPage{
+		Currencies: []string{"PLN", "EUR", "USD"},
+		Transactions: []portfolio.Transaction{
+			{ID: "tx-1", Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Currency: "USD", PriceInPLN: 373, Timestamp: "2026-01-01T00:00:00Z"},
+		},
+	})
+	if rec.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `<option value="PLN" selected>`) || !strings.Contains(body, `<option value="EUR">`) || !strings.Contains(body, `<option value="USD">`) {
+		t.Fatalf("expected a currency dropdown with PLN/EUR/USD (PLN selected by default), got %s", body)
+	}
+	if !strings.Contains(body, ">USD<") || !strings.Contains(body, "373.00") {
+		t.Fatalf("expected the transaction row to show its original currency and stored PLN-equivalent price, got %s", body)
 	}
 }
 

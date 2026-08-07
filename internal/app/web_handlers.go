@@ -8,10 +8,41 @@ import (
 
 	"atlas/internal/app/web"
 	authUC "atlas/internal/application/auth"
+	"atlas/internal/domain/currency"
 	"atlas/internal/domain/portfolio"
 
 	qrcode "github.com/skip2/go-qrcode"
 )
+
+// exchangeRatesForDisplay returns today's PLN-per-unit rates as a plain map[string]float64 for
+// templates (see web.money), or nil when unavailable (NBP unreachable, nothing cached yet) — the
+// dashboard/portfolio pages must still render in that case, just without the EUR/USD secondary
+// line, not fail outright.
+func (a *Application) exchangeRatesForDisplay() map[string]float64 {
+	if a.ExchangeRates == nil {
+		return nil
+	}
+	rates, err := a.ExchangeRates.Rates()
+	if err != nil {
+		return nil
+	}
+	display := make(map[string]float64, len(rates))
+	for code, rate := range rates {
+		display[string(code)] = rate
+	}
+	return display
+}
+
+// currencyOptions lists the currencies the record-transaction form's dropdown offers, as plain
+// strings for templates.
+func currencyOptions() []string {
+	all := currency.All()
+	options := make([]string, len(all))
+	for i, code := range all {
+		options[i] = string(code)
+	}
+	return options
+}
 
 // loginPageHandler renders the login form (GET) and verifies credentials (POST) — see
 // authUC.UseCase.Login. A GET while auth isn't Enabled() redirects straight to the dashboard,
@@ -87,7 +118,9 @@ func (a *Application) dashboardPageHandler(w http.ResponseWriter, r *http.Reques
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	web.Render(w, "dashboard", web.DashboardPage{Lang: a.resolveLang(r), Positions: positions, Risk: risk})
+	web.Render(w, "dashboard", web.DashboardPage{
+		Lang: a.resolveLang(r), Positions: positions, Risk: risk, Rates: a.exchangeRatesForDisplay(),
+	})
 }
 
 // portfolioPageHandler lists positions (GET) and records a transaction (POST) — the dashboard
@@ -113,6 +146,7 @@ func (a *Application) portfolioPageHandler(w http.ResponseWriter, r *http.Reques
 			Type:     r.FormValue("type"),
 			Quantity: quantity,
 			Price:    price,
+			Currency: r.FormValue("currency"),
 		}
 		if err := a.Portfolio.RecordTransaction(tx); err != nil {
 			a.renderPortfolioPage(w, r, err.Error(), "")
@@ -184,7 +218,9 @@ func (a *Application) renderPortfolioPage(w http.ResponseWriter, r *http.Request
 		return
 	}
 	web.Render(w, "portfolio", web.PortfolioPage{
-		Lang: a.resolveLang(r), Positions: positions, Transactions: transactions, Risk: risk, Error: errMsg, Success: successMsg,
+		Lang: a.resolveLang(r), Positions: positions, Transactions: transactions, Risk: risk,
+		Rates: a.exchangeRatesForDisplay(), Currencies: currencyOptions(),
+		Error: errMsg, Success: successMsg,
 	})
 }
 
