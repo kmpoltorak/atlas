@@ -238,10 +238,10 @@ Prometheus (`prometheus/prometheus.yml`) and visualized in Grafana (`grafana/das
 Infrastructure-level alerting rules — distinct from the Discord alerts `internal/app/
 alerts_loop.go` sends for recommendation changes — now exist too (`prometheus/alerts.yml`:
 API-down, crash-loop/flapping, high error rate), routed through Alertmanager
-(`alertmanager/alertmanager.yml`); see `deploy/RUNBOOK.md`'s "Infrastructure alerting" section
-for the alert list and how to verify it. The Alertmanager receiver is still a placeholder
-(delivers nowhere) — which real destination to use is an infrastructure decision, not a code
-one, same reasoning as `deploy/secret.yaml`.
+(`alertmanager/alertmanager.yml`) to a real, separate Discord channel (webhook URL set via the
+gitignored `.env`, never committed); see `deploy/RUNBOOK.md`'s "Infrastructure alerting" section
+for the alert list, the real upstream Alertmanager `v0.27.0` bug this surfaced (fixed by pinning
+`v0.28.1` instead), and how to verify it live.
 
 ---
 
