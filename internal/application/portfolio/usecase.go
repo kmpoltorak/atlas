@@ -9,8 +9,17 @@ import (
 	"sort"
 	"time"
 
+	"atlas/internal/domain/currency"
 	"atlas/internal/domain/portfolio"
 )
+
+// ExchangeRateSource converts an amount in a non-base currency to currency.Base (PLN) — see
+// exchangerate.UseCase.ToBase, which satisfies this. Kept as a small interface here (rather than
+// importing the concrete use case) so portfolio stays testable without a live NBP/Redis stack,
+// matching how Repository is already an interface, not a concrete persistence type.
+type ExchangeRateSource interface {
+	ToBase(amount float64, code currency.Code) (float64, error)
+}
 
 // UseCase keeps portfolio logic deterministic and testable. Positions/Transactions are an
 // in-memory working copy; when Repository is set, it's hydrated from persisted state on
@@ -19,6 +28,15 @@ type UseCase struct {
 	Positions    []portfolio.Position
 	Transactions []portfolio.Transaction
 	Repository   Repository
+
+	// ExchangeRates converts a non-PLN transaction's Price into PriceInPLN at record time (see
+	// RecordTransaction). A PLN transaction (the default when Currency is left empty) never
+	// needs it — that path works with ExchangeRates nil, so existing tests/callers can construct
+	// a UseCase without a live NBP/Redis stack. Recording a non-PLN transaction with
+	// ExchangeRates nil is an error, deliberately not a silent 1:1 fallback: treating a $100
+	// price as if it were 100 PLN would misrepresent real money, unlike the "feature simply
+	// isn't active" non-fatal-optional pattern ML/Discord use elsewhere in this codebase.
+	ExchangeRates ExchangeRateSource
 }
 
 func NewUseCase() *UseCase {
@@ -70,6 +88,24 @@ func (u *UseCase) RecordTransaction(tx portfolio.Transaction) error {
 	}
 	if tx.Type != "BUY" && tx.Type != "SELL" {
 		return errors.New("transaction type is unsupported")
+	}
+	if tx.Currency == "" {
+		tx.Currency = string(currency.Base)
+	}
+	if !currency.Valid(currency.Code(tx.Currency)) {
+		return fmt.Errorf("unsupported currency %q", tx.Currency)
+	}
+	switch {
+	case currency.Code(tx.Currency) == currency.Base:
+		tx.PriceInPLN = tx.Price
+	case u.ExchangeRates == nil:
+		return fmt.Errorf("cannot record a %s transaction: no exchange rate source configured", tx.Currency)
+	default:
+		priceInPLN, err := u.ExchangeRates.ToBase(tx.Price, currency.Code(tx.Currency))
+		if err != nil {
+			return fmt.Errorf("convert %s price to %s: %w", tx.Currency, currency.Base, err)
+		}
+		tx.PriceInPLN = priceInPLN
 	}
 
 	if u.Repository != nil {
@@ -196,22 +232,25 @@ func (u *UseCase) recomputePosition(symbol string) {
 }
 
 // applyTransaction folds one transaction's effect into a position: weighted-average cost on
-// BUY, quantity reduction floored at zero on SELL. Shared between RecordTransaction (append
-// path) and recomputePosition (replay-after-delete path) so the two can never drift apart.
-// Callers are responsible for validating tx.Type beforehand (RecordTransaction does); any other
-// type is a no-op here.
+// BUY, quantity reduction floored at zero on SELL. Uses PriceInPLN, not Price — position math
+// always happens in currency.Base regardless of what currency individual transactions were
+// recorded in (see domain/portfolio.Transaction's doc comment), so a symbol bought partly in USD
+// and partly in PLN still has one mathematically coherent cost basis. Shared between
+// RecordTransaction (append path) and recomputePosition (replay-after-delete path) so the two
+// can never drift apart. Callers are responsible for validating tx.Type beforehand
+// (RecordTransaction does); any other type is a no-op here.
 func applyTransaction(position portfolio.Position, tx portfolio.Transaction) portfolio.Position {
 	switch tx.Type {
 	case "BUY":
 		position.Quantity += tx.Quantity
-		position.AverageCost = ((position.AverageCost * (position.Quantity - tx.Quantity)) + (tx.Price * tx.Quantity)) / position.Quantity
+		position.AverageCost = ((position.AverageCost * (position.Quantity - tx.Quantity)) + (tx.PriceInPLN * tx.Quantity)) / position.Quantity
 	case "SELL":
 		position.Quantity -= tx.Quantity
 		if position.Quantity < 0 {
 			position.Quantity = 0
 		}
 	}
-	position.CurrentPrice = tx.Price
+	position.CurrentPrice = tx.PriceInPLN
 	return position
 }
 

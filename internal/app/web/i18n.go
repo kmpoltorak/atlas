@@ -55,6 +55,8 @@ var translations = map[string]map[Lang]string{
 	"table.type":             {LangEN: "Type", LangPL: "Typ"},
 	"table.price":            {LangEN: "Price", LangPL: "Cena"},
 	"table.timestamp":        {LangEN: "Timestamp", LangPL: "Znacznik czasu"},
+	"table.currency":         {LangEN: "Currency", LangPL: "Waluta"},
+	"table.pln_equivalent":   {LangEN: "PLN Equivalent", LangPL: "Równowartość w PLN"},
 	"table.action":           {LangEN: "Action", LangPL: "Akcja"},
 	"table.confidence":       {LangEN: "Confidence", LangPL: "Pewność"},
 	"table.triggered_at":     {LangEN: "Triggered At", LangPL: "Wyzwolono o"},

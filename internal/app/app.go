@@ -11,6 +11,7 @@ import (
 	backtestingUC "atlas/internal/application/backtesting"
 	collectorUC "atlas/internal/application/collector"
 	decisionUC "atlas/internal/application/decision"
+	exchangerateUC "atlas/internal/application/exchangerate"
 	mlUC "atlas/internal/application/ml"
 	notificationsUC "atlas/internal/application/notifications"
 	portfolioUC "atlas/internal/application/portfolio"
@@ -18,6 +19,7 @@ import (
 	"atlas/internal/config"
 	"atlas/internal/domain/market"
 	"atlas/internal/infrastructure/cache"
+	infraExchangerate "atlas/internal/infrastructure/exchangerate"
 	"atlas/internal/infrastructure/notifications"
 	"atlas/internal/infrastructure/persistence"
 	"atlas/internal/infrastructure/providers"
@@ -61,6 +63,7 @@ type Application struct {
 	Watchlist     *watchlistUC.UseCase
 	Alerts        *alertsUC.UseCase
 	Auth          *authUC.UseCase
+	ExchangeRates *exchangerateUC.UseCase
 }
 
 // New connects to TimescaleDB and Redis and wires the full application. A connection
@@ -105,12 +108,19 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 		}
 	}
 
+	// NBP being unreachable is non-fatal, same stance as the ML model above: a missing/failed
+	// rate fetch only blocks recording a *non-PLN* transaction (see portfolio.UseCase.
+	// RecordTransaction) — PLN-only usage, which is everything that worked before this feature
+	// existed, needs no exchange rate at all.
+	exchangeRates := exchangerateUC.NewUseCase(infraExchangerate.NewNBPProvider(), &redisRatesCache{client: redisCache})
+
 	portfolioUseCase, err := portfolioUC.NewUseCaseWithRepository(storage)
 	if err != nil {
 		_ = storage.Close()
 		_ = redisCache.Close()
 		return nil, fmt.Errorf("load portfolio state: %w", err)
 	}
+	portfolioUseCase.ExchangeRates = exchangeRates
 	decisionUseCase := decisionUC.NewUseCase()
 	orchestrator := decisionUC.NewOrchestratorWithML(analyzer, portfolioUseCase, decisionUseCase, mlUseCase)
 
@@ -142,6 +152,7 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 		Watchlist:     watchlist,
 		Alerts:        alertsUC.NewUseCase(watchlist, collector, orchestrator, cfg.CollectorWindow),
 		Auth:          authUC.NewUseCase(cfg.AdminUsername, cfg.AdminPasswordHash, redisCache, storage),
+		ExchangeRates: exchangeRates,
 	}, nil
 }
 

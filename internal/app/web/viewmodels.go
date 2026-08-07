@@ -20,6 +20,11 @@ type DashboardPage struct {
 	Lang      Lang
 	Positions []portfolio.Position
 	Risk      portfolio.RiskSnapshot
+	// Rates is today's PLN-per-unit exchange rate for EUR/USD (keys "EUR"/"USD"; see
+	// exchangerate.UseCase.Rates), used by the money template func to show every PLN-
+	// denominated figure in all three currencies. Empty when NBP is unreachable and nothing is
+	// cached yet — money degrades to PLN-only in that case, not an error.
+	Rates map[string]float64
 }
 
 // PortfolioPage is the view model for templates/portfolio.html.
@@ -28,8 +33,13 @@ type PortfolioPage struct {
 	Positions    []portfolio.Position
 	Transactions []portfolio.Transaction
 	Risk         portfolio.RiskSnapshot
-	Error        string
-	Success      string
+	// Rates — see DashboardPage.Rates.
+	Rates map[string]float64
+	// Currencies lists the currencies the record-transaction form's dropdown offers, e.g.
+	// ["PLN", "EUR", "USD"] — see currency.All().
+	Currencies []string
+	Error      string
+	Success    string
 }
 
 // RecommendationsPage is the view model for templates/recommendations.html. Symbols is the

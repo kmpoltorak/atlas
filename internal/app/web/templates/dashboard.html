@@ -22,9 +22,9 @@
         <tr>
           <td>{{.Symbol}}</td>
           <td>{{printf "%.4f" .Quantity}}</td>
-          <td>{{printf "%.2f" .AverageCost}}</td>
-          <td>{{printf "%.2f" .CurrentPrice}}</td>
-          <td>{{printf "%.2f" (pnl .)}}</td>
+          <td>{{money .AverageCost $.Rates}}</td>
+          <td>{{money .CurrentPrice $.Rates}}</td>
+          <td>{{money (pnl .) $.Rates}}</td>
         </tr>
         {{end}}
         </tbody>
@@ -40,9 +40,9 @@
         <thead><tr><th>{{T .Lang "table.exposure"}}</th><th>{{T .Lang "table.drawdown"}}</th><th>{{T .Lang "table.volatility"}}</th></tr></thead>
         <tbody>
         <tr>
-          <td>{{printf "%.2f" .Risk.Exposure}}</td>
+          <td>{{money .Risk.Exposure .Rates}}</td>
           <td>{{printf "%.2f%%" (percent .Risk.Drawdown)}}</td>
-          <td>{{printf "%.2f" .Risk.Volatility}}</td>
+          <td>{{money .Risk.Volatility .Rates}}</td>
         </tr>
         </tbody>
       </table>

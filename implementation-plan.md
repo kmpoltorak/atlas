@@ -330,6 +330,34 @@ Verified live via Docker: every nav label, the portfolio page's transaction hist
 (BUY/SELL rendered as KUPNO/SPRZEDAŻ), and a JS `confirm()` dialog with a real interpolated
 symbol name ("Usunąć AAPL całkowicie?...") all render correctly server-side in Polish.
 
+**Multi-currency portfolio (PLN/EUR/USD), built in a later pass**: scoped with Kris first
+(NBP Table A over Table C — the average/mid reference rate is the standard choice for valuation,
+not NBP's own buy/sell cash-exchange spread; conversion shown on every page with a currency-
+denominated value, not just Portfolio; any currency allowed per transaction, not one currency
+locked per symbol). `internal/domain/currency` defines the three supported codes and
+`currency.Base` (PLN) — the currency all internal portfolio math is done in, so the Decision
+Engine, risk calc, ROI, and backtesting never need to know multi-currency exists at all (see
+PROJECT_CONTEXT.md's Portfolio Engine section). `internal/application/exchangerate` +
+`internal/infrastructure/exchangerate` (a real NBP Table A client — `https://api.nbp.pl`, no API
+key needed, but requires a non-default User-Agent or it 403s, the same class of issue as the
+Yahoo provider's 429 — see PROJECT_CONTEXT.md's Market Data Providers section) fetch and
+Redis-cache today's PLN-per-unit rates,
+refreshed hourly (NBP itself only republishes once per business day, so this just bounds how
+often Atlas calls out, not how fresh the data can be). `Transaction.PriceInPLN` is computed once,
+at the moment a transaction is recorded, from whichever rate was current then — never
+recomputed later — so a position's weighted-average cost basis only changes when a real
+transaction is added or removed, not from FX movement alone (verified: a symbol bought partly in
+USD and partly in PLN produces one coherent blended PLN average cost). The dashboard/portfolio
+pages show every PLN-denominated value with a small secondary line converting it live to EUR/USD
+at today's rate (the `money` template func); the transaction history table instead shows each
+transaction's original entered currency plus its recorded (historical, not live-recomputed)
+PLN-equivalent, since using today's rate to "convert" a months-old transaction would misrepresent
+history. Recording a non-PLN transaction with no exchange-rate source configured is a hard error,
+not a silent 1:1 PLN fallback, since that could misrepresent real money. Verified live via
+Docker: a real $100 USD purchase converted to 373.24 PLN using the real live NBP rate, and both
+English and Polish renders of the Positions/Transaction History tables showing correct
+conversions and translated column headers ("Waluta"/"Równowartość w PLN").
+
 Not done: multi-user accounts, OAuth2/OIDC, and a richer SPA frontend remain explicitly out of
 scope for this increment — revisit only if Atlas's use case actually changes from "personal tool"
 to something needing them.

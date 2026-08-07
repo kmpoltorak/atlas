@@ -139,10 +139,11 @@ func (t *TimescaleDB) SaveTransaction(transaction portfolio.Transaction) (string
 
 	var id string
 	if err := tx.GetContext(ctx, &id,
-		`INSERT INTO transactions (portfolio_id, symbol_id, type, quantity, price, timestamp)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		`INSERT INTO transactions (portfolio_id, symbol_id, type, quantity, price, currency, price_in_pln, timestamp)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		 RETURNING id`,
-		portfolioID, symbolID, transaction.Type, transaction.Quantity, transaction.Price, timestamp); err != nil {
+		portfolioID, symbolID, transaction.Type, transaction.Quantity, transaction.Price,
+		transaction.Currency, transaction.PriceInPLN, timestamp); err != nil {
 		return "", fmt.Errorf("insert transaction for %s: %w", transaction.Symbol, err)
 	}
 
@@ -159,15 +160,17 @@ func (t *TimescaleDB) GetTransactions() ([]portfolio.Transaction, error) {
 	ctx := context.Background()
 
 	var rows []struct {
-		ID        string    `db:"id"`
-		Ticker    string    `db:"ticker"`
-		Type      string    `db:"type"`
-		Quantity  float64   `db:"quantity"`
-		Price     float64   `db:"price"`
-		Timestamp time.Time `db:"timestamp"`
+		ID         string    `db:"id"`
+		Ticker     string    `db:"ticker"`
+		Type       string    `db:"type"`
+		Quantity   float64   `db:"quantity"`
+		Price      float64   `db:"price"`
+		Currency   string    `db:"currency"`
+		PriceInPLN float64   `db:"price_in_pln"`
+		Timestamp  time.Time `db:"timestamp"`
 	}
 	if err := t.db.SelectContext(ctx, &rows,
-		`SELECT tr.id, s.ticker, tr.type, tr.quantity, tr.price, tr.timestamp
+		`SELECT tr.id, s.ticker, tr.type, tr.quantity, tr.price, tr.currency, tr.price_in_pln, tr.timestamp
 		 FROM transactions tr
 		 JOIN symbols s ON s.id = tr.symbol_id
 		 JOIN portfolios pf ON pf.id = tr.portfolio_id
@@ -181,6 +184,7 @@ func (t *TimescaleDB) GetTransactions() ([]portfolio.Transaction, error) {
 		transactions = append(transactions, portfolio.Transaction{
 			ID: row.ID, Symbol: row.Ticker, Type: row.Type,
 			Quantity: row.Quantity, Price: row.Price,
+			Currency: row.Currency, PriceInPLN: row.PriceInPLN,
 			Timestamp: row.Timestamp.UTC().Format(time.RFC3339),
 		})
 	}

@@ -7,6 +7,7 @@ package web
 import (
 	"bytes"
 	"embed"
+	"fmt"
 	"html/template"
 	"net/http"
 	"strings"
@@ -46,6 +47,28 @@ var funcMap = template.FuncMap{
 	// translations.go, never user input) so html/template doesn't escape it — see i18n.go's
 	// translations doc comment for the safety contract this depends on.
 	"safeHTML": func(s string) template.HTML { return template.HTML(s) }, //nolint:gosec // trusted, hardcoded translation strings only
+	// money renders a currency.Base (PLN) amount as its primary figure plus a small secondary
+	// line converting it to EUR/USD at today's live rate (rates, from Application.ExchangeRates.
+	// Rates(), keyed "EUR"/"USD") — see internal/domain/currency. Only the numeric inputs are
+	// ever interpolated (never user text), so building the HTML directly is safe. Missing/zero
+	// rates (NBP unreachable and nothing cached yet) degrade to showing PLN alone, not an error —
+	// a page must still render when NBP is down.
+	"money": money,
+}
+
+func money(pln float64, rates map[string]float64) template.HTML {
+	primary := fmt.Sprintf("%.2f PLN", pln)
+	var secondary []string
+	for _, code := range []string{"EUR", "USD"} {
+		if rate := rates[code]; rate > 0 {
+			secondary = append(secondary, fmt.Sprintf("%.2f %s", pln/rate, code))
+		}
+	}
+	if len(secondary) == 0 {
+		return template.HTML(primary) //nolint:gosec // numeric-only interpolation, no user input
+	}
+	return template.HTML(fmt.Sprintf(`%s<br><small class="text-body-secondary">&asymp; %s</small>`,
+		primary, strings.Join(secondary, " / "))) //nolint:gosec // numeric-only interpolation, no user input
 }
 
 func actionClass(action string) string {

@@ -155,6 +155,35 @@ func TestGetTransactionsReturnsPersistedRows(t *testing.T) {
 	}
 }
 
+func TestSaveAndGetTransactionRoundTripsCurrencyAndPLNPrice(t *testing.T) {
+	db := connectTestDB(t)
+
+	id, err := db.SaveTransaction(portfolio.Transaction{
+		Symbol: "TESTTXFX", Type: "BUY", Quantity: 3, Price: 100, Currency: "USD", PriceInPLN: 373,
+		Timestamp: "2026-08-06T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("SaveTransaction failed: %v", err)
+	}
+
+	transactions, err := db.GetTransactions()
+	if err != nil {
+		t.Fatalf("GetTransactions failed: %v", err)
+	}
+	found := false
+	for _, tx := range transactions {
+		if tx.ID == id {
+			found = true
+			if tx.Currency != "USD" || tx.PriceInPLN != 373 {
+				t.Fatalf("expected Currency=USD and PriceInPLN=373 to round-trip, got %+v", tx)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected to find transaction %s in GetTransactions, got %+v", id, transactions)
+	}
+}
+
 func TestDeleteTransactionRemovesTheRow(t *testing.T) {
 	db := connectTestDB(t)
 

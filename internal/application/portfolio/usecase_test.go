@@ -1,10 +1,31 @@
 package portfolio
 
 import (
+	"errors"
 	"testing"
 
+	"atlas/internal/domain/currency"
 	"atlas/internal/domain/portfolio"
 )
+
+// stubExchangeRates is a real, deterministic ExchangeRateSource test double — not a mock of
+// business logic, matching this codebase's convention elsewhere (e.g. auth's in-memory session
+// store).
+type stubExchangeRates struct {
+	rates map[currency.Code]float64
+	err   error
+}
+
+func (s stubExchangeRates) ToBase(amount float64, code currency.Code) (float64, error) {
+	if s.err != nil {
+		return 0, s.err
+	}
+	rate, ok := s.rates[code]
+	if !ok {
+		return 0, errors.New("no rate for currency")
+	}
+	return amount * rate, nil
+}
 
 func TestRecordTransactionUpdatesPositionsAndROI(t *testing.T) {
 	uc := NewUseCase()
@@ -46,6 +67,90 @@ func TestRecordTransactionRejectsInvalidInput(t *testing.T) {
 	}
 	if err := uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 0, Price: 1}); err == nil {
 		t.Fatal("expected zero quantity to be rejected")
+	}
+}
+
+func TestRecordTransactionDefaultsToPLNAndNeedsNoExchangeRates(t *testing.T) {
+	uc := NewUseCase() // no ExchangeRates set
+	tx := portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Timestamp: "2026-01-01T00:00:00Z"}
+	if err := uc.RecordTransaction(tx); err != nil {
+		t.Fatalf("expected a currency-less (PLN) transaction to need no exchange rate source: %v", err)
+	}
+	if uc.Transactions[0].Currency != "PLN" {
+		t.Fatalf("expected Currency to default to PLN, got %q", uc.Transactions[0].Currency)
+	}
+	if uc.Transactions[0].PriceInPLN != 100 {
+		t.Fatalf("expected PriceInPLN to equal Price for PLN, got %v", uc.Transactions[0].PriceInPLN)
+	}
+}
+
+func TestRecordTransactionRejectsUnsupportedCurrency(t *testing.T) {
+	uc := NewUseCase()
+	err := uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 1, Price: 100, Currency: "GBP"})
+	if err == nil {
+		t.Fatal("expected an unsupported currency to be rejected")
+	}
+}
+
+func TestRecordTransactionRejectsNonPLNWithoutExchangeRates(t *testing.T) {
+	uc := NewUseCase() // no ExchangeRates set
+	err := uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 1, Price: 100, Currency: "USD"})
+	if err == nil {
+		t.Fatal("expected a USD transaction with no configured exchange rate source to be rejected, not silently treated as 1:1 PLN")
+	}
+}
+
+func TestRecordTransactionConvertsNonPLNPriceUsingExchangeRates(t *testing.T) {
+	uc := NewUseCase()
+	uc.ExchangeRates = stubExchangeRates{rates: map[currency.Code]float64{currency.USD: 3.73}}
+
+	tx := portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Currency: "USD", Timestamp: "2026-01-01T00:00:00Z"}
+	if err := uc.RecordTransaction(tx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if uc.Transactions[0].PriceInPLN != 373 {
+		t.Fatalf("expected PriceInPLN = 100 * 3.73 = 373, got %v", uc.Transactions[0].PriceInPLN)
+	}
+	positions, _ := uc.GetPositions()
+	if positions[0].AverageCost != 373 || positions[0].CurrentPrice != 373 {
+		t.Fatalf("expected the position's AverageCost/CurrentPrice to be in PLN (373), got %+v", positions[0])
+	}
+}
+
+func TestRecordTransactionPropagatesExchangeRateErrors(t *testing.T) {
+	uc := NewUseCase()
+	uc.ExchangeRates = stubExchangeRates{err: errors.New("NBP unreachable")}
+
+	err := uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 1, Price: 100, Currency: "USD"})
+	if err == nil {
+		t.Fatal("expected the exchange rate source's error to propagate rather than silently recording a wrong price")
+	}
+}
+
+// TestMixedCurrencyPositionHasOneCoherentPLNCostBasis proves the scenario Kris explicitly
+// wanted: buying the same symbol partly in USD and partly in PLN still produces one correct
+// weighted-average cost, computed entirely in PLN.
+func TestMixedCurrencyPositionHasOneCoherentPLNCostBasis(t *testing.T) {
+	uc := NewUseCase()
+	uc.ExchangeRates = stubExchangeRates{rates: map[currency.Code]float64{currency.USD: 4.0}}
+
+	// 10 shares @ $100 (USD) -> 400 PLN/share.
+	if err := uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Currency: "USD", Timestamp: "2026-01-01T00:00:00Z"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 10 more shares @ 500 PLN/share directly.
+	if err := uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 500, Currency: "PLN", Timestamp: "2026-01-02T00:00:00Z"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	positions, _ := uc.GetPositions()
+	wantAvgCost := (400.0*10 + 500.0*10) / 20 // 450
+	if positions[0].Quantity != 20 {
+		t.Fatalf("expected quantity 20, got %v", positions[0].Quantity)
+	}
+	if positions[0].AverageCost != wantAvgCost {
+		t.Fatalf("expected average cost %v (blended in PLN across both currencies), got %v", wantAvgCost, positions[0].AverageCost)
 	}
 }
 
