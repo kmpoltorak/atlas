@@ -70,12 +70,16 @@ Indicators include:
 - Volatility metrics
 
 Implementation status: RSI, EMA, MACD, ATR, volume analysis, OBV, ADX, and Bollinger Bands are
-all implemented (internal/application/analyzer). None of these are wired into the decision
-engine's scoring yet beyond what was already there (RSI, momentum/volume) — they're available,
-tested analyzer capabilities, not yet blended into Orchestrator.buildTechnicalScore or
-ml.FeatureVector (see docs/decision_engine.md). Broader volatility/trend *summary* metrics
-(e.g. a single consolidated risk/trend score) are still not implemented — only the individual
-indicator series are.
+all implemented (internal/application/analyzer). RSI/EMA/MACD/ATR/Volume/OBV/Bollinger Bands are
+all wired into the decision engine's scoring (Orchestrator.buildTechnicalScore blends momentum,
+RSI, a Bollinger %B position signal, and an OBV accumulation/distribution signal as a weighted
+average — see docs/decision_engine.md); ADX is wired into market-condition classification
+(`ml.ClassifyMarketCondition`, ADX+EMA — see docs/ml.md) instead. `ml.FeatureVector` (the trained
+ONNX model's input contract) still only uses RSI/EMA/MACD/ATR/Volume — extending it would mean
+retraining on features the real, still-thin collected history can't yet support honestly, unlike
+`buildTechnicalScore`'s heuristic blend which needs no training data. Broader volatility/trend
+*summary* metrics (e.g. a single consolidated risk/trend score) are still not implemented — only
+the individual indicator series are.
 
 ---
 

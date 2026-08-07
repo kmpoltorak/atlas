@@ -1,11 +1,22 @@
 package decision
 
 type TechnicalScore struct {
-	RSI     float64 `json:"rsi"`
-	EMA     float64 `json:"ema"`
-	MACD    float64 `json:"macd"`
-	ATR     float64 `json:"atr"`
-	Volume  float64 `json:"volume"`
+	RSI    float64 `json:"rsi"`
+	EMA    float64 `json:"ema"`
+	MACD   float64 `json:"macd"`
+	ATR    float64 `json:"atr"`
+	Volume float64 `json:"volume"`
+
+	// OBV is the latest On-Balance Volume reading (see analyzer.ComputeOBV) — a raw cumulative
+	// value, kept here for traceability. It's zero when there weren't enough bars to compute a
+	// meaningful confirmation signal from it (see Orchestrator.buildTechnicalScore).
+	OBV float64 `json:"obv"`
+
+	// BollingerPercentB is the standard %B measure — (close-lower)/(upper-lower), clamped to
+	// [0,1] — reporting where price sits within its Bollinger Bands. Zero when there weren't
+	// enough bars for a full band window (see analyzer.ComputeBollingerBands).
+	BollingerPercentB float64 `json:"bollinger_percent_b"`
+
 	Overall float64 `json:"overall"`
 }
 

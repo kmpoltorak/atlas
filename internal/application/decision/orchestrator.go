@@ -127,16 +127,71 @@ func (o *Orchestrator) buildTechnicalScore(symbol string, bars []market.Bar) dom
 		technical.Volume = series[len(series)-1]
 	}
 
-	// Blend the real RSI into the overall score only when it was actually computed;
-	// otherwise keep the momentum/volume score untouched. Momentum/volume is weighted
-	// higher (0.7) than RSI (0.3): RSI reflects recent overbought/oversold state, not
-	// trend direction, so it's a secondary signal here rather than an equal partner.
+	// Blend every signal that was actually computed into Overall as a weighted average —
+	// momentum/volume always contributes (it's the only signal that needs no warm-up period);
+	// RSI/Bollinger/OBV each join only once there's enough history to compute them (matching
+	// the RSI-only guard this replaced). With only momentum/volume present, the weighted
+	// average of one term reduces to momentumVolume unchanged, so short-history behavior is
+	// identical to before this pass. Weights (0.45/0.20/0.20/0.15) are first-pass, documented
+	// heuristics, same honesty stance as this package's other hand-picked cutoffs (see
+	// decision.DefaultThresholds) — not tuned against real outcome data.
+	terms := []struct{ value, weight float64 }{{momentumVolume, 0.45}}
+
 	if technical.RSI != 50 {
 		rsiSignal := 0.5 + (technical.RSI-50)/100
-		technical.Overall = clamp01(momentumVolume*0.7 + rsiSignal*0.3)
+		terms = append(terms, struct{ value, weight float64 }{rsiSignal, 0.20})
+	}
+
+	// %B, the standard Bollinger Bands position measure: price stretched toward the upper band
+	// reads as trend strength here (bullish), matching this engine's existing trend-following
+	// stance (see the RSI treatment above) rather than a mean-reversion "overbought = sell" one.
+	if bands, err := o.Analyzer.ComputeBollingerBands(symbol, bars); err == nil && len(bands.Upper) > 0 {
+		i := len(bands.Upper) - 1
+		if upper, lower := bands.Upper[i], bands.Lower[i]; upper > lower {
+			technical.BollingerPercentB = clamp01((latest.Close - lower) / (upper - lower))
+			terms = append(terms, struct{ value, weight float64 }{technical.BollingerPercentB, 0.20})
+		}
+	}
+
+	// OBV confirmation: a coarse, standard use of On-Balance Volume — is the latest reading
+	// above or below its own recent average, i.e. is volume flow presently accumulating or
+	// distributing. This is deliberately coarse (not divergence detection against price, which
+	// would need a more involved analysis) — see docs/decision_engine.md.
+	if series, err := o.Analyzer.ComputeOBV(symbol, bars); err == nil && len(series) >= 2 {
+		technical.OBV = series[len(series)-1]
+		terms = append(terms, struct{ value, weight float64 }{obvSignal(series), 0.15})
+	}
+
+	sumWeight, sumValue := 0.0, 0.0
+	for _, term := range terms {
+		sumWeight += term.weight
+		sumValue += term.value * term.weight
+	}
+	if sumWeight > 0 {
+		technical.Overall = clamp01(sumValue / sumWeight)
 	}
 
 	return technical
+}
+
+// obvSignal reports whether On-Balance Volume is presently above (0.7, accumulation-leaning) or
+// below (0.3, distribution-leaning) its own mean over the given series, or exactly at it (0.5).
+// Coarse by design — see buildTechnicalScore's OBV comment.
+func obvSignal(series []float64) float64 {
+	sum := 0.0
+	for _, v := range series {
+		sum += v
+	}
+	mean := sum / float64(len(series))
+	latest := series[len(series)-1]
+	switch {
+	case latest > mean:
+		return 0.7
+	case latest < mean:
+		return 0.3
+	default:
+		return 0.5
+	}
 }
 
 // blendResult carries every signal blendMLAndPortfolio derives: the blended score, its raw
