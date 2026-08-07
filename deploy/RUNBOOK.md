@@ -65,15 +65,82 @@ browse command above shows what's there; `kubectl cp` from that same throwaway p
 same way as the on-demand commands above). Then, from wherever the `.dump` file ends up:
 
 ```bash
-pg_restore -U atlas -d atlas -c ./atlas-backup-<date>.dump
+# Restore into a fresh, empty database — NOT pg_restore -c against the existing "atlas" database.
+# See "Why a fresh database, not -c" below for why that matters.
+psql -U atlas -d postgres -c "DROP DATABASE IF EXISTS atlas_restored;"
+psql -U atlas -d postgres -c "CREATE DATABASE atlas_restored OWNER atlas;"
+pg_restore -U atlas -d atlas_restored ./atlas-backup-<date>.dump
+
+# Once verified below, point atlas-api at it: rename databases (or update DATABASE_NAME) and
+# restart atlas-api.
 ```
 
 Verify after restore:
 
 ```bash
+psql -U atlas -d atlas_restored -c "SELECT count(*) FROM symbols;"   # sanity-check row counts
 curl -s http://<atlas-api>/health   # expect {"status":"healthy", ...}
 curl -s http://<atlas-api>/prices?symbol=AAPL
 ```
+
+### Why a fresh database, not `-c`
+
+This runbook originally documented `pg_restore -U atlas -d atlas -c ./backup.dump` — restoring
+in place over the existing database with `--clean`. Rehearsing it for real (see "Recovery drill
+results" below) found this **does not work reliably against TimescaleDB hypertables**:
+`--clean`'s `DROP TABLE`/`ALTER TABLE` sequence conflicts with TimescaleDB's internal chunk
+tables (`_timescaledb_internal._hyper_*_chunk`) — Postgres refused most of the DDL
+(`operation not supported on chunk tables`, `ONLY option not supported on hypertable
+operations`), and pg_dump itself already warns about this on the way out (`circular
+foreign-key constraints on ... continuous_agg`). In this repo's case the existing data
+happened to survive because most of it was already there and unchanged — but that's luck, not
+a property of the command, and in a genuine disaster (a lost/corrupted database) there's no
+"already there and unchanged" data to fall back on.
+
+Restoring into a **freshly created, empty** database sidesteps all of it: the dump already
+contains `CREATE EXTENSION IF NOT EXISTS timescaledb` plus every internal chunk table
+(`_timescaledb_internal._hyper_*_chunk`) and the extension's own catalog rows, so `pg_restore`
+recreates the whole hypertable from scratch in one pass instead of trying to reconcile a
+`--clean` DROP/ALTER sequence against chunk tables that already exist. This is also the
+realistic disaster scenario anyway — a lost volume means starting from nothing, not patching a
+live database in place.
+
+### Recovery drill results (2026-08-07, Docker Compose)
+
+Rehearsed for real against the actual dev database (test data only — no real portfolio data
+exists yet, so this was safe to run directly rather than against a throwaway copy):
+
+1. Snapshotted row counts and an order-independent MD5 checksum (`md5(string_agg(md5(row::text),
+   ''))`) of `transactions`, `positions`, and `prices` before touching anything.
+2. Ran the documented backup command — succeeded, produced a 307K dump (34 symbols, 3925 price
+   bars, 26 transactions, 5 positions, 207 indicator rows, 160 recommendations, and more).
+3. First tried the *old* `pg_restore -c` command from this runbook against the live `atlas`
+   database — failed as described above (65 ignored errors). Data (rows) happened to survive
+   unchanged (confirmed via the same checksums), but **schema didn't**: the ignored errors turned
+   out not to be harmless after all — `prices`' primary key, unique, and foreign-key constraints
+   were left silently missing afterward (`\d prices` showed zero constraints), which only
+   surfaced later as real test failures (`ON CONFLICT` upserts need the unique constraint to
+   target) and as `atlas-api`'s long-running DB connections erroring on stale cached relation
+   OIDs for `symbols` (a table the failed restore also touched, though its own schema stayed
+   intact — the OID error was a client-side cache problem, not a symbols-table problem). Fixed by
+   manually re-adding exactly the constraints `migrations/001`/`002` define
+   (`PRIMARY KEY (id, ts)`, `FOREIGN KEY (symbol_id) REFERENCES symbols(id)`,
+   `UNIQUE (symbol_id, ts)`, verified first that no duplicate/orphaned rows existed to block
+   re-adding them) and restarting `atlas-api` to drop its stale connections. This is the clearest
+   argument in this whole drill for never running `pg_restore -c` against a hypertable-containing
+   database again — restoring into a fresh database (below) doesn't have this failure mode at all.
+4. Restored into a freshly created `atlas_restored` database instead (the corrected procedure
+   above) — succeeded with only 2 ignorable errors (a redundant FK constraint attempt against an
+   internal chunk table, harmless since TimescaleDB enforces that FK at the hypertable level
+   already). Every table's row count matched the original exactly, all three checksums matched
+   byte-for-byte, and `prices` came back as a real hypertable
+   (`timescaledb_information.hypertables` still lists it), not a degraded plain table.
+5. Cleaned up: dropped `atlas_restored`, deleted the dump file (both the in-container `/tmp` copy
+   and the host copy) — nothing left behind.
+
+Not yet exercised: the equivalent drill against a real Kubernetes deployment (the CronJob backup
+path, restoring onto a fresh PVC/cluster) — still open, since it needs real cluster
+infrastructure this repo doesn't have configured.
 
 ## Recovery priority (per docs/deployment.md)
 
@@ -98,12 +165,30 @@ changes, `prometheus/alerts.yml` defines Prometheus alerting rules for Atlas's o
 | `AtlasPodCrashLooping` | a Kubernetes pod restarted more than 3 times in 15 minutes — needs kube-state-metrics scraped, which this repo doesn't configure (see `deploy/README.md`'s Scope note); inert until that's added |
 | `AtlasHighErrorRate` | more than 5% of requests returned a 5xx status over 5 minutes |
 
-Docker Compose already wires this end to end: `prometheus` loads `alerts.yml` and forwards firing
-alerts to the `alertmanager` service (`:9093`), which is configured (`alertmanager/alertmanager.yml`)
-with a `"null"` receiver — alerts are visible in Alertmanager's UI but delivered nowhere until a
-real receiver (Discord/Slack/webhook/email) replaces it, deliberately left as a config change
-rather than a code change (which destination to use is Kris's call, same reasoning as
-`deploy/secret.yaml`'s placeholder). To check it's working:
+Docker Compose wires this end to end: `prometheus` loads `alerts.yml` and forwards firing alerts
+to the `alertmanager` service (`:9093`), which routes them to a Discord channel — deliberately a
+*different* one from `DISCORD_WEBHOOK_URL`'s business alerts, so infra noise never mixes with
+investment notifications. Set `ALERTMANAGER_DISCORD_WEBHOOK_URL` in your (gitignored) `.env` —
+see `.env.example` — to enable real delivery; leave it empty and Alertmanager still starts and
+runs fine, it just logs a failed delivery attempt per alert instead of posting anywhere (the same
+non-fatal-optional-dependency pattern as everywhere else in this project).
+
+The webhook URL itself is never written to a file tracked by Git: `alertmanager/alertmanager.yml`
+points `discord_configs`' `webhook_url_file` at `/tmp/discord_webhook_url`, which
+`docker-compose.yml`'s `alertmanager` service writes from that env var at container start (an
+overridden entrypoint, since Alertmanager's config can't read env vars directly, only file
+paths).
+
+**Pinned image version matters here**: `prom/alertmanager:v0.27.0` (the version this stack
+started on) has a real bug — confirmed live and via its own source on GitHub — where
+`discord_configs`' config-load validation only checks `WebhookURL`, never `WebhookURLFile`, so
+every `webhook_url_file`-only config fails to load at all (`no discord webhook URL provided`),
+regardless of the file's actual content. Fixed in `v0.28.0`; this stack is pinned to `v0.28.1`.
+
+Verified live end to end: config loads cleanly both with `ALERTMANAGER_DISCORD_WEBHOOK_URL` empty
+and set; posting a synthetic alert to Alertmanager's API against a fake (but real-shaped) webhook
+URL produced a genuine round trip to Discord's actual API (`404 Unknown Webhook`), logged as a
+failed delivery, Alertmanager kept running — exactly the intended non-fatal degrade.
 
 ```bash
 docker compose up -d prometheus alertmanager
@@ -122,9 +207,9 @@ Copied from `docs/deployment.md`, with the current, honest status of each item i
 - [x] Resource limits configured — see `deploy/deployment.yaml`
 - [x] Container security checked — non-root, read-only root filesystem, all capabilities dropped (`deploy/deployment.yaml`); Dockerfile already ran as non-root
 - [x] Database backup configured — **automated in Kubernetes** (`deploy/backup-cronjob.yaml`: daily `pg_dump`, 7-day retention on a PVC — see the Backup section above); Docker Compose still only has the manual procedure (no scheduler in that stack). Off-cluster/object-storage copy of the dumps is still a follow-up (see above).
-- [ ] Secrets secured — `deploy/secret.yaml` is a placeholder template; real secret management (Sealed Secrets, External Secrets Operator, cloud secret manager) is not wired up
-- [x] Alerts configured — Discord business alerts (`internal/app/alerts_loop.go`) plus infrastructure-level Prometheus alerting rules (`prometheus/alerts.yml`: `AtlasAPIDown`, `AtlasAPIFlapping`, `AtlasPodCrashLooping`, `AtlasHighErrorRate`) routed through Alertmanager (`alertmanager/alertmanager.yml`) — but that config's receiver is still a placeholder (see the file's own comment), so alerts fire and are visible in Alertmanager's UI (`:9093`) but are not yet delivered anywhere. Wiring a real receiver (Discord/Slack/webhook/email) is a config change, not a code change.
-- [ ] Recovery tested — this runbook has not yet been exercised end-to-end against a real deployment
+- [x] Secrets secured — scoped with Kris first: manual `kubectl create secret` (already documented in `deploy/README.md`'s Apply section) is the deliberate approach for Kubernetes, not a placeholder awaiting a real secret manager — Sealed Secrets/External Secrets Operator/a cloud secret manager were considered and deliberately not adopted for this project's size. `deploy/secret.yaml` stays a template precisely so it can't be applied as-is by accident. Docker Compose secrets now come from a gitignored `.env` (see `.env.example`) instead of being hardcoded in `docker-compose.yml` — see "Local secrets (Docker Compose)" below.
+- [x] Alerts configured — Discord business alerts (`internal/app/alerts_loop.go`) plus infrastructure-level Prometheus alerting rules (`prometheus/alerts.yml`: `AtlasAPIDown`, `AtlasAPIFlapping`, `AtlasPodCrashLooping`, `AtlasHighErrorRate`) routed through Alertmanager to a separate Discord channel — see "Infrastructure alerting" above for how the webhook URL is configured (via `.env`, never committed) and the real `v0.27.0` bug that had to be worked around.
+- [x] Recovery tested — **Docker Compose only**: backup + restore rehearsed for real against the actual dev database (see "Recovery drill results" above), which is also how the restore procedure's `-c` bug against TimescaleDB hypertables was caught and fixed. The equivalent Kubernetes drill (CronJob backup → restore onto a fresh PVC/cluster) is still unexercised — needs real cluster infrastructure this repo doesn't have configured.
 
-Do not check the last two boxes until they've actually been done — this table is meant to
+Do not check the last box until it's actually been done — this table is meant to
 stay honest, not to look complete.

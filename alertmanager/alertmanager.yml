@@ -1,24 +1,21 @@
-# Placeholder Alertmanager config — matches deploy/secret.yaml's pattern of a real, loadable
-# template with no real destination wired in. Alerts route here and get grouped/deduplicated,
-# but the "null" receiver below sends them nowhere until a real one is added.
+# Infrastructure alerts route to a Discord channel deliberately separate from
+# DISCORD_WEBHOOK_URL (internal/app/alerts_loop.go's business alerts — recommendation changes),
+# so infra noise (pod restarts, error rates) never mixes with investment notifications.
 #
-# To actually deliver these alerts, replace the receiver below with e.g.:
-#
-#   receivers:
-#     - name: infra-alerts
-#       discord_configs:
-#         - webhook_url: "https://discord.com/api/webhooks/..."
-#       # or: slack_configs / webhook_configs / email_configs — see Alertmanager's docs.
-#
-# Deliberately a separate destination from DISCORD_WEBHOOK_URL (internal/app/alerts_loop.go's
-# business alerts) rather than reusing it — which channel these should land in is Kris's call,
-# not a code decision (see implementation-plan.md's Phase 7 status note).
+# The webhook URL itself is never written here or committed anywhere: `webhook_url_file` points
+# at a file docker-compose.yml's alertmanager service writes at container start from the
+# ALERTMANAGER_DISCORD_WEBHOOK_URL env var (set it in your gitignored .env — see .env.example).
+# Leave that var empty and this receiver still starts fine — it just fails to deliver (logged by
+# Alertmanager, not fatal), the same non-fatal-optional-dependency pattern used everywhere else
+# in this project (ML model, business Discord alerts, NBP rates all degrade the same way).
 route:
-  receiver: "null"
+  receiver: infra-discord
   group_by: ["alertname"]
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
 
 receivers:
-  - name: "null"
+  - name: infra-discord
+    discord_configs:
+      - webhook_url_file: /tmp/discord_webhook_url

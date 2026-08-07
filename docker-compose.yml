@@ -13,12 +13,16 @@ services:
       DATABASE_PORT: "5432"
       DATABASE_NAME: atlas
       DATABASE_USER: atlas
-      DATABASE_PASSWORD: atlas
+      # Both default to the same local-dev-only values this stack has always used — override in
+      # .env (gitignored; copy .env.example to get started) rather than editing this file, so
+      # real credentials never end up tracked in Git. DATABASE_PASSWORD must match
+      # timescaledb's POSTGRES_PASSWORD below — they're the same variable for that reason.
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-atlas}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       PROMETHEUS_ENABLED: "true"
       MARKET_PROVIDER: yahoo
-      DISCORD_WEBHOOK_URL: ""
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
       ALERT_POLL_INTERVAL_SECONDS: "300"
       # Empty by default: no model loaded, Atlas falls back to the deterministic RSI stub
       # (non-fatal — see internal/application/ml). Set MODEL_PATH in the shell/.env before
@@ -63,7 +67,8 @@ services:
     environment:
       POSTGRES_DB: atlas
       POSTGRES_USER: atlas
-      POSTGRES_PASSWORD: atlas
+      # Must match atlas-api's DATABASE_PASSWORD above — same variable, same value.
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-atlas}
     volumes:
       - timescaledb-data:/var/lib/postgresql/data
       # Official postgres/timescaledb images auto-run any .sql files found here, in
@@ -105,8 +110,32 @@ services:
       - alertmanager
 
   alertmanager:
-    image: prom/alertmanager:v0.27.0
+    # Pinned above v0.27.0 deliberately: confirmed live (and via prometheus/alertmanager's
+    # source on GitHub) that v0.27.0 has a real bug where discord_configs' config-load
+    # validation only checks WebhookURL, ignoring WebhookURLFile as a valid alternative even
+    # though the field is otherwise fully supported — every webhook_url_file-only config fails
+    # to load with "no discord webhook URL provided", regardless of the file's actual content.
+    # Fixed in v0.28.0 (config.go's check became `WebhookURL == nil && len(WebhookURLFile) == 0`).
+    image: prom/alertmanager:v0.28.1
     container_name: atlas-alertmanager
+    environment:
+      # Empty by default (non-fatal — see alertmanager/alertmanager.yml's comment): the pinned
+      # v0.28.1 image's config-load validation only requires webhook_url_file's *path* to be
+      # set (which it always is, hardcoded below), not the file's content — an empty file only
+      # fails an actual notification-send attempt (logged, non-fatal), never config load.
+      # Compose's secrets-from-environment feature was tried first instead but rejected: it
+      # hard-fails container startup outright when the source env var is entirely unset, unlike
+      # every other optional dependency in this project (ML model, business Discord alerts, NBP
+      # rates), which all degrade gracefully instead of refusing to start.
+      ALERTMANAGER_DISCORD_WEBHOOK_URL: ${ALERTMANAGER_DISCORD_WEBHOOK_URL:-}
+    # Overrides the image's default entrypoint only to write that env var to a file first —
+    # Alertmanager's config can't read env vars directly, only webhook_url_file (a path). The
+    # `exec` line re-applies the image's own default CMD flags (see `docker inspect`).
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo -n "$$ALERTMANAGER_DISCORD_WEBHOOK_URL" > /tmp/discord_webhook_url
+        exec /bin/alertmanager --config.file=/etc/alertmanager/alertmanager.yml --storage.path=/alertmanager
     volumes:
       - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
       - alertmanager-data:/alertmanager
@@ -118,7 +147,7 @@ services:
     container_name: atlas-grafana
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboards:/var/lib/grafana/dashboards

@@ -7,9 +7,13 @@ atlas
 # Local env
 .env
 .env.*
+!.env.example
 
 # Docker data
 *.log
+
+# Local backup dumps (e.g. from rehearsing deploy/RUNBOOK.md's restore procedure)
+*.dump
 
 # IDE
 .vscode/

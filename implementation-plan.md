@@ -219,19 +219,28 @@ added to the Kubernetes manifests even though `docker-compose.yml` had them — 
 optional/non-fatal-when-unset, matching their behavior everywhere else.
 
 Prometheus alerting rules (Alertmanager) for infrastructure-level conditions now exist too,
-scoped with Kris first (rules-only in this pass; delivery destination deliberately left a
-placeholder — see below): `prometheus/alerts.yml` defines `AtlasAPIDown`, `AtlasAPIFlapping`
+scoped with Kris first: `prometheus/alerts.yml` defines `AtlasAPIDown`, `AtlasAPIFlapping`
 (a crash-loop proxy needing no extra scrape config), `AtlasPodCrashLooping` (the literal
 Kubernetes crash-loop signal, but inert until kube-state-metrics is scraped, which this repo
 doesn't configure — consistent with `deploy/README.md`'s Scope note that cluster-level
 add-ons/managed services are out of this repo's scope), and `AtlasHighErrorRate` — distinct
 from the existing Discord business-logic alerts in `internal/app/alerts_loop.go`. Wired end to
 end in Docker Compose: `prometheus/prometheus.yml` loads the rule file and forwards firing
-alerts to a new `alertmanager` service, configured (`alertmanager/alertmanager.yml`) with a
-`"null"` receiver — alerts fire and are visible in Alertmanager's UI, but are deliberately not
-delivered anywhere yet, since which real destination (Discord/Slack/webhook/email) to wire in is
-Kris's call, not a code decision (same reasoning as `secret.yaml`'s placeholder). See
-`deploy/RUNBOOK.md`'s "Infrastructure alerting" section for the full list and how to verify it.
+alerts to a new `alertmanager` service, which now routes to a real Discord receiver — a
+deliberately *separate* channel/webhook from `DISCORD_WEBHOOK_URL`'s business alerts, so infra
+noise never mixes with investment notifications, scoped with Kris first. The webhook URL is
+never committed: `docker-compose.yml`'s `alertmanager` service writes it to a file from the
+gitignored `.env` (see `.env.example`) at container start, and `alertmanager/alertmanager.yml`
+points `discord_configs`' `webhook_url_file` at that file. Getting this working live surfaced a
+real upstream bug: the originally-pinned `prom/alertmanager:v0.27.0` only validates
+`webhook_url` at config-load time, never `webhook_url_file`, so every file-based config failed
+to load at all regardless of the file's content — confirmed via Alertmanager's own source,
+fixed in `v0.28.0`, this stack is now pinned to `v0.28.1`. Verified live end to end: config
+loads cleanly with the webhook empty or set, and a synthetic test alert against a fake webhook
+produced a real round trip to Discord's actual API (`404 Unknown Webhook`), logged as a failed
+delivery without crashing Alertmanager — the same non-fatal-optional-dependency pattern as
+every other external integration in this project. See `deploy/RUNBOOK.md`'s "Infrastructure
+alerting" section for the full rule list and verification steps.
 
 Scheduled database backups are now automated in Kubernetes too, scoped with Kris first (daily,
 7-day retention): `deploy/backup-cronjob.yaml` adds a `CronJob` that runs `pg_dump` against
@@ -242,14 +251,28 @@ this pass: copying dumps off-cluster to durable object storage (S3/GCS/etc.) —
 schedule to use for that is an infrastructure/cost decision, not a code one, same reasoning as
 everything else still open below.
 
+The disaster-recovery runbook has now actually been rehearsed too (Docker Compose), not just
+written — see `deploy/RUNBOOK.md`'s "Recovery drill results". This caught a real bug in the
+runbook itself: the documented `pg_restore -c` (clean, in-place restore) command doesn't work
+reliably against TimescaleDB hypertables — `--clean`'s DROP/ALTER sequence conflicts with
+TimescaleDB's internal chunk tables. The corrected procedure restores into a freshly created
+database instead, verified byte-for-byte against the original via row-order-independent MD5
+checksums across `transactions`/`positions`/`prices`.
+
+Real Kubernetes secret management was scoped with Kris and deliberately resolved as: manual
+`kubectl create secret` (already documented in `deploy/README.md`'s Apply section) *is* the
+design, not a placeholder awaiting a real secret manager — Sealed Secrets/External Secrets
+Operator/a cloud secret manager were considered and rejected as more than this project's size
+needs. `deploy/secret.yaml` stays a template so it can't be applied as-is by accident. Docker
+Compose secrets moved out of `docker-compose.yml` into a gitignored `.env` (`.env.example`
+documents every var with its working default, so `docker compose up` still runs with zero setup).
+
 Not yet done, per `deploy/RUNBOOK.md`'s production checklist (kept deliberately unchecked rather
-than marked complete): real secret management wired up (`secret.yaml` is a placeholder template,
-not Sealed Secrets/External Secrets/a cloud secret manager), a real Alertmanager receiver (see
-above — rules exist, delivery doesn't yet), off-cluster backup storage (see above — the schedule
-now exists, but dumps only live on an in-cluster PVC), and an actual end-to-end
-recovery-runbook rehearsal against a real deployment. None of these have real design decisions
-made yet (which secret manager, which Alertmanager receiver, which object storage) — same
-caution as every other "requirements gathered, not built" item in this document.
+than marked complete): off-cluster backup storage (the schedule exists, but dumps only live on
+an in-cluster PVC — which object storage to use is still an infrastructure/cost decision), and
+the equivalent recovery drill against a real Kubernetes deployment (needs real cluster
+infrastructure this repo doesn't have configured) — same caution as every other "requirements
+gathered, not built" item in this document.
 
 ## 10. Phase 8 — Frontend / UI
 
