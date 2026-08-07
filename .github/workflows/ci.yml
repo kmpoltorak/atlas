@@ -54,9 +54,9 @@ jobs:
       TEST_DATABASE_DSN: "host=localhost port=5432 user=atlas password=atlas dbname=atlas sslmode=disable"
       TEST_REDIS_ADDR: "localhost:6379"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: "stable"
           cache: true
@@ -95,9 +95,9 @@ jobs:
     name: Vulnerability scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: "stable"
           cache: true
@@ -112,10 +112,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint-and-test]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build image (not pushed)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false

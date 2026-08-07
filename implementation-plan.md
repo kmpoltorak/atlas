@@ -174,6 +174,34 @@ Deliverables:
 - CI/CD pipeline references,
 - recovery checklist.
 
+**Implementation status**: `deploy/` is real — Kubernetes manifests for `atlas-api` (namespace,
+configmap, secret template, deployment with non-root/read-only-root security context and
+`/health` probes, service, ingress, HPA, PDB — see `deploy/README.md`), plus a disaster-recovery
+runbook (`deploy/RUNBOOK.md`) with a manual TimescaleDB backup/restore procedure and an honest
+production checklist. `.github/workflows/ci.yml` covers the CI/CD pipeline's "PR" and "Build"
+stages (gofmt/vet/test against real TimescaleDB+Redis service containers, `govulncheck`, a Docker
+build validation) — the "Push"/"Deploy" stages are deliberately not implemented, since they need
+a real container registry and cluster credentials this repo doesn't have configured (see
+`deploy/README.md`'s "Not yet done"). CI's pinned action versions were bumped
+(`actions/checkout`/`actions/setup-go` v4→v7, `docker/build-push-action` v6→v7) after a run
+surfaced a Node 20 deprecation notice — confirmed by checking each action's `action.yml` that the
+v4-6 lines still declared `node20` while v7 declares `node24`; no input/behavior changes needed
+for how this workflow calls them. Separately, `deploy/configmap.yaml`/`secret.yaml` had drifted
+out of sync with `internal/config/config.go`: `MODEL_PATH`/`LIBONNXRUNTIME_PATH` (added with the
+ML model work) and `ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH` (added with Phase 8's auth) were never
+added to the Kubernetes manifests even though `docker-compose.yml` had them — fixed now, both
+optional/non-fatal-when-unset, matching their behavior everywhere else.
+
+Not yet done, per `deploy/RUNBOOK.md`'s production checklist (kept deliberately unchecked rather
+than marked complete): scheduled/automated database backups (today's procedure is manual,
+run-it-yourself `pg_dump`), real secret management wired up (`secret.yaml` is a placeholder
+template, not Sealed Secrets/External Secrets/a cloud secret manager), Prometheus alerting rules
+(Alertmanager) for infrastructure-level conditions (pod crash-looping, high error rate — distinct
+from the existing Discord business-logic alerts in `internal/app/alerts_loop.go`), and an actual
+end-to-end recovery-runbook rehearsal against a real deployment. None of these have real design
+decisions made yet (backup schedule/retention, which secret manager, Alertmanager receiver) —
+same caution as every other "requirements gathered, not built" item in this document.
+
 ## 10. Phase 8 — Frontend / UI
 
 **Implementation status**: real, scoped with Kris before building (server-rendered Go templates,
