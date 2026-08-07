@@ -166,10 +166,15 @@ actions above are now real, differentiated by real signals, not cosmetic renamin
 - HOLD vs WAIT: a genuinely mixed score (0.45-0.55) is always HOLD; a score that leans one
   direction (0.55-0.75 bullish, or the bearish bands above without a position to act on) is WAIT
   when the ML model's confidence is below 0.30, else HOLD.
-All thresholds are first-pass, documented heuristics (internal/application/decision/usecase.go),
-same honesty stance as the original BUY>=0.75/SELL<=0.4 cutoffs they replace. A real caveat:
-backtesting reuses the live Portfolio use case for HasPosition, not its own simulated position
-— see docs/backtesting.md's Implementation status note.
+All thresholds are first-pass, documented heuristics, same honesty stance as the original
+BUY>=0.75/SELL<=0.4 cutoffs they replace — but no longer hardcoded constants: they're a
+`decision.Thresholds` value (internal/domain/decision/types.go) on `decision.UseCase`, defaulting
+to the same cutoffs everywhere in live traffic. This is what makes `GET /backtests/walkforward`
+possible — a small grid search around the defaults, evaluated against historical data and
+reported back for manual review, never auto-applied to the live engine (see
+docs/backtesting.md's "Optimization" section). Backtesting previously reused the live Portfolio
+use case for HasPosition instead of its own simulated position — fixed, see docs/backtesting.md's
+Implementation status note.
 
 ---
 

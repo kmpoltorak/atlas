@@ -22,6 +22,7 @@ func (a *Application) NewHandler() http.Handler {
 	mux.HandleFunc("/predictions", a.predictionsHandler)
 	mux.HandleFunc("/backtests", a.backtestsHandler)
 	mux.HandleFunc("/backtests/history", a.backtestHistoryHandler)
+	mux.HandleFunc("/backtests/walkforward", a.backtestWalkForwardHandler)
 	mux.HandleFunc("/", a.rootHandler)
 	return a.instrument(mux)
 }

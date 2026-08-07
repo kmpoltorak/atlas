@@ -28,6 +28,43 @@ type RecommendationInput struct {
 	MLConfidence float64
 }
 
+// Thresholds configures BuildRecommendation's score bands (see docs/decision_engine.md's
+// "Recommendation Types" and application/decision.UseCase.BuildRecommendation). DefaultThresholds
+// preserves the original hand-picked cutoffs used everywhere in live traffic;
+// backtesting.UseCase.Optimize searches variations of these against historical data (see
+// docs/backtesting.md's "Optimization" section) without ever changing what's live — an
+// optimization result is reported back for a human to review, never applied automatically.
+type Thresholds struct {
+	StrongBullish   float64 `json:"strong_bullish"`
+	LeanBullish     float64 `json:"lean_bullish"`
+	LeanBearish     float64 `json:"lean_bearish"`
+	StrongBearish   float64 `json:"strong_bearish"`
+	LowMLConfidence float64 `json:"low_ml_confidence"`
+}
+
+// DefaultThresholds returns the original, hand-picked cutoffs — first-pass documented
+// heuristics, same honesty stance as the 0.75/0.4 BUY/SELL cutoffs they originally replaced.
+func DefaultThresholds() Thresholds {
+	return Thresholds{
+		StrongBullish:   0.75,
+		LeanBullish:     0.55, // [LeanBullish, StrongBullish): leaning bullish, not yet strong
+		LeanBearish:     0.45, // (StrongBearish, LeanBearish]: leaning bearish, not yet strong
+		StrongBearish:   0.25,
+		LowMLConfidence: 0.30, // gates WAIT vs HOLD — see BuildRecommendation's waitOrHold
+	}
+}
+
+// Valid reports whether the thresholds preserve BuildRecommendation's required band ordering
+// (StrongBearish <= LeanBearish <= LeanBullish <= StrongBullish, all within [0,1]) and a
+// LowMLConfidence within [0,1]. An out-of-order set would make BuildRecommendation's band
+// checks produce overlapping or unreachable bands — callers that vary thresholds (e.g.
+// backtesting's optimizer) must skip any candidate this rejects.
+func (t Thresholds) Valid() bool {
+	return t.StrongBearish >= 0 && t.StrongBearish <= t.LeanBearish &&
+		t.LeanBearish <= t.LeanBullish && t.LeanBullish <= t.StrongBullish &&
+		t.StrongBullish <= 1 && t.LowMLConfidence >= 0 && t.LowMLConfidence <= 1
+}
+
 type Recommendation struct {
 	Symbol     string   `json:"symbol"`
 	Action     string   `json:"action"`
