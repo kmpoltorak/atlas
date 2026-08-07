@@ -84,6 +84,50 @@ func TestBuildTechnicalScoreFallsBackToNeutralRSIWithShortHistory(t *testing.T) 
 	if technical.RSI != 50 {
 		t.Fatalf("expected neutral RSI fallback of 50 with insufficient history, got %v", technical.RSI)
 	}
+	if technical.OBV != 0 || technical.BollingerPercentB != 0 {
+		t.Fatalf("expected OBV/BollingerPercentB to stay zero with only one bar, got OBV=%v BollingerPercentB=%v",
+			technical.OBV, technical.BollingerPercentB)
+	}
+}
+
+func TestBuildTechnicalScoreBlendsBollingerAndOBVWithEnoughHistory(t *testing.T) {
+	orchestrator := NewOrchestrator(analyzerUC.NewUseCase(), portfolioUC.NewUseCase(), NewUseCase())
+
+	bars := make([]market.Bar, 0, 25)
+	price := 100.0
+	for i := 0; i < 25; i++ {
+		price += 1
+		bars = append(bars, market.Bar{
+			Symbol: "AAPL", Open: price - 1, High: price + 1, Low: price - 2, Close: price,
+			Volume: 1000, Timestamp: time.Now().Add(time.Duration(i) * time.Minute),
+		})
+	}
+
+	technical := orchestrator.buildTechnicalScore("AAPL", bars)
+	if technical.BollingerPercentB <= 0.5 {
+		t.Fatalf("expected %%B above the midline for a sustained uptrend (price near the upper band), got %v",
+			technical.BollingerPercentB)
+	}
+	if technical.OBV == 0 {
+		t.Fatalf("expected a non-zero OBV reading with 25 bars of rising volume-confirmed closes")
+	}
+	// Every contributing signal (momentum, RSI, %B, OBV) leans bullish for this sustained
+	// uptrend, so the blended Overall should too.
+	if technical.Overall <= 0.5 {
+		t.Fatalf("expected Overall to lean bullish once Bollinger/OBV join the blend, got %v", technical.Overall)
+	}
+}
+
+func TestOBVSignal(t *testing.T) {
+	if got := obvSignal([]float64{100, 200, 300}); got != 0.7 {
+		t.Fatalf("expected 0.7 (accumulation) when latest is above the series mean, got %v", got)
+	}
+	if got := obvSignal([]float64{300, 200, 100}); got != 0.3 {
+		t.Fatalf("expected 0.3 (distribution) when latest is below the series mean, got %v", got)
+	}
+	if got := obvSignal([]float64{100, 100, 100}); got != 0.5 {
+		t.Fatalf("expected 0.5 (neutral) when latest equals the series mean, got %v", got)
+	}
 }
 
 func TestBlendMLAndPortfolioIsNoOpWithoutML(t *testing.T) {

@@ -109,7 +109,14 @@ bars as of this pass — see docs/ml.md's Implementation status note); market co
 not to need a trained model at all — `ml.ClassifyMarketCondition` is a deterministic ADX+EMA
 technical rule, real and live today (`Recommendation.MarketCondition`), since regime
 classification via ADX+EMA is well-established technical analysis, not something that needs
-labeled historical outcomes to define.
+labeled historical outcomes to define. OBV and Bollinger Bands — real, tested analyzer
+computations since an earlier pass but never consumed anywhere — are now blended into
+`buildTechnicalScore` too (a Bollinger %B position signal and an OBV accumulation/distribution
+signal, weighted alongside momentum/volume and RSI), closing that specific documented gap. This
+is a heuristic blend (like the rest of this engine's scoring), not a retrained model — extending
+`ml.FeatureVector`/the trained ONNX model to use these indicators too was deliberately not done,
+since real accumulated history is still too thin to retrain on new features honestly (same
+reasoning as recovery probability, above).
 
 ## 7. Phase 5 — Observability and Notifications
 
