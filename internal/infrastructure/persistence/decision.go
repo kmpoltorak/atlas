@@ -30,12 +30,20 @@ func (t *TimescaleDB) SaveRecommendation(rec decision.Recommendation) error {
 		return fmt.Errorf("marshal recommendation reason for %s: %w", rec.Symbol, err)
 	}
 
+	// market_condition stays NULL, not empty-string, when ClassifyMarketCondition couldn't
+	// compute one (insufficient history) — "unknown" and "computed as empty" are different
+	// claims.
+	var marketCondition any
+	if rec.MarketCondition != "" {
+		marketCondition = rec.MarketCondition
+	}
+
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO recommendations
-		   (symbol_id, action, score, confidence, technical_score, ml_score, portfolio_score, risk_score, explanation, model_version)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		   (symbol_id, action, score, confidence, technical_score, ml_score, portfolio_score, risk_score, market_condition, explanation, model_version)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		symbolID, rec.Action, rec.Score, rec.Confidence, rec.TechnicalScore, rec.MLScore, rec.PortfolioScore,
-		rec.RiskScore, explanation, rec.ModelVersion); err != nil {
+		rec.RiskScore, marketCondition, explanation, rec.ModelVersion); err != nil {
 		return fmt.Errorf("insert recommendation for %s: %w", rec.Symbol, err)
 	}
 

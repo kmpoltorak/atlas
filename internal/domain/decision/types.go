@@ -84,6 +84,12 @@ type Recommendation struct {
 	// volatility across every held position, per docs/decision_engine.md's "Risk Context" being
 	// a portfolio-wide concept. On the same [0,1] scale as the other components (higher = more
 	// supportive of buying).
-	RiskScore    float64 `json:"risk_score"`
-	ModelVersion string  `json:"model_version"`
+	RiskScore float64 `json:"risk_score"`
+
+	// MarketCondition is BULL/BEAR/SIDEWAYS (see ml.ClassifyMarketCondition) — a deterministic
+	// ADX+EMA technical rule, not a trained model. Empty string when there isn't enough history
+	// to compute it (see ml.ClassifyMarketCondition's own warm-up requirement).
+	MarketCondition string `json:"market_condition,omitempty"`
+
+	ModelVersion string `json:"model_version"`
 }

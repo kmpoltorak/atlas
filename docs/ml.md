@@ -13,9 +13,26 @@ loaded (the default), Predict falls back to the same deterministic RSI-derived s
 state, not an error. Caveats, honestly: training data today is whatever Atlas has actually
 collected (see PROJECT_CONTEXT.md), which may be a small first dataset; validation is a simple
 per-symbol time-ordered holdout, not full walk-forward validation (a separate, larger
-backtesting gap — see docs/backtesting.md); and `expected_duration`/`expected_strength` (the
-predictions table columns beyond `correction_probability`) still stay NULL — no model produces
-those yet.
+backtesting gap, now real — see docs/backtesting.md); and `expected_duration`/`expected_strength`
+(the predictions table columns beyond `correction_probability`) still stay NULL — no model
+produces those yet.
+
+**Recovery probability**: `ml.Prediction.RecoveryProbability` exists as a field, and
+`ml.ComputeRecoveryLabel`/`RecoveryLabelParams` (internal/application/ml/labels.go) is a real,
+tested label definition — "did a correction recover to its pre-drop price within N bars of the
+breach" — ready for `cmd/export-training-data` to use. No model trains against it yet: as of this
+note the real accumulated dataset is 1 symbol, a few hundred bars — nowhere near enough real
+correction+recovery events across enough symbols/history to train this honestly (see this
+project's standing rule against training on synthetic data). `RecoveryProbability` stays exactly
+0 in every real prediction until that changes — this is the contract, not the capability.
+
+**Market condition**: real and usable today, but *not* a trained model —
+`ml.ClassifyMarketCondition` is a deterministic ADX+EMA technical-analysis rule (ADX below 20 =
+SIDEWAYS regardless of direction; otherwise BULL/BEAR from EMA's latest direction), which is
+well-established technical analysis that doesn't need labeled historical outcomes to define, so
+it doesn't share recovery-probability's data-volume blocker. Wired into
+`Recommendation.MarketCondition` (`GET /recommendations`, persisted in the `recommendations`
+table — migrations/007) — see docs/decision_engine.md.
 
 ## Training
 

@@ -30,5 +30,16 @@ type Prediction struct {
 	// when no trained model is loaded (the RSI-derived stub has no such concept).
 	CorrectionProbability float64 `json:"correction_probability"`
 
+	// RecoveryProbability would be the probability that a price correction recovers to its
+	// pre-drop level within application/ml.RecoveryLabelParams' horizon (see
+	// application/ml.ComputeRecoveryLabel — the label definition is real and tested). Always 0
+	// today: no model produces this. Training one honestly needs real correction+recovery
+	// events across enough symbols/history, which the currently-collected dataset (as of this
+	// field's introduction: 1 symbol, a few hundred bars) doesn't come close to providing — see
+	// docs/ml.md's Implementation status note. This field exists so the contract and label
+	// definition are ready the moment there's enough real data to train against, matching how
+	// CorrectionProbability itself started before training/train.py existed.
+	RecoveryProbability float64 `json:"recovery_probability"`
+
 	ModelVersion string `json:"model_version"`
 }

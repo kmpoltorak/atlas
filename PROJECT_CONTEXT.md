@@ -100,8 +100,15 @@ history, exported to ONNX and loaded in Go via `github.com/yalue/onnxruntime_go`
 (internal/application/ml, `OnnxModel`) — verified live end-to-end (train → export → real HTTP
 prediction → persisted `correction_probability` row). No model is loaded by default; unset
 `MODEL_PATH` (or a load failure) falls back to the original deterministic RSI-derived stub, a
-normal non-fatal state, not an error. Recovery probability and market-condition fields still
-don't exist — only correction probability and confidence are real outputs today.
+normal non-fatal state, not an error. Recovery probability has a real field
+(`ml.Prediction.RecoveryProbability`) and a real, tested label definition
+(`ml.ComputeRecoveryLabel`) ready for training — but no model trains against it yet, since real
+accumulated history (1 symbol, a few hundred bars as of this pass) is far too thin to do so
+honestly; the field stays 0 until that changes (see docs/ml.md's Implementation status note).
+Market condition is real and live today, but deliberately *not* ML — `ml.ClassifyMarketCondition`
+is a deterministic ADX+EMA technical rule (BULL/BEAR/SIDEWAYS), which doesn't share recovery
+probability's data-volume problem, wired into `Recommendation.MarketCondition` (see Decision
+Engine section below).
 
 ---
 
@@ -161,7 +168,9 @@ docs/decision_engine.md and docs/ml.md — ML is a real trained model when one i
 back to a deterministic stub otherwise), though the blend weights (0.50/0.25/0.15/0.10) are
 still placeholders. `Recommendation.RiskScore` is a real field now too (previously always NULL
 in the `recommendations` table — see migrations/001, docs/decision_engine.md's Database
-section). All six
+section). `Recommendation.MarketCondition` (BULL/BEAR/SIDEWAYS) is also real and persisted
+(migrations/007) — a deterministic ADX+EMA technical rule, not part of the score blend itself,
+just reported alongside it (see docs/ml.md). All six
 actions above are now real, differentiated by real signals, not cosmetic renaming:
 - BUY vs ACCUMULATE, SELL vs REDUCE: gated on whether a real portfolio position already exists
   (Portfolio.GetPositions), independent of that position's P&L.
