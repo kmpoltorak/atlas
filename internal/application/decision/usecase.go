@@ -3,10 +3,23 @@ package decision
 import "atlas/internal/domain/decision"
 
 // UseCase contains the first deterministic scoring rules for recommendation generation.
-type UseCase struct{}
+// Thresholds defaults to decision.DefaultThresholds() (the original hand-picked cutoffs used
+// everywhere in live traffic) but is a plain field, not a package constant, so
+// backtesting.UseCase can construct a UseCase with different candidate thresholds per
+// simulation run without ever mutating the live instance — see NewUseCaseWithThresholds.
+type UseCase struct {
+	Thresholds decision.Thresholds
+}
 
 func NewUseCase() *UseCase {
-	return &UseCase{}
+	return &UseCase{Thresholds: decision.DefaultThresholds()}
+}
+
+// NewUseCaseWithThresholds constructs a UseCase around an explicit, caller-supplied threshold
+// set instead of the defaults — used by backtesting's walk-forward optimizer to evaluate
+// candidate thresholds against historical data without touching the live decision engine.
+func NewUseCaseWithThresholds(thresholds decision.Thresholds) *UseCase {
+	return &UseCase{Thresholds: thresholds}
 }
 
 // ScoreTechnical inspects the technical evidence and returns a normalized score.
@@ -27,22 +40,6 @@ func (u *UseCase) ScoreRisk() (float64, error) {
 	return 0.6, nil
 }
 
-// Threshold bands for BuildRecommendation. All first-pass, documented heuristics pending real
-// tuning, same as the 0.75/0.4 BUY/SELL cutoffs they replace/extend. strongBearishThreshold
-// tightened from the old SELL cutoff of 0.4 down to 0.25 specifically to make room for the new
-// REDUCE band between it and neutral.
-const (
-	strongBullishThreshold = 0.75
-	leanBullishThreshold   = 0.55 // [leanBullishThreshold, strongBullishThreshold): leaning bullish, not yet strong
-	leanBearishThreshold   = 0.45 // (strongBearishThreshold, leanBearishThreshold]: leaning bearish, not yet strong
-	strongBearishThreshold = 0.25
-
-	// lowMLConfidenceThreshold gates WAIT vs HOLD for any score that leans one way without
-	// crossing a strong-enough threshold to act: below this, the lean is real but not
-	// trustworthy enough yet to call it anything more than WAIT.
-	lowMLConfidenceThreshold = 0.30
-)
-
 // BuildRecommendation synthesizes a recommendation from the blended technical score, real
 // portfolio position state, and ML confidence — see docs/decision_engine.md's "Recommendation
 // Types". BUY/SELL are gated on NOT already holding vs. holding a position; ACCUMULATE/REDUCE
@@ -54,7 +51,7 @@ const (
 func (u *UseCase) BuildRecommendation(input decision.RecommendationInput) (decision.Recommendation, error) {
 	overall := input.Technical.Overall
 
-	if overall >= strongBullishThreshold {
+	if overall >= u.Thresholds.StrongBullish {
 		if input.HasPosition {
 			return decision.Recommendation{
 				Action:     "ACCUMULATE",
@@ -69,7 +66,7 @@ func (u *UseCase) BuildRecommendation(input decision.RecommendationInput) (decis
 		}, nil
 	}
 
-	if overall <= strongBearishThreshold {
+	if overall <= u.Thresholds.StrongBearish {
 		if input.HasPosition {
 			return decision.Recommendation{
 				Action:     "SELL",
@@ -77,10 +74,10 @@ func (u *UseCase) BuildRecommendation(input decision.RecommendationInput) (decis
 				Reason:     []string{"Momentum signal is weak", "Decision-support layer only"},
 			}, nil
 		}
-		return waitOrHold(input.MLConfidence, "Momentum signal is weak, but no position exists to act on"), nil
+		return u.waitOrHold(input.MLConfidence, "Momentum signal is weak, but no position exists to act on"), nil
 	}
 
-	if overall <= leanBearishThreshold {
+	if overall <= u.Thresholds.LeanBearish {
 		if input.HasPosition {
 			return decision.Recommendation{
 				Action:     "REDUCE",
@@ -88,11 +85,11 @@ func (u *UseCase) BuildRecommendation(input decision.RecommendationInput) (decis
 				Reason:     []string{"Momentum signal is softening", "Trimming an existing position rather than exiting it", "Decision-support layer only"},
 			}, nil
 		}
-		return waitOrHold(input.MLConfidence, "Momentum signal is softening, but no position exists to act on"), nil
+		return u.waitOrHold(input.MLConfidence, "Momentum signal is softening, but no position exists to act on"), nil
 	}
 
-	if overall >= leanBullishThreshold {
-		return waitOrHold(input.MLConfidence, "Momentum signal leans favorable but isn't strong enough yet"), nil
+	if overall >= u.Thresholds.LeanBullish {
+		return u.waitOrHold(input.MLConfidence, "Momentum signal leans favorable but isn't strong enough yet"), nil
 	}
 
 	return decision.Recommendation{
@@ -107,8 +104,8 @@ func (u *UseCase) BuildRecommendation(input decision.RecommendationInput) (decis
 // is used as-is for WAIT's own Confidence field: WAIT's whole point is "here's a lean, but the
 // model isn't sure" — reporting a higher confidence than the model actually has would contradict
 // the recommendation being made.
-func waitOrHold(mlConfidence float64, leadReason string) decision.Recommendation {
-	if mlConfidence < lowMLConfidenceThreshold {
+func (u *UseCase) waitOrHold(mlConfidence float64, leadReason string) decision.Recommendation {
+	if mlConfidence < u.Thresholds.LowMLConfidence {
 		return decision.Recommendation{
 			Action:     "WAIT",
 			Confidence: mlConfidence,

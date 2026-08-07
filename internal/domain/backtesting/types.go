@@ -1,6 +1,10 @@
 package backtesting
 
-import "time"
+import (
+	"time"
+
+	"atlas/internal/domain/decision"
+)
 
 // Trade records a single simulated BUY/SELL action taken during a backtest, per
 // docs/backtesting.md's requirement that every action include timestamp, price, quantity,
@@ -47,6 +51,25 @@ type MLEvaluation struct {
 	Recall     float64 `json:"recall"`
 	F1Score    float64 `json:"f1_score"`
 	ROCAUC     float64 `json:"roc_auc"`
+}
+
+// WalkForwardResult reports docs/backtesting.md's "Walk Forward Testing": the bar range is
+// split chronologically into Train/Validate/Test (see application/backtesting.splitWalkForward
+// — proportional, never shuffled). Train is the split searched for BestThresholds (see
+// application/backtesting.optimizeThresholds); Validate re-runs those same thresholds on the
+// immediate next out-of-sample split as an overfitting sanity check — its numbers should look
+// broadly consistent with Train's, not just with Test's; Test is the final held-out split, never
+// used for threshold selection at all, so Test's numbers are the honest estimate of real
+// forward performance. BestThresholds is reported for a human to review and decide whether to
+// manually update decision.DefaultThresholds — nothing here writes to the live decision engine
+// automatically (see docs/backtesting.md's Implementation status note).
+type WalkForwardResult struct {
+	Symbol              string              `json:"symbol"`
+	BestThresholds      decision.Thresholds `json:"best_thresholds"`
+	CandidatesEvaluated int                 `json:"candidates_evaluated"`
+	Train               StrategyResult      `json:"train"`
+	Validate            StrategyResult      `json:"validate"`
+	Test                StrategyResult      `json:"test"`
 }
 
 // BacktestRun stores a single historical validation record, one row per call to

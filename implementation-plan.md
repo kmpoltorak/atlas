@@ -131,15 +131,20 @@ Deliverables:
 
 **Implementation status**: the backtest runner (internal/application/backtesting), performance
 metrics (Returns/Sharpe/Volatility/Max Drawdown/Win Rate), and result summaries are all real —
-see docs/backtesting.md. Two gaps closed in this pass: the historical simulation now judges
-ACCUMULATE/REDUCE/WAIT from its own simulated position instead of leaking live portfolio state
-(a real, previously-documented bug — see docs/backtesting.md's Implementation status note), and
-model/strategy evaluation before promotion is now real — every run scores the loaded ML model's
-predictions against realized outcomes (Accuracy/Precision/Recall/F1/ROC AUC) and persists to
-`backtest_runs` (migrations/005), queryable via `GET /backtests/history`. Not yet done:
-walk-forward train/validate/test date-range splitting (only "no lookahead within one run"
-exists) and parameter optimization — both still require a scoping discussion before building,
-same caution applied to ACCUMULATE/REDUCE/WAIT and ComputeRisk.
+see docs/backtesting.md. The historical simulation judges ACCUMULATE/REDUCE/WAIT from its own
+simulated position instead of leaking live portfolio state (a previously-documented bug, now
+fixed), and model/strategy evaluation before promotion is real — every run scores the loaded ML
+model's predictions against realized outcomes (Accuracy/Precision/Recall/F1/ROC AUC) and
+persists to `backtest_runs` (migrations/005), queryable via `GET /backtests/history`.
+Walk-forward train/validate/test splitting and parameter optimization are now real too, scoped
+with Kris first (decision engine thresholds are the thing optimized; a fixed 60/20/20
+proportional chronological split, not caller-supplied date ranges; results are report-only,
+never auto-promoted to the live engine) — see `GET /backtests/walkforward`
+(internal/application/backtesting/walkforward.go) and docs/backtesting.md's Implementation
+status note. decision.UseCase's five score-band thresholds are no longer hardcoded package
+constants; they're a `decision.Thresholds` field (see internal/domain/decision/types.go),
+defaulting to the original hand-picked cutoffs everywhere in live traffic — this is what made
+optimization possible without duplicating the decision engine's logic.
 
 ## 9. Phase 7 — Production Readiness
 
@@ -155,7 +160,31 @@ Deliverables:
 - CI/CD pipeline references,
 - recovery checklist.
 
-## 10. Acceptance Criteria
+## 10. Phase 8 — Frontend / UI
+
+**Implementation status**: not started, not previously planned. Atlas today is API-only — every
+capability (recording BUY/SELL transactions, managing the watchlist, viewing recommendations,
+running backtests) is only reachable via raw HTTP calls to `internal/app`'s handlers (see
+docs/deployment.md and the endpoint list in PROJECT_CONTEXT.md). There is no web UI, desktop
+app, or CLI client anywhere in this repository, and none of ROADMAP.md/VISION.md ever described
+one — VISION.md frames Atlas purely as a "decision support system," not a product with an
+interface. Added here as the last phase per explicit request; scope, tech stack, and priority
+are not yet decided and need a scoping discussion before any implementation starts, same caution
+applied to every other judgment-call phase above.
+
+Scope (tentative, unconfirmed):
+- a way to record/edit/delete portfolio transactions (BUY/SELL) without hand-crafting HTTP
+  requests — the most immediate gap, since that's currently the only portfolio-write path,
+- a way to add/delete symbols to/from a watchlist without hand-crafting HTTP requests,
+- a way to view current positions, recommendations, alerts, and backtest results,
+- watchlist management,
+- modern web UI framework (SwiftUI, React, Vue, Svelte, etc.) with a single-page app architecture,
+- authentication and authorization model (OAuth2, OpenID Connect, etc.) for multi-user support but also Open option without auth for single-user deployments.
+
+Deliverables: none yet — pending scoping (framework choice, hosting, auth model, whether this is
+a thin API client or something richer).
+
+## 11. Acceptance Criteria
 
 A phase is considered complete only if:
 
@@ -165,7 +194,7 @@ A phase is considered complete only if:
 - backtests are available for strategy validation,
 - the architecture is still compliant with the repository’s design constraints.
 
-## 11. Approval Gate
+## 12. Approval Gate
 
 Before any implementation proceeds, the following must be approved:
 

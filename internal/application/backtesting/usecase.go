@@ -31,26 +31,44 @@ func NewUseCase(orchestrator *decisionUC.Orchestrator) *UseCase {
 	return &UseCase{Orchestrator: orchestrator}
 }
 
-// Run simulates a single all-in/all-out strategy: BUY invests all available cash, SELL
-// liquidates the entire position, HOLD does nothing. This is a first, honest increment of
-// docs/backtesting.md's spec — walk-forward train/validate/test date-range splitting and
-// parameter optimization are not yet implemented. ML evaluation metrics (see evaluateML) and
+// Run simulates a single all-in/all-out strategy against the live decision engine's current
+// thresholds (u.Orchestrator.Decision.Thresholds): BUY invests all available cash, SELL
+// liquidates the entire position, HOLD does nothing. ML evaluation metrics (see evaluateML) and
 // persistence (see internal/infrastructure/persistence's SaveBacktestRun, called from
-// internal/app/handlers.go) are.
+// internal/app/handlers.go) are both real. See RunWalkForward for walk-forward
+// train/validate/test splitting and threshold optimization (docs/backtesting.md's "Walk Forward
+// Testing"/"Optimization" sections).
 func (u *UseCase) Run(symbol string, bars []market.Bar, initialCapital float64, strategyName, strategyVersion string) (backtesting.StrategyResult, error) {
-	if strategyName == "" {
-		return backtesting.StrategyResult{}, errors.New("strategy name is required")
-	}
-	if initialCapital <= 0 {
-		return backtesting.StrategyResult{}, errors.New("initial capital must be positive")
-	}
-	if u.Orchestrator == nil {
-		return backtesting.StrategyResult{}, errors.New("orchestrator is not configured")
+	if err := u.validateInputs(strategyName, initialCapital); err != nil {
+		return backtesting.StrategyResult{}, err
 	}
 	if len(bars) <= minLookback {
 		return backtesting.StrategyResult{}, errors.New("not enough historical bars to backtest")
 	}
+	return u.simulate(symbol, bars, initialCapital, strategyName, strategyVersion, u.Orchestrator.Decision.Thresholds)
+}
 
+// validateInputs checks the arguments every entry point (Run, RunWalkForward) shares, before
+// either touches bars.
+func (u *UseCase) validateInputs(strategyName string, initialCapital float64) error {
+	if strategyName == "" {
+		return errors.New("strategy name is required")
+	}
+	if initialCapital <= 0 {
+		return errors.New("initial capital must be positive")
+	}
+	if u.Orchestrator == nil {
+		return errors.New("orchestrator is not configured")
+	}
+	return nil
+}
+
+// simulate is the shared simulation core behind Run and RunWalkForward's train/validate/test
+// splits: it runs the all-in/all-out strategy against an explicit Thresholds value rather than
+// whatever the live decision engine currently holds, so the optimizer (see optimizeThresholds)
+// can evaluate many candidates without ever touching u.Orchestrator.Decision itself. Caller must
+// have already validated inputs and confirmed len(bars) > minLookback.
+func (u *UseCase) simulate(symbol string, bars []market.Bar, initialCapital float64, strategyName, strategyVersion string, thresholds domainDecision.Thresholds) (backtesting.StrategyResult, error) {
 	cash := initialCapital
 	quantity := 0.0
 	entryPrice := 0.0
@@ -64,11 +82,13 @@ func (u *UseCase) Run(symbol string, bars []market.Bar, initialCapital float64, 
 	// docs/decision_engine.md's ACCUMULATE/REDUCE/WAIT differentiation), making a historical
 	// simulation depend on unrelated present-day state. simPortfolio instead starts empty and
 	// is updated bar-by-bar below to mirror exactly the position this simulation itself has
-	// built up, independent of whatever the live portfolio holds. Analyzer/Decision/ML are
-	// stateless with respect to a specific portfolio, so reusing them from the live
-	// orchestrator is safe.
+	// built up, independent of whatever the live portfolio holds. Analyzer/ML are stateless with
+	// respect to a specific portfolio or threshold set, so reusing them from the live
+	// orchestrator is safe; Decision is rebuilt around the given thresholds specifically so
+	// varying them here never mutates the live decision engine's own instance.
 	simPortfolio := portfolioUC.NewUseCase()
-	simOrchestrator := decisionUC.NewOrchestratorWithML(u.Orchestrator.Analyzer, simPortfolio, u.Orchestrator.Decision, u.Orchestrator.ML)
+	simDecision := decisionUC.NewUseCaseWithThresholds(thresholds)
+	simOrchestrator := decisionUC.NewOrchestratorWithML(u.Orchestrator.Analyzer, simPortfolio, simDecision, u.Orchestrator.ML)
 
 	for i := minLookback; i < len(bars); i++ {
 		window := bars[:i+1] // only data available at this bar's timestamp

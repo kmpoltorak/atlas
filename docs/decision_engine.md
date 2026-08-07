@@ -11,8 +11,13 @@ Engine stage. The engine now emits all six action types below (BUY/SELL/HOLD plu
 ACCUMULATE/REDUCE/WAIT — see decision.UseCase.BuildRecommendation's threshold bands), gated on
 real portfolio position state (BUY vs. ACCUMULATE, SELL vs. REDUCE) and ML confidence (HOLD vs.
 WAIT) — see this doc's "Recommendation Types" below and PROJECT_CONTEXT.md for the exact rules
-and thresholds. Backtesting previously leaked live portfolio state into simulated HasPosition —
-fixed now, see docs/backtesting.md's Implementation status note. The
+and thresholds. Those five thresholds are a `decision.Thresholds` value
+(internal/domain/decision/types.go), not hardcoded constants — `decision.UseCase.Thresholds`
+defaults to `DefaultThresholds()` (the same cutoffs as before) everywhere in live traffic, but
+backtesting's walk-forward optimizer (see docs/backtesting.md's "Optimization" section) can
+construct a `UseCase` around different candidate thresholds to evaluate against history without
+ever touching the live instance. Backtesting previously leaked live portfolio state into
+simulated HasPosition — fixed now, see docs/backtesting.md's Implementation status note. The
 real Recommendation object is `{Symbol, Action, Confidence, Reason, Score, TechnicalScore,
 MLScore, PortfolioScore, ModelVersion}` — no separate risk score or timestamp field yet (risk
 score has nothing to compute from without a Risk Engine stage); Reason does list which of

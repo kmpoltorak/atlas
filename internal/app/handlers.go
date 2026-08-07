@@ -374,6 +374,63 @@ func (a *Application) backtestsHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// backtestWalkForwardDefaultWindow is wider than backtestDefaultWindow: RunWalkForward splits
+// the window 60/20/20 (train/validate/test — see backtesting.splitWalkForward), and each split
+// independently needs enough bars past its own indicator warm-up to be meaningful, not just to
+// clear the minimum.
+const backtestWalkForwardDefaultWindow = 500
+
+// backtestWalkForwardHandler runs docs/backtesting.md's walk-forward train/validate/test split
+// with threshold optimization (see backtesting.UseCase.RunWalkForward) — distinct from
+// backtestsHandler, which runs one simulation against the live decision engine's current
+// thresholds over the whole window with no splitting or optimization. Not persisted: this is a
+// report for a human to review (BestThresholds), not a decision that gets replayed later — see
+// docs/backtesting.md's Implementation status note.
+func (a *Application) backtestWalkForwardHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		writeError(w, http.StatusBadRequest, errors.New("symbol query parameter is required"))
+		return
+	}
+
+	window := backtestWalkForwardDefaultWindow
+	if raw := r.URL.Query().Get("window"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			window = parsed
+		}
+	}
+	capital := backtestDefaultCapital
+	if raw := r.URL.Query().Get("capital"); raw != "" {
+		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
+			capital = parsed
+		}
+	}
+	strategyName := r.URL.Query().Get("strategy")
+	if strategyName == "" {
+		strategyName = "atlas-orchestrator"
+	}
+	strategyVersion := r.URL.Query().Get("version")
+	if strategyVersion == "" {
+		strategyVersion = "v1"
+	}
+
+	bars, err := a.collectBars(symbol, window)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	result, err := a.Backtesting.RunWalkForward(symbol, bars, capital, strategyName, strategyVersion)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 const backtestHistoryDefaultLimit = 20
 
 // backtestHistoryHandler lists previously persisted backtest runs for a symbol (migrations/005's
