@@ -90,10 +90,13 @@ func (a *Application) persistPrediction(pred mlDomain.Prediction) {
 
 // persistIndicatorSnapshot best-effort computes and writes the full indicator set (RSI, EMA,
 // MACD, ATR, Volume, OBV, ADX, Bollinger Bands) for a symbol at the current moment to the
-// indicators table (migrations/001, migrations/006). Only wired into recommendationsHandler for
-// now — a live recommendation is the one place Atlas already has fresh bars in hand for a single
-// symbol on demand; the alert-poll loop's Evaluate() doesn't currently expose bars per symbol,
-// so background snapshots aren't taken (see docs/deployment.md's Implementation status note).
+// indicators table (migrations/001, migrations/006). Wired into every path that already builds a
+// live recommendation from fresh bars: recommendationsHandler (GET /recommendations) and the
+// alert-poll loop / alertsHandler (GET /alerts) via alerts.Alert.Bars. Deliberately NOT wired into
+// backtesting — those bars are historical/simulated, and this table represents live, as-of-now
+// indicator readings, the same "hypothetical, not real" distinction that already keeps
+// backtesting's individual simulated recommendations out of the recommendations table (see
+// docs/backtesting.md).
 func (a *Application) persistIndicatorSnapshot(symbol string, bars []market.Bar) {
 	if a.Storage == nil || a.Analyzer == nil {
 		return
@@ -281,6 +284,7 @@ func (a *Application) alertsHandler(w http.ResponseWriter, r *http.Request) {
 	result, err := a.Alerts.Evaluate()
 	for _, alert := range result {
 		a.persistRecommendation(alert.Recommendation)
+		a.persistIndicatorSnapshot(alert.Recommendation.Symbol, alert.Bars)
 	}
 	response := map[string]any{"alerts": result}
 	if err != nil {

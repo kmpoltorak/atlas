@@ -53,6 +53,7 @@ func (a *Application) pollAlertsOnce(lastAction map[string]string) {
 
 	for _, alert := range result {
 		a.persistRecommendation(alert.Recommendation)
+		a.persistIndicatorSnapshot(alert.Recommendation.Symbol, alert.Bars)
 
 		symbol := alert.Recommendation.Symbol
 		action := alert.Recommendation.Action

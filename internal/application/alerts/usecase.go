@@ -51,6 +51,7 @@ func (u *UseCase) Evaluate() ([]alerts.Alert, error) {
 		result = append(result, alerts.Alert{
 			Recommendation: recommendation,
 			TriggeredAt:    time.Now().UTC().Format(time.RFC3339),
+			Bars:           bars,
 		})
 	}
 	return result, collected
