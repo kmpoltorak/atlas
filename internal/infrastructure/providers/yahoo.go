@@ -27,13 +27,19 @@ func NewYahooFinanceProvider() *YahooFinanceProvider {
 // requests without a browser-like User-Agent, regardless of host or query parameters.
 const yahooUserAgent = "Mozilla/5.0 (compatible; AtlasPortfolioAdvisor/1.0)"
 
+// interval is hourly, not daily: daily bars are too coarse for the trading-oriented use this
+// engine targets. Yahoo's unofficial chart endpoint keeps roughly 730 days of 1h history; window
+// (COLLECTOR_WINDOW_DAYS, default 30) stays well inside that, so this doesn't need clamping —
+// requesting further back than Yahoo retains just returns whatever it still has, not an error.
+const yahooInterval = "1h"
+
 func (p *YahooFinanceProvider) FetchBars(symbol string, window int) ([]market.Bar, error) {
 	if window <= 0 {
 		window = 30 // mirrors config.Load's COLLECTOR_WINDOW_DAYS default; guards direct calls (e.g. tests) that skip it
 	}
 	period2 := time.Now().UTC()
 	period1 := period2.AddDate(0, 0, -window)
-	url := fmt.Sprintf("%s/%s?interval=1d&period1=%d&period2=%d&events=history", p.BaseURL, symbol, period1.Unix(), period2.Unix())
+	url := fmt.Sprintf("%s/%s?interval=%s&period1=%d&period2=%d&events=history", p.BaseURL, symbol, yahooInterval, period1.Unix(), period2.Unix())
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {

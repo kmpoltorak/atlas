@@ -82,7 +82,7 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 
 	discord := notifications.NewDiscordClient(cfg.DiscordWebhookURL)
 
-	provider := newProvider(cfg)
+	provider := newProvider()
 	barsCache := &redisBarsCache{client: redisCache}
 	collector := collectorUC.NewUseCaseWithStorageAndCache(provider, storage, barsCache)
 	analyzer := analyzerUC.NewUseCase()
@@ -166,17 +166,14 @@ func (a *Application) Close() error {
 	return errors.Join(errs...)
 }
 
-// newProvider selects the market data provider from configuration. Yahoo Finance has no
-// official, supported API (see PROJECT_CONTEXT.md); its unofficial endpoint is the default
-// since it's confirmed reachable with a browser-like User-Agent header. Stooq is a free,
-// keyless CSV alternative available via MARKET_PROVIDER=stooq, but its endpoint enforces a
-// JavaScript bot challenge from at least some networks — verify it works from the actual
-// deployment host before relying on it.
-func newProvider(cfg config.Config) market.MarketProvider {
-	switch cfg.MarketProvider {
-	case "stooq":
-		return providers.NewStooqProvider()
-	default:
-		return providers.NewYahooFinanceProvider()
-	}
+// newProvider returns the market data provider. Yahoo Finance has no official, supported API
+// (see PROJECT_CONTEXT.md); its unofficial endpoint is the only provider now — confirmed
+// reachable with a browser-like User-Agent header and confirmed to support the hourly bars this
+// engine needs. Stooq was evaluated as a free alternative and removed: its free endpoint serves
+// a client-side JavaScript bot challenge instead of data from this environment, and even where
+// reachable its free CSV export is daily-only (no intraday), which wouldn't meet the
+// hourly-granularity requirement anyway. cfg.MarketProvider (MARKET_PROVIDER) still exists as a
+// metrics label (see handlers.go), just not as a selector, since there's nothing left to select.
+func newProvider() market.MarketProvider {
+	return providers.NewYahooFinanceProvider()
 }
