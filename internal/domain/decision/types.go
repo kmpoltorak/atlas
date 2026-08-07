@@ -71,12 +71,19 @@ type Recommendation struct {
 	Confidence float64  `json:"confidence"`
 	Reason     []string `json:"reason"`
 
-	// Score is the final blended score (Technical/ML/Portfolio, see Orchestrator.
+	// Score is the final blended score (Technical/ML/Portfolio/Risk, see Orchestrator.
 	// blendMLAndPortfolio); the component fields below are the inputs that produced it. All
-	// four are zero when a recommendation short-circuits before scoring (e.g. no bar data).
+	// five are zero when a recommendation short-circuits before scoring (e.g. no bar data).
 	Score          float64 `json:"score"`
 	TechnicalScore float64 `json:"technical_score"`
 	MLScore        float64 `json:"ml_score"`
 	PortfolioScore float64 `json:"portfolio_score"`
-	ModelVersion   string  `json:"model_version"`
+
+	// RiskScore is a portfolio-wide risk signal (see portfolio.UseCase.ComputeRisk), distinct
+	// from PortfolioScore (a single symbol's own P&L) — it reflects overall exposure/drawdown/
+	// volatility across every held position, per docs/decision_engine.md's "Risk Context" being
+	// a portfolio-wide concept. On the same [0,1] scale as the other components (higher = more
+	// supportive of buying).
+	RiskScore    float64 `json:"risk_score"`
+	ModelVersion string  `json:"model_version"`
 }

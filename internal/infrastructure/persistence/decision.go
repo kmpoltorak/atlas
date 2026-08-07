@@ -30,15 +30,12 @@ func (t *TimescaleDB) SaveRecommendation(rec decision.Recommendation) error {
 		return fmt.Errorf("marshal recommendation reason for %s: %w", rec.Symbol, err)
 	}
 
-	// risk_score is intentionally omitted (stays NULL): Atlas has no separate Risk Engine
-	// stage yet (see docs/decision_engine.md's Implementation status), so there is no real
-	// value to write there without fabricating one.
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO recommendations
-		   (symbol_id, action, score, confidence, technical_score, ml_score, portfolio_score, explanation, model_version)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		   (symbol_id, action, score, confidence, technical_score, ml_score, portfolio_score, risk_score, explanation, model_version)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		symbolID, rec.Action, rec.Score, rec.Confidence, rec.TechnicalScore, rec.MLScore, rec.PortfolioScore,
-		explanation, rec.ModelVersion); err != nil {
+		rec.RiskScore, explanation, rec.ModelVersion); err != nil {
 		return fmt.Errorf("insert recommendation for %s: %w", rec.Symbol, err)
 	}
 

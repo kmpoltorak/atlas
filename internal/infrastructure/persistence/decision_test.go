@@ -16,6 +16,7 @@ func TestSaveRecommendationInsertsRecord(t *testing.T) {
 		TechnicalScore: 0.9,
 		MLScore:        0.7,
 		PortfolioScore: 0.5,
+		RiskScore:      0.6,
 		ModelVersion:   "atlas-decision-v1",
 	}
 	if err := db.SaveRecommendation(rec); err != nil {
@@ -29,10 +30,11 @@ func TestSaveRecommendationInsertsRecord(t *testing.T) {
 		TechnicalScore float64 `db:"technical_score"`
 		MLScore        float64 `db:"ml_score"`
 		PortfolioScore float64 `db:"portfolio_score"`
+		RiskScore      float64 `db:"risk_score"`
 		ModelVersion   string  `db:"model_version"`
 	}
 	if err := db.db.Get(&row, `
-		SELECT r.action, r.score, r.confidence, r.technical_score, r.ml_score, r.portfolio_score, r.model_version
+		SELECT r.action, r.score, r.confidence, r.technical_score, r.ml_score, r.portfolio_score, r.risk_score, r.model_version
 		FROM recommendations r
 		JOIN symbols s ON s.id = r.symbol_id
 		WHERE s.ticker = $1
@@ -41,7 +43,7 @@ func TestSaveRecommendationInsertsRecord(t *testing.T) {
 	}
 	if row.Action != "BUY" || row.Score != 0.81 || row.Confidence != 0.78 ||
 		row.TechnicalScore != 0.9 || row.MLScore != 0.7 || row.PortfolioScore != 0.5 ||
-		row.ModelVersion != "atlas-decision-v1" {
+		row.RiskScore != 0.6 || row.ModelVersion != "atlas-decision-v1" {
 		t.Fatalf("unexpected stored recommendation: %+v", row)
 	}
 }

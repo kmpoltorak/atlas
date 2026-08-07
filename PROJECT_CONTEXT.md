@@ -118,16 +118,15 @@ Responsible for:
 The Decision Engine must always consider portfolio context.
 
 Implementation status: positions/buy-prices/P&L/exposure are all real and persisted (see
-Portfolio Engine's own section below). Risk analysis (`portfolio.UseCase.ComputeRisk`) exists
-with real logic but was dead code until now — nothing called it. It's now exposed via
-`GET /portfolio`'s response (`risk` field alongside `positions`). Its Drawdown field is a
-current-state proxy (unrealized loss across losing positions, as a fraction of exposure), not a
-true historical peak-to-trough max drawdown — that needs a portfolio equity curve over time,
-which needs snapshot persistence (not implemented). The Decision Engine does not consume this
-risk snapshot in its scoring — portfolio context there comes from `portfolioRiskSignal` (P&L-based,
-a separate, narrower heuristic — see docs/decision_engine.md), not `ComputeRisk`. Wiring
-`ComputeRisk` into scoring would mean designing real weighting rules first (the same caution
-applied to ACCUMULATE/REDUCE/WAIT), not done here.
+Portfolio Engine's own section below). Risk analysis (`portfolio.UseCase.ComputeRisk`) is real
+and exposed via `GET /portfolio`'s response (`risk` field alongside `positions`). Its Drawdown
+field is a current-state proxy (unrealized loss across losing positions, as a fraction of
+exposure), not a true historical peak-to-trough max drawdown — that needs a portfolio equity
+curve over time, which needs snapshot persistence (not implemented). The Decision Engine now
+does consume this risk snapshot in its scoring too (`computeRiskScore`, weight 0.10 — see
+docs/decision_engine.md), alongside `portfolioRiskSignal` (P&L-based, a separate, narrower,
+symbol-specific heuristic that's still its own component, weight 0.15) — the two aren't the same
+signal and both contribute independently.
 
 ---
 
@@ -155,9 +154,14 @@ It produces:
 Every recommendation must explain WHY.
 
 Implementation status: the current decision engine (internal/application/decision) now blends
-technical analysis, ML prediction, and portfolio risk context into its score (see
+technical analysis, ML prediction, per-symbol portfolio P&L, and portfolio-wide risk analysis
+(Exposure/Drawdown/Volatility, via `portfolio.UseCase.ComputeRisk`) into its score — the full
+four-term "Scoring Model" below is real now, not just Technical+ML+Portfolio (see
 docs/decision_engine.md and docs/ml.md — ML is a real trained model when one is loaded, falling
-back to a deterministic stub otherwise), though the blend weights are placeholders. All six
+back to a deterministic stub otherwise), though the blend weights (0.50/0.25/0.15/0.10) are
+still placeholders. `Recommendation.RiskScore` is a real field now too (previously always NULL
+in the `recommendations` table — see migrations/001, docs/decision_engine.md's Database
+section). All six
 actions above are now real, differentiated by real signals, not cosmetic renaming:
 - BUY vs ACCUMULATE, SELL vs REDUCE: gated on whether a real portfolio position already exists
   (Portfolio.GetPositions), independent of that position's P&L.

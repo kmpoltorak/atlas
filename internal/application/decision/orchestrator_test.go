@@ -105,13 +105,15 @@ func TestBlendMLAndPortfolioIsNoOpWithoutML(t *testing.T) {
 func TestBlendMLAndPortfolioAppliesFullMixWithML(t *testing.T) {
 	orchestrator := NewOrchestratorWithML(analyzerUC.NewUseCase(), portfolioUC.NewUseCase(), NewUseCase(), mlUC.NewUseCase())
 	// A single bar means RSI falls back to the neutral 50 (see BuildFeatureVector), so
-	// mlScore lands on exactly 0.5 and the expected blend is precisely computable.
+	// mlScore lands on exactly 0.5 and the expected blend is precisely computable. No
+	// positions means RiskScore is exactly 1.0 too (see computeRiskScore: zero drawdown, no
+	// observed volatility to penalize).
 	bars := []market.Bar{{Symbol: "AAPL", Close: 100, Timestamp: time.Now()}}
 	technical := domainDecision.TechnicalScore{Overall: 0.9}
 
 	blend := orchestrator.blendMLAndPortfolio("AAPL", bars, technical)
 
-	want := clamp01(0.9*0.55 + 0.5*0.30 + 0.5*0.15)
+	want := clamp01(0.9*technicalWeight + 0.5*mlWeight + 0.5*portfolioWeight + 1.0*riskWeight)
 	if math.Abs(blend.Overall-want) > 0.0001 {
 		t.Fatalf("expected blended overall %.4f, got %.4f", want, blend.Overall)
 	}
@@ -121,8 +123,32 @@ func TestBlendMLAndPortfolioAppliesFullMixWithML(t *testing.T) {
 	if blend.PortfolioScore != 0.5 {
 		t.Fatalf("expected portfolioScore 0.5, got %v", blend.PortfolioScore)
 	}
+	if blend.RiskScore != 1.0 {
+		t.Fatalf("expected riskScore 1.0 with no positions, got %v", blend.RiskScore)
+	}
 	if blend.MLConfidence != 0.72 {
 		t.Fatalf("expected the stub's fixed 0.72 confidence, got %v", blend.MLConfidence)
+	}
+}
+
+func TestComputeRiskScore(t *testing.T) {
+	// No positions: no drawdown, no observed volatility to penalize — fully neutral/no-risk.
+	if got := computeRiskScore(portfolio.RiskSnapshot{}, nil); got != 1.0 {
+		t.Fatalf("expected 1.0 (no risk) with no positions, got %v", got)
+	}
+
+	// A losing position: -150 unrealized loss on 850 exposure (-17.6% drawdown), $15 average
+	// deviation on an $85 average price (17.6% relative volatility) — both components land at
+	// the same ~0.8235, so the average does too.
+	positions := []portfolio.Position{{Symbol: "AAPL", Quantity: 10, AverageCost: 100, CurrentPrice: 85}}
+	risk := portfolio.RiskSnapshot{Exposure: 850, Drawdown: -150.0 / 850.0, Volatility: 15}
+	got := computeRiskScore(risk, positions)
+	want := 1 - (150.0/850.0+15.0/85.0)/2
+	if math.Abs(got-want) > 0.0001 {
+		t.Fatalf("expected riskScore %.4f for a losing position, got %.4f", want, got)
+	}
+	if got >= 1.0 {
+		t.Fatalf("expected a losing position to score below the no-risk baseline of 1.0, got %v", got)
 	}
 }
 

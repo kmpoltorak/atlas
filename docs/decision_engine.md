@@ -1,33 +1,41 @@
 # Decision Engine
 
 **Implementation status**: this document describes the target design. The actual engine
-(internal/application/decision) now blends Technical (0.55) + ML (0.30) + Portfolio-risk
-(0.15) into the overall score (Orchestrator.blendMLAndPortfolio, via NewOrchestratorWithML) —
-closer to the "Scoring Model" below than before, though the weights/heuristics are placeholders.
-ML itself is now a real trained model (XGBoost correction-probability classifier, via ONNX —
-see docs/ml.md) when one is loaded (`MODEL_PATH` set), falling back to the same deterministic
-RSI-derived stub as before when it isn't. There is still no separate Risk
-Engine stage. The engine now emits all six action types below (BUY/SELL/HOLD plus
-ACCUMULATE/REDUCE/WAIT — see decision.UseCase.BuildRecommendation's threshold bands), gated on
-real portfolio position state (BUY vs. ACCUMULATE, SELL vs. REDUCE) and ML confidence (HOLD vs.
-WAIT) — see this doc's "Recommendation Types" below and PROJECT_CONTEXT.md for the exact rules
-and thresholds. Those five thresholds are a `decision.Thresholds` value
-(internal/domain/decision/types.go), not hardcoded constants — `decision.UseCase.Thresholds`
-defaults to `DefaultThresholds()` (the same cutoffs as before) everywhere in live traffic, but
-backtesting's walk-forward optimizer (see docs/backtesting.md's "Optimization" section) can
-construct a `UseCase` around different candidate thresholds to evaluate against history without
-ever touching the live instance. Backtesting previously leaked live portfolio state into
-simulated HasPosition — fixed now, see docs/backtesting.md's Implementation status note. The
-real Recommendation object is `{Symbol, Action, Confidence, Reason, Score, TechnicalScore,
-MLScore, PortfolioScore, ModelVersion}` — no separate risk score or timestamp field yet (risk
-score has nothing to compute from without a Risk Engine stage); Reason does list which of
-ML/portfolio meaningfully influenced the result. Every live recommendation (GET /recommendations,
-GET /alerts, and the background alert-poll loop) is now persisted to the `recommendations`
-table below (see internal/infrastructure/persistence/decision.go) as an append-only history
-log — `risk_score` stays NULL there for the same no-Risk-Engine reason. Backtesting's individual
-simulated recommendations are still deliberately NOT persisted one-by-one (see
-internal/application/backtesting/usecase.go) since they're hypothetical past decisions, not real
-ones — but each full backtest run's summary now is (see docs/backtesting.md). Discord notifications
+(internal/application/decision) now blends Technical (0.50) + ML (0.25) + Portfolio (0.15) +
+Risk (0.10) into the overall score (Orchestrator.blendMLAndPortfolio, via NewOrchestratorWithML)
+— matching the "Scoring Model" below's four-term formula, though the weights/heuristics are
+still placeholders pending real tuning. ML itself is now a real trained model (XGBoost
+correction-probability classifier, via ONNX — see docs/ml.md) when one is loaded (`MODEL_PATH`
+set), falling back to the same deterministic RSI-derived stub as before when it isn't. There is
+still no separate Risk Engine *stage* in the pipeline sense (Market Data → ... → Risk Engine →
+Decision Engine, per "Decision Flow" below) — Risk is computed inline within
+Orchestrator.blendMLAndPortfolio (`computeRiskScore`, from `portfolio.UseCase.ComputeRisk`'s
+exposure/drawdown/volatility), not a separate pipeline component, but the score itself is real
+and blended, closing that specific gap. The engine now emits all six action types below
+(BUY/SELL/HOLD plus ACCUMULATE/REDUCE/WAIT — see decision.UseCase.BuildRecommendation's
+threshold bands), gated on real portfolio position state (BUY vs. ACCUMULATE, SELL vs. REDUCE)
+and ML confidence (HOLD vs. WAIT) — see this doc's "Recommendation Types" below and
+PROJECT_CONTEXT.md for the exact rules and thresholds. Those five thresholds are a
+`decision.Thresholds` value (internal/domain/decision/types.go), not hardcoded constants —
+`decision.UseCase.Thresholds` defaults to `DefaultThresholds()` (the same cutoffs as before)
+everywhere in live traffic, but backtesting's walk-forward optimizer (see docs/backtesting.md's
+"Optimization" section) can construct a `UseCase` around different candidate thresholds to
+evaluate against history without ever touching the live instance. Backtesting previously leaked
+live portfolio state into simulated HasPosition — fixed now, see docs/backtesting.md's
+Implementation status note. The real Recommendation object is `{Symbol, Action, Confidence,
+Reason, Score, TechnicalScore, MLScore, PortfolioScore, RiskScore, ModelVersion}` — no separate
+timestamp field yet (the `created_at` column below covers it); Reason does list which of
+ML/Portfolio/Risk meaningfully influenced the result. RiskScore is portfolio-wide (every held
+position's exposure/drawdown/volatility, via `portfolio.UseCase.ComputeRisk`), distinct from
+PortfolioScore (a single symbol's own P&L) — see "Risk Context" below. Every live recommendation
+(GET /recommendations, GET /alerts, and the background alert-poll loop) is now persisted to the
+`recommendations` table below (see internal/infrastructure/persistence/decision.go) as an
+append-only history log — `risk_score` is now a real written value there too, not NULL.
+Backtesting's individual simulated recommendations are still deliberately NOT persisted
+one-by-one (see internal/application/backtesting/usecase.go) since they're hypothetical past
+decisions, not real ones — but each full backtest run's summary now is (see
+docs/backtesting.md), and its simulated RiskScore reflects the backtest's own simulated
+portfolio (`simPortfolio`), not the live one, for the same reason HasPosition does. Discord notifications
 (internal/app/alerts_loop.go) are now gated to BUY/SELL/REDUCE only
 (isHighPriorityAction), matching "Notifications" below — GET /alerts itself is unaffected and
 still surfaces every non-HOLD action, including ACCUMULATE/WAIT; only the push notification is
@@ -121,6 +129,12 @@ Volatility
 Market trend
 Drawdown
 ```
+
+**Implementation status**: Exposure, Volatility, and Drawdown are real (`portfolio.UseCase.
+ComputeRisk`, blended into scoring via `computeRiskScore` — see this doc's top status note).
+Position size is implicitly covered by Exposure (sum across positions) rather than surfaced per-
+position here. Market trend is not implemented — there's no trend/regime classifier (see
+PROJECT_CONTEXT.md's ML Engine section on market condition).
 ---
 # Recommendation Types
 The engine returns:
@@ -164,6 +178,11 @@ Risk Score
 =
 Final Decision Score
 ```
+
+**Implementation status**: real, weighted 0.50/0.25/0.15/0.10 respectively (see this doc's top
+status note and `internal/application/decision/orchestrator.go`'s `technicalWeight`/`mlWeight`/
+`portfolioWeight`/`riskWeight` constants) — a documented first-pass heuristic, not derived from
+data, same honesty stance as every other threshold in this engine.
 ---
 # Example Calculation
 ## Technical
