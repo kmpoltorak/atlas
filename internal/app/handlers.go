@@ -216,12 +216,23 @@ func (a *Application) portfolioHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusCreated, map[string]string{"status": "recorded"})
+	case http.MethodDelete:
+		symbol := r.URL.Query().Get("symbol")
+		if symbol == "" {
+			writeError(w, http.StatusBadRequest, errors.New("symbol query parameter is required"))
+			return
+		}
+		if err := a.Portfolio.RemovePosition(symbol); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 	default:
 		methodNotAllowed(w)
 	}
 }
 
-// watchlistHandler lists tracked symbols (GET) or adds a new one (POST).
+// watchlistHandler lists tracked symbols (GET), adds a new one (POST), or removes one (DELETE).
 func (a *Application) watchlistHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -244,6 +255,17 @@ func (a *Application) watchlistHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusCreated, map[string]string{"status": "added"})
+	case http.MethodDelete:
+		symbol := r.URL.Query().Get("symbol")
+		if symbol == "" {
+			writeError(w, http.StatusBadRequest, errors.New("symbol query parameter is required"))
+			return
+		}
+		if err := a.Watchlist.Remove(symbol); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 	default:
 		methodNotAllowed(w)
 	}

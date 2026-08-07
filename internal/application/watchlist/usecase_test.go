@@ -38,3 +38,39 @@ func TestAddRejectsEmptySymbol(t *testing.T) {
 		t.Fatal("expected error for empty symbol")
 	}
 }
+
+func TestRemoveUntracksSymbol(t *testing.T) {
+	uc := NewUseCase()
+	_ = uc.Add("AAPL", "2026-08-05T00:00:00Z")
+	_ = uc.Add("MSFT", "2026-08-05T00:00:00Z")
+
+	if err := uc.Remove("AAPL"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	items, _ := uc.List()
+	if len(items) != 1 || items[0].Symbol != "MSFT" {
+		t.Fatalf("expected only MSFT to remain, got %+v", items)
+	}
+}
+
+func TestRemoveUntrackedSymbolIsANoop(t *testing.T) {
+	uc := NewUseCase()
+	_ = uc.Add("AAPL", "2026-08-05T00:00:00Z")
+
+	if err := uc.Remove("MSFT"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	items, _ := uc.List()
+	if len(items) != 1 || items[0].Symbol != "AAPL" {
+		t.Fatalf("expected AAPL to remain untouched, got %+v", items)
+	}
+}
+
+func TestRemoveRejectsEmptySymbol(t *testing.T) {
+	uc := NewUseCase()
+	if err := uc.Remove(""); err == nil {
+		t.Fatal("expected error for empty symbol")
+	}
+}

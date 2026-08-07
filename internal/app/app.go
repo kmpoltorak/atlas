@@ -7,6 +7,7 @@ import (
 
 	alertsUC "atlas/internal/application/alerts"
 	analyzerUC "atlas/internal/application/analyzer"
+	authUC "atlas/internal/application/auth"
 	backtestingUC "atlas/internal/application/backtesting"
 	collectorUC "atlas/internal/application/collector"
 	decisionUC "atlas/internal/application/decision"
@@ -35,7 +36,10 @@ import (
 // since they're hypothetical, not real, decisions. The Orchestrator is wired via
 // NewOrchestratorWithML, so recommendations genuinely blend technical + ML + portfolio-risk
 // signals (see decision.Orchestrator.blendMLAndPortfolio) — not just technical score, even
-// though the ML component is still a deterministic stub.
+// though the ML component is still a deterministic stub. Auth (see internal/application/auth)
+// is optional, same non-fatal pattern as ML/Discord: unset ADMIN_USERNAME/ADMIN_PASSWORD_HASH
+// means Auth.Enabled() is false and every route is reachable with no login gate, exactly as
+// before this feature existed — see authMiddleware.
 type Application struct {
 	Config  config.Config
 	Metrics *observability.Metrics
@@ -56,6 +60,7 @@ type Application struct {
 	Backtesting   *backtestingUC.UseCase
 	Watchlist     *watchlistUC.UseCase
 	Alerts        *alertsUC.UseCase
+	Auth          *authUC.UseCase
 }
 
 // New connects to TimescaleDB and Redis and wires the full application. A connection
@@ -136,6 +141,7 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 		Backtesting:   backtestingUC.NewUseCase(orchestrator),
 		Watchlist:     watchlist,
 		Alerts:        alertsUC.NewUseCase(watchlist, collector, orchestrator, cfg.CollectorWindow),
+		Auth:          authUC.NewUseCase(cfg.AdminUsername, cfg.AdminPasswordHash, redisCache, storage),
 	}, nil
 }
 

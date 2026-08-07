@@ -22,6 +22,8 @@ type Config struct {
 	AlertPollSeconds   int
 	ModelPath          string
 	LibOnnxRuntimePath string
+	AdminUsername      string
+	AdminPasswordHash  string
 }
 
 func Load() Config {
@@ -52,6 +54,15 @@ func Load() Config {
 		// deterministic RSI-derived stub rather than failing to start. See training/README.md.
 		ModelPath:          envOrDefault("MODEL_PATH", ""),
 		LibOnnxRuntimePath: envOrDefault("LIBONNXRUNTIME_PATH", ""),
+		// Both default to "": absent means auth is disabled and Atlas runs with no login gate at
+		// all, exactly as it did before this feature existed — the same non-fatal-optional
+		// pattern as ModelPath/LibOnnxRuntimePath above. See auth.UseCase.Enabled and
+		// cmd/generate-admin-credentials for how to produce a real hash when deploying somewhere
+		// reachable beyond localhost. 2FA is deliberately not configured here at all — it's
+		// enabled/disabled from the dashboard after logging in (see auth.UseCase's doc comment
+		// and migrations/008's auth_settings table), not a static secret.
+		AdminUsername:     envOrDefault("ADMIN_USERNAME", ""),
+		AdminPasswordHash: envOrDefault("ADMIN_PASSWORD_HASH", ""),
 	}
 }
 

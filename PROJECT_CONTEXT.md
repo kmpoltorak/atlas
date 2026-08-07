@@ -240,7 +240,15 @@ Go is responsible for:
 - decision engine,
 - notifications,
 - metrics,
-- orchestration.
+- orchestration,
+- web dashboard.
+
+Implementation status: the web dashboard (`internal/app/web`) is real — server-rendered
+`html/template`, no separate frontend build/deploy, styled with Bootstrap 5.3 (vendored locally,
+not a CDN or npm build step) with light/dark/auto theming — see implementation-plan.md's Phase 8
+status note for the full scope (portfolio/recommendations/alerts/backtests/watchlist pages,
+single-account login with password + TOTP 2FA enrolled via a real in-app QR code, opt-in — no
+auth gate at all when unconfigured).
 
 ---
 

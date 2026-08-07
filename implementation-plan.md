@@ -176,27 +176,86 @@ Deliverables:
 
 ## 10. Phase 8 — Frontend / UI
 
-**Implementation status**: not started, not previously planned. Atlas today is API-only — every
-capability (recording BUY/SELL transactions, managing the watchlist, viewing recommendations,
-running backtests) is only reachable via raw HTTP calls to `internal/app`'s handlers (see
-docs/deployment.md and the endpoint list in PROJECT_CONTEXT.md). There is no web UI, desktop
-app, or CLI client anywhere in this repository, and none of ROADMAP.md/VISION.md ever described
-one — VISION.md frames Atlas purely as a "decision support system," not a product with an
-interface. Added here as the last phase per explicit request; scope, tech stack, and priority
-are not yet decided and need a scoping discussion before any implementation starts, same caution
-applied to every other judgment-call phase above.
+**Implementation status**: real, scoped with Kris before building (server-rendered Go templates,
+full dashboard scope, single account + password + TOTP). Every capability listed below as
+"tentative" is now reachable through a browser, not just raw HTTP: recording BUY/SELL
+transactions (`GET`/`POST /dashboard/portfolio`), viewing positions/risk, running recommendations
+(`/dashboard/recommendations`), viewing alerts (`/dashboard/alerts`), running backtests
+(`/dashboard/backtests`), and adding watchlist symbols (`/dashboard/watchlist`) — see
+`internal/app/web_handlers.go` and `internal/app/web/`.
 
-Scope (tentative, unconfirmed):
-- a way to record/edit/delete portfolio transactions (BUY/SELL) without hand-crafting HTTP
-  requests — the most immediate gap, since that's currently the only portfolio-write path,
-- a way to add/delete symbols to/from a watchlist without hand-crafting HTTP requests,
-- a way to view current positions, recommendations, alerts, and backtest results,
-- watchlist management,
-- modern web UI framework (SwiftUI, React, Vue, Svelte, etc.) with a single-page app architecture,
-- authentication and authorization model (OAuth2, OpenID Connect, etc.) for multi-user support but also Open option without auth for single-user deployments.
+Concrete decisions made (deliberately narrower than the broader options this section originally
+listed as open — SPA frameworks, OAuth2/OpenID Connect multi-user support — which weren't chosen
+for this increment, consistent with Atlas being a single-user personal tool, not a
+multi-tenant product):
+- **Stack**: server-rendered `html/template`, embedded via `go:embed` — one binary, no separate
+  frontend build/deploy, no JS framework dependency. Styled with Bootstrap 5.3, vendored locally
+  under `internal/app/web/static/` (not loaded from a CDN — offline-friendly, and consistent with
+  "no separate frontend build": these are plain files, not an npm/webpack pipeline) and served via
+  `/static/`. Light/dark/auto theme switching uses Bootstrap's native `data-bs-theme` attribute
+  plus a small inline script (`prefers-color-scheme` + `localStorage`, applied before first paint
+  to avoid a flash of the wrong theme) — verified with real Chrome headless screenshots at both
+  desktop and mobile widths, light and (forced) dark.
+- **Auth model**: a single admin account configured via env vars (`ADMIN_USERNAME`,
+  `ADMIN_PASSWORD_HASH` — see `cmd/generate-admin-credentials`), not a `users` table — no
+  registration flow, matching "personal tool," not "product with accounts." Auth is opt-in: unset
+  credentials mean **no login gate at all**, the same non-fatal-optional pattern as
+  `MODEL_PATH`/`DISCORD_WEBHOOK_URL` — every existing curl-based workflow and test this project
+  already relies on keeps working unchanged.
+- **2FA**: TOTP (RFC 6238) implemented directly on stdlib `crypto/hmac`/`crypto/sha1`
+  (`internal/application/auth/totp.go`) rather than a third-party library — verified bit-exact
+  against RFC 6238 Appendix B's official test vectors. Password hashing uses
+  `golang.org/x/crypto/bcrypt` (hand-rolling password hashing would be inappropriate, unlike
+  TOTP's well-specified HMAC construction). **Revised after initial build**: 2FA is not a static
+  env-var secret — it's enabled/disabled from the dashboard's Account page after logging in, via
+  real QR-code enrollment (Account → Set up 2FA → scan with an authenticator app → confirm with a
+  live code), durably stored in TimescaleDB (`migrations/008`'s `auth_settings` table), not just
+  displayed once at the command line. QR rendering uses `github.com/skip2/go-qrcode` (the other
+  new runtime dependency — hand-rolling QR encoding's matrix/error-correction algorithm would be
+  inappropriate, unlike TOTP). Verified live end-to-end: real QR code decoded with `zbarimg`
+  (actually scannable, not just an image that renders), the decoded secret used to compute a real
+  code and complete enrollment, full login with that 2FA enabled, and disabling 2FA (which
+  requires re-entering the current password).
+- **Sessions**: opaque tokens in Redis (already part of the stack) with a 24h TTL — no new
+  infrastructure, no signed-cookie state to get subtly wrong. Pending TOTP enrollment secrets use
+  the same store with a separate 10-minute-TTL key namespace.
+- **Gating**: when auth is enabled, every route except `/health`, `/metrics`, `/login`, and
+  `/static/*` requires a valid session — `/dashboard/*` (browser-facing) redirects to `/login`;
+  the raw JSON API gets a real `401` instead, so an API consumer never gets redirected into an
+  HTML login page.
+- **Symbol pickers**: Recommendations and Backtests offer the watchlist as a `<select>` dropdown
+  instead of a free-text field when the watchlist isn't empty (falls back to text input
+  otherwise) — see `web.RecommendationsPage.Symbols`/`BacktestsPage.Symbols`.
 
-Deliverables: none yet — pending scoping (framework choice, hosting, auth model, whether this is
-a thin API client or something richer).
+Verified live via Docker: full password+TOTP login flow (correct/wrong password, correct/wrong
+TOTP code, uniform error message either way), session gating on both dashboard and API paths,
+recording a real transaction and watchlist entry through the HTML forms, viewing real
+recommendations/alerts/backtest results, the full QR-code 2FA enrollment/login/disable cycle, and
+the Bootstrap redesign (light/dark, desktop/mobile) via real browser screenshots — all against
+the live TimescaleDB/Redis stack, not mocked.
+
+**Removing state, built in the same pass**: rather than deleting an individual historical
+transaction (which would need a transaction `id` — the domain type doesn't have one yet — and a
+real decision on how to recompute the affected position's average cost/quantity afterward),
+`portfolio.UseCase.RemovePosition`/`DELETE /portfolio`/the dashboard's "Remove" button clear a
+symbol's *current position* entirely — the actual "undo a test entry" need — while leaving the
+transaction history untouched (an append-only audit log, matching recommendations/predictions).
+`watchlist.UseCase.Remove`/`DELETE /watchlist`/the dashboard's "Remove" button do the equivalent
+for watchlist symbols. Both verified live via Docker (recorded, removed, confirmed gone from
+`GET /portfolio`/`GET /watchlist`).
+
+**Requirements gathered for a follow-up pass (not yet built — real design decisions needed
+first, same caution as everything else in this document)**:
+- Deleting an individual historical transaction (not just clearing the current position) — still
+  needs a transaction `id` and a decision on recomputation strategy, as above.
+- A display-language switcher (Polish/English at minimum) — needs an i18n mechanism (every
+  template string routed through a lookup keyed by language, a way to persist the chosen
+  language) that doesn't exist anywhere in this codebase yet; a meaningfully larger addition than
+  the others.
+
+Not done: multi-user accounts, OAuth2/OIDC, and a richer SPA frontend remain explicitly out of
+scope for this increment — revisit only if Atlas's use case actually changes from "personal tool"
+to something needing them.
 
 ## 11. Acceptance Criteria
 

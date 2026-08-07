@@ -91,6 +91,23 @@ func (t *TimescaleDB) SavePositions(positions []portfolio.Position) error {
 	return nil
 }
 
+// DeletePosition removes a symbol's row from the default portfolio's positions entirely (see
+// portfolio.UseCase.RemovePosition) — transactions are untouched, matching the append-only
+// audit-log stance the rest of this codebase takes with recommendations/predictions.
+func (t *TimescaleDB) DeletePosition(symbol string) error {
+	ctx := context.Background()
+
+	if _, err := t.db.ExecContext(ctx, `
+		DELETE FROM positions
+		USING symbols s, portfolios pf
+		WHERE positions.symbol_id = s.id AND positions.portfolio_id = pf.id
+		  AND s.ticker = $1 AND pf.name = $2`,
+		symbol, defaultPortfolioName); err != nil {
+		return fmt.Errorf("delete position for %s: %w", symbol, err)
+	}
+	return nil
+}
+
 // SaveTransaction appends a transaction record. Transactions are append-only history, unlike
 // positions, so this is a plain insert rather than an upsert.
 func (t *TimescaleDB) SaveTransaction(transaction portfolio.Transaction) error {

@@ -1,0 +1,62 @@
+{{define "recommendations"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atlas — Recommendations</title>
+  {{template "head" .}}
+</head>
+<body>
+  {{template "nav" .}}
+  <main class="container pb-5">
+    <h1 class="h3 mb-4">Recommendations</h1>
+
+    <form class="row row-cols-auto g-2 align-items-end mb-4" method="get" action="/dashboard/recommendations">
+      <div class="col">
+        <label class="form-label">Symbol</label>
+        {{if .Symbols}}
+        <select class="form-select" name="symbol">
+          <option value="">Choose…</option>
+          {{$current := .Symbol}}
+          {{range .Symbols}}
+          <option value="{{.}}" {{if eq . $current}}selected{{end}}>{{.}}</option>
+          {{end}}
+        </select>
+        {{else}}
+        <input type="text" class="form-control text-uppercase" name="symbol" value="{{.Symbol}}" required>
+        <div class="form-text">Add symbols to your <a href="/dashboard/watchlist">watchlist</a> for a dropdown here.</div>
+        {{end}}
+      </div>
+      <div class="col"><button type="submit" class="btn btn-primary">Get recommendation</button></div>
+    </form>
+
+    {{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
+
+    {{if .Recommendation}}
+    <h2 class="h4">{{.Recommendation.Symbol}}: <span class="{{actionClass .Recommendation.Action}}">{{.Recommendation.Action}}</span></h2>
+    <div class="table-responsive">
+      <table class="table">
+        <tbody>
+          <tr><th>Confidence</th><td>{{printf "%.0f%%" (percent .Recommendation.Confidence)}}</td></tr>
+          <tr><th>Score</th><td>{{printf "%.3f" .Recommendation.Score}}</td></tr>
+          <tr><th>Technical</th><td>{{printf "%.3f" .Recommendation.TechnicalScore}}</td></tr>
+          <tr><th>ML</th><td>{{printf "%.3f" .Recommendation.MLScore}}</td></tr>
+          <tr><th>Portfolio</th><td>{{printf "%.3f" .Recommendation.PortfolioScore}}</td></tr>
+          <tr><th>Risk</th><td>{{printf "%.3f" .Recommendation.RiskScore}}</td></tr>
+          {{if .Recommendation.MarketCondition}}<tr><th>Market Condition</th><td>{{.Recommendation.MarketCondition}}</td></tr>{{end}}
+          <tr><th>Model</th><td>{{.Recommendation.ModelVersion}}</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3 class="h6">Reasoning</h3>
+    <ul>
+      {{range .Recommendation.Reason}}<li>{{.}}</li>{{end}}
+    </ul>
+    <p class="text-body-secondary small">Decision-support only — Atlas never executes trades.</p>
+    {{end}}
+  </main>
+  {{template "scripts" .}}
+</body>
+</html>
+{{end}}
