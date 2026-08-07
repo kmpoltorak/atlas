@@ -71,6 +71,7 @@ func (o *Orchestrator) BuildRecommendationFromBars(symbol string, bars []market.
 	recommendation.TechnicalScore = technicalScore
 	recommendation.MLScore = blend.MLScore
 	recommendation.PortfolioScore = blend.PortfolioScore
+	recommendation.RiskScore = blend.RiskScore
 	recommendation.ModelVersion = EngineVersion
 	return recommendation, nil
 }
@@ -138,27 +139,38 @@ func (o *Orchestrator) buildTechnicalScore(symbol string, bars []market.Bar) dom
 }
 
 // blendResult carries every signal blendMLAndPortfolio derives: the blended score, its raw
-// components (for the persisted score breakdown — see Recommendation.MLScore/PortfolioScore),
-// and the extra context (HasPosition, MLConfidence) BuildRecommendationFromBars needs to build
-// a decision.RecommendationInput for ACCUMULATE/REDUCE/WAIT differentiation.
+// components (for the persisted score breakdown — see Recommendation.MLScore/PortfolioScore/
+// RiskScore), and the extra context (HasPosition, MLConfidence) BuildRecommendationFromBars
+// needs to build a decision.RecommendationInput for ACCUMULATE/REDUCE/WAIT differentiation.
 type blendResult struct {
 	Overall        float64
 	MLScore        float64
 	PortfolioScore float64
+	RiskScore      float64
 	MLConfidence   float64
 	HasPosition    bool
 	Reasons        []string
 }
 
-// blendMLAndPortfolio folds the ML prediction and portfolio risk context into the technical
-// score, per docs/decision_engine.md's Technical+ML+Portfolio scoring model. Both are optional
-// (nil-safe) and neutral (0.5) when unavailable, so the blend degrades to technical-only
-// exactly as before when ML/Portfolio aren't wired in (see NewOrchestrator vs
-// NewOrchestratorWithML). MLConfidence defaults to 1.0 (never triggers
+// blendWeights are the first-pass, documented weights for Technical+ML+Portfolio+Risk (see
+// docs/decision_engine.md's "Scoring Model"), same honesty stance as every other threshold in
+// this engine — picked by hand, pending real tuning, not derived from data. Sums to 1.
+const (
+	technicalWeight = 0.50
+	mlWeight        = 0.25
+	portfolioWeight = 0.15
+	riskWeight      = 0.10
+)
+
+// blendMLAndPortfolio folds the ML prediction, per-symbol portfolio P&L, and portfolio-wide
+// risk context into the technical score, per docs/decision_engine.md's Technical+ML+Portfolio+
+// Risk scoring model. All three are optional (nil-safe) and neutral when unavailable, so the
+// blend degrades to technical-only exactly as before when ML/Portfolio aren't wired in (see
+// NewOrchestrator vs NewOrchestratorWithML). MLConfidence defaults to 1.0 (never triggers
 // decision.UseCase's WAIT band) when ML isn't wired in — there's no real confidence signal to
 // distrust in that mode.
 func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, technical domainDecision.TechnicalScore) blendResult {
-	result := blendResult{Overall: technical.Overall, MLScore: 0.5, PortfolioScore: 0.5, MLConfidence: 1.0}
+	result := blendResult{Overall: technical.Overall, MLScore: 0.5, PortfolioScore: 0.5, RiskScore: 0.5, MLConfidence: 1.0}
 
 	if o.ML != nil {
 		feature := mlUC.BuildFeatureVector(o.Analyzer, symbol, bars)
@@ -173,6 +185,10 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 			result.PortfolioScore = portfolioRiskSignal(symbol, positions)
 			result.HasPosition = hasPosition(symbol, positions)
 		}
+		if risk, err := o.Portfolio.ComputeRisk(); err == nil {
+			positions, _ := o.Portfolio.GetPositions()
+			result.RiskScore = computeRiskScore(risk, positions)
+		}
 	}
 
 	// Gated on ML specifically (not "ML or Portfolio"): every existing NewOrchestrator call
@@ -180,12 +196,13 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 	// changed behavior everywhere instead of only where NewOrchestratorWithML opts in.
 	// Portfolio's non-nil-ness on its own does not enable the blend.
 	if o.ML != nil {
-		// Technical stays dominant; ML and portfolio are secondary/tertiary signals. ML is
-		// currently RSI-derived too (see ml.UseCase.Predict), so this is partly redundant
-		// with the RSI blend in buildTechnicalScore until a real trained model exists —
-		// wiring the composition now means Atlas picks up a genuine ML signal automatically
-		// the moment Predict() stops being a stub, with no further orchestration changes.
-		result.Overall = clamp01(technical.Overall*0.55 + result.MLScore*0.30 + result.PortfolioScore*0.15)
+		// Technical stays dominant; ML/Portfolio/Risk are secondary signals. ML is currently
+		// RSI-derived too (see ml.UseCase.Predict) when no trained model is loaded, so this is
+		// partly redundant with the RSI blend in buildTechnicalScore until a real model exists —
+		// wiring the composition now means Atlas picks up a genuine ML signal automatically the
+		// moment Predict() stops being a stub, with no further orchestration changes.
+		result.Overall = clamp01(technical.Overall*technicalWeight + result.MLScore*mlWeight +
+			result.PortfolioScore*portfolioWeight + result.RiskScore*riskWeight)
 	}
 
 	if result.MLScore >= 0.6 {
@@ -196,8 +213,46 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 	if result.PortfolioScore < 0.5 {
 		result.Reasons = append(result.Reasons, "Portfolio risk context reduces conviction")
 	}
+	if result.RiskScore < 0.5 {
+		result.Reasons = append(result.Reasons, "Elevated portfolio-wide risk (drawdown/volatility)")
+	}
 
 	return result
+}
+
+// computeRiskScore converts a portfolio-wide risk snapshot (portfolio.UseCase.ComputeRisk) into
+// a [0,1] signal on the same scale as the other blend components (higher = more supportive of
+// buying, lower = more cautionary) — unlike portfolioRiskSignal (a single symbol's own P&L),
+// this reflects the whole portfolio's exposure, independent of which symbol is being scored,
+// matching docs/decision_engine.md's "Risk Context" being a portfolio-wide concept distinct
+// from the per-position "Portfolio Context". First-pass documented heuristic, same honesty
+// stance as every other threshold/weight in this engine.
+func computeRiskScore(risk portfolio.RiskSnapshot, positions []portfolio.Position) float64 {
+	// Drawdown is already a ratio in (-inf, 0] (see ComputeRisk) — 0 means no unrealized losses
+	// across the portfolio, more negative means larger relative losses.
+	drawdownComponent := clamp01(1 + risk.Drawdown)
+
+	// Volatility is raw currency units (average abs price deviation across positions), not a
+	// ratio — normalize against the average current price so it's comparable across symbols at
+	// different price scales, rather than unfairly penalizing a highly-priced stock's larger
+	// absolute moves. No positions means no observed volatility to penalize, so it stays neutral.
+	volatilityComponent := 1.0
+	if avgPrice := averageCurrentPrice(positions); avgPrice > 0 {
+		volatilityComponent = clamp01(1 - risk.Volatility/avgPrice)
+	}
+
+	return clamp01((drawdownComponent + volatilityComponent) / 2)
+}
+
+func averageCurrentPrice(positions []portfolio.Position) float64 {
+	if len(positions) == 0 {
+		return 0
+	}
+	sum := 0.0
+	for _, position := range positions {
+		sum += position.CurrentPrice
+	}
+	return sum / float64(len(positions))
 }
 
 // hasPosition reports whether the portfolio holds a real (positive-quantity) position in
