@@ -90,9 +90,11 @@ Stores:
 
 Implementation status: prices, portfolio (positions, transactions, watchlist), predictions,
 recommendations, and backtest runs are all actually persisted. Indicators are now written too
-(migrations/006, internal/infrastructure/persistence/indicators.go), but only from
-GET /recommendations — the alert-poll loop's Evaluate() doesn't currently expose per-symbol bars
-to persist against, so background snapshots aren't taken; there is no alerts table.
+(migrations/006, internal/infrastructure/persistence/indicators.go) from every live-recommendation
+path — GET /recommendations, GET /alerts, and the background alert-poll loop (Evaluate() now
+carries its per-symbol bars through via alerts.Alert.Bars) — but deliberately not from
+backtesting, whose bars are historical/simulated rather than live readings. There is still no
+alerts table (alerts are computed on demand from the watchlist, not stored).
 ## redis
 Used for:
 - caching

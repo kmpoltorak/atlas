@@ -65,12 +65,14 @@ Deliverables:
 portfolio service, and watchlist support are all real. Risk context calculator
 (`portfolio.UseCase.ComputeRisk`) is real and reachable (`GET /portfolio`'s `risk` field) — it
 existed with no caller before a prior pass. Storage of portfolio snapshots is done (positions
-persist to TimescaleDB); storage of indicator snapshots now is too — `GET /recommendations`
-writes the full computed indicator set (one row per indicator, migrations/001+006,
-internal/infrastructure/persistence/indicators.go) to the `indicators` table. This only covers
-the one live-recommendation request path, not the background alert-poll loop or backtesting —
-indicators are still computed fresh per request everywhere, this just also records what was
-computed when a symbol is explicitly queried.
+persist to TimescaleDB); storage of indicator snapshots now is too — every live-recommendation
+path (`GET /recommendations`, `GET /alerts`, and the background alert-poll loop, via
+`alerts.Alert.Bars`) writes the full computed indicator set (one row per indicator,
+migrations/001+006, internal/infrastructure/persistence/indicators.go) to the `indicators` table.
+Backtesting deliberately still doesn't — its bars are historical/simulated, not live readings, the
+same distinction that already keeps backtesting's individual simulated recommendations out of the
+recommendations table (see docs/backtesting.md). Indicators are still computed fresh per request
+everywhere; persistence is a side-effect write, not a read/caching path.
 
 ## 6. Phase 4 — ML and Decision Engine
 

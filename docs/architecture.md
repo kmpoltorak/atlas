@@ -20,9 +20,10 @@ Recovery probability has a real, tested label definition but no trained model (t
 historical data to train one honestly — see docs/ml.md); market condition is real and live
 (`ml.ClassifyMarketCondition`, a deterministic rule, not a trained model). The Risk Engine is
 real and blended into scoring (`computeRiskScore`, weight 0.10) but still computed inline in the
-Orchestrator rather than as a separate pipeline stage. Indicators are now persisted too, but only
-from the `GET /recommendations` request path — the alert-poll loop and backtesting don't persist
-snapshots (see implementation-plan.md's Phase 3 status note).
+Orchestrator rather than as a separate pipeline stage. Indicators are now persisted from every
+live-recommendation path — `GET /recommendations`, `GET /alerts`, and the background alert-poll
+loop — but deliberately not from backtesting, whose bars are historical/simulated rather than
+live readings (see implementation-plan.md's Phase 3 status note).
 
 ## Core Modules
 

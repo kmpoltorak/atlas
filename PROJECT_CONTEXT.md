@@ -395,9 +395,10 @@ predictions, recommendations, backtest runs, and now indicators are all persiste
 migrations/001-006,
 internal/infrastructure/persistence/{portfolio,watchlist,decision,ml,backtesting,indicators}.go).
 Indicators are still computed fresh per request everywhere (no caching) — persistence is a
-side-effect write, not a read path — and only `GET /recommendations` currently triggers it; the
-background alert-poll loop and backtesting don't (see docs/deployment.md's Implementation status
-note). Predictions always populate `score`/`confidence`/`model_version`; `correction_probability`
+side-effect write, not a read path — and every live-recommendation path now triggers it
+(`GET /recommendations`, `GET /alerts`, and the background alert-poll loop); backtesting
+deliberately still doesn't, since its bars are historical/simulated rather than live readings
+(see docs/deployment.md's Implementation status note). Predictions always populate `score`/`confidence`/`model_version`; `correction_probability`
 is populated too when a real trained model produced it (see docs/ml.md), and stays NULL for the
 deterministic stub. `expected_duration`/`expected_strength` stay NULL regardless — no model
 produces those yet. Backtesting's individual simulated recommendations are still not persisted
