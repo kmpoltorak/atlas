@@ -337,6 +337,11 @@ header or it returns HTTP 429 regardless of query parameters (this was the root 
 the 429s observed during testing, not the endpoint itself). It works once that header is
 set, but remains unofficial and could change or be blocked without notice.
 
+Bars are hourly (`interval=1h`), not daily — daily candles are too coarse for the
+trading-oriented use this engine targets. Confirmed live: a real 30-day request returns
+clean hourly bars with 1-hour gaps during market hours, well inside Yahoo's ~730-day
+retention for intraday data (see internal/infrastructure/providers/yahoo.go).
+
 Yahoo-specific logic must be isolated inside the provider module.
 
 ---
@@ -345,20 +350,12 @@ Yahoo-specific logic must be isolated inside the provider module.
 
 ## Stooq
 
-Evaluate as a free alternative.
-
-Use Stooq if:
-
-- required instruments are available,
-- data quality is sufficient,
-- historical coverage meets requirements.
-
-Decision: Yahoo (unofficial) remains the default provider, confirmed working end-to-end
-with a browser-like User-Agent header. Stooq is implemented and available via
-MARKET_PROVIDER=stooq, but its endpoint was observed serving a client-side JavaScript
-proof-of-work bot challenge instead of CSV data from at least one test network — Atlas
-does not attempt to solve that challenge. This may be network/IP-specific; verify Stooq
-access from the actual deployment host before switching to it as the default.
+Evaluated as a free alternative, then removed. Its free endpoint served a client-side
+JavaScript proof-of-work bot challenge instead of CSV data from every network tested — and
+even where reachable, its free CSV export is daily-only (no intraday), which wouldn't have
+met the hourly-granularity requirement anyway. Yahoo (unofficial) is now the sole provider;
+`MARKET_PROVIDER` still exists as a metrics/logging label (see internal/app/handlers.go),
+just not as a provider selector, since there's nothing left to select.
 
 ---
 

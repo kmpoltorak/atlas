@@ -48,6 +48,28 @@ func TestFetchBarsParsesProviderResponse(t *testing.T) {
 	}
 }
 
+func TestFetchBarsRequestsHourlyInterval(t *testing.T) {
+	var gotInterval string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotInterval = r.URL.Query().Get("interval")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"chart":{"result":[{"timestamp":[],"indicators":{"quote":[{"open":[],"high":[],"low":[],"close":[],"volume":[]}]}}]}}`))
+	}))
+	defer server.Close()
+
+	provider := NewYahooFinanceProvider()
+	provider.BaseURL = server.URL + "/v8/finance/chart"
+	provider.Client = server.Client()
+
+	if _, err := provider.FetchBars("AAPL", 5); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	// Daily bars are too coarse for trading — Atlas requests hourly candles.
+	if gotInterval != "1h" {
+		t.Fatalf("expected interval=1h, got %q", gotInterval)
+	}
+}
+
 func TestFetchBarsSendsBrowserUserAgent(t *testing.T) {
 	var gotUserAgent string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

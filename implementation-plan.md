@@ -47,6 +47,23 @@ Deliverables:
 - provider adapter interface,
 - collector service with idempotent persistence.
 
+**Implementation status**: bar granularity switched from daily (`interval=1d`) to hourly
+(`interval=1h`) — daily candles were too coarse for the trading-oriented use this engine targets.
+Verified live: Yahoo's unofficial chart endpoint returns clean hourly bars with 1-hour gaps
+during market hours, well inside its ~730-day intraday retention limit, so the existing
+`COLLECTOR_WINDOW_DAYS` (default 30) needed no change — it now just yields ~150+ hourly bars
+instead of ~20 daily ones, comfortably above every indicator's warm-up requirement. Stooq (the
+documented free fallback provider) was removed rather than switched to hourly too: its free
+endpoint already served a client-side JavaScript bot challenge instead of data on every network
+tested, and even where reachable its free CSV export is daily-only, so it couldn't meet the
+hourly requirement regardless. Yahoo is now the sole provider; `MARKET_PROVIDER` remains as a
+metrics/logging label, not a selector. The `prices`/`indicators` tables have no granularity
+column, so old daily history for real symbols (AAPL, MSFT, ALE.WA, SPCX, ETFBDIVPL.WA) was
+truncated before the first hourly collection, rather than left to mix silently with new hourly
+rows in the same per-symbol series (this would have corrupted `cmd/export-training-data`'s
+read-back, the only consumer of stored bar history — nothing in the live recommendation path
+reads it back). Scoped with Kris first (truncate vs. leave as-is — truncate was chosen).
+
 ## 5. Phase 3 — Analytics Layer
 
 Scope:
