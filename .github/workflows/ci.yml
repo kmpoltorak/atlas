@@ -1,9 +1,9 @@
 name: CI
 
 # Implements the "PR" and "Build" stages of the pipeline documented in docs/deployment.md.
-# The "Push" and "Deploy" stages are deliberately not implemented here — they need a
-# container registry and cluster credentials this repo doesn't have configured yet. See
-# deploy/README.md's "Not yet done" section.
+# The "Push" and "Deploy" stages are explicitly out of scope for this project — they'd need a
+# real container registry and production cluster credentials. See deploy/README.md's
+# "Not yet done / out of scope" section.
 #
 # go-version is "stable" rather than pinned to go.mod's "go 1.23.0" on purpose: that
 # directive is a minimum language version, not a toolchain pin, and Go only backports

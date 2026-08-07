@@ -121,21 +121,44 @@ docs/decision_engine.md's "Scoring Model" (there's still no separate pipeline *s
 component). Scoped with Kris first (report-only vs. blended into scoring — blended was chosen,
 per the original docs/decision_engine.md design). Recovery-probability and market-condition —
 scoped with Kris as "build all three" alongside Risk Engine — turned out to need different
-treatment on closer look: recovery probability got its contract and a real, tested label
-definition (`ml.Prediction.RecoveryProbability`, `ml.ComputeRecoveryLabel`) but no trained model,
-since real accumulated history is currently far too thin to train one honestly (1 symbol, 344
-bars as of this pass — see docs/ml.md's Implementation status note); market condition turned out
-not to need a trained model at all — `ml.ClassifyMarketCondition` is a deterministic ADX+EMA
-technical rule, real and live today (`Recommendation.MarketCondition`), since regime
-classification via ADX+EMA is well-established technical analysis, not something that needs
-labeled historical outcomes to define. OBV and Bollinger Bands — real, tested analyzer
-computations since an earlier pass but never consumed anywhere — are now blended into
-`buildTechnicalScore` too (a Bollinger %B position signal and an OBV accumulation/distribution
-signal, weighted alongside momentum/volume and RSI), closing that specific documented gap. This
-is a heuristic blend (like the rest of this engine's scoring), not a retrained model — extending
-`ml.FeatureVector`/the trained ONNX model to use these indicators too was deliberately not done,
-since real accumulated history is still too thin to retrain on new features honestly (same
-reasoning as recovery probability, above).
+treatment on closer look: recovery probability first got its contract and a real, tested label
+definition (`ml.Prediction.RecoveryProbability`, `ml.ComputeRecoveryLabel`) with no trained model
+yet, since real accumulated history was far too thin to train one honestly at the time (1 symbol,
+344 bars); market condition turned out not to need a trained model at all —
+`ml.ClassifyMarketCondition` is a deterministic ADX+EMA technical rule, real and live today
+(`Recommendation.MarketCondition`), since regime classification via ADX+EMA is well-established
+technical analysis, not something that needs labeled historical outcomes to define. OBV and
+Bollinger Bands — real, tested analyzer computations since an earlier pass but never consumed
+anywhere — are now blended into `buildTechnicalScore` too (a Bollinger %B position signal and an
+OBV accumulation/distribution signal, weighted alongside momentum/volume and RSI), closing that
+specific documented gap. This is a heuristic blend (like the rest of this engine's scoring), not
+a retrained model — extending `ml.FeatureVector`/the trained correction ONNX model to use these
+indicators too was deliberately not done, since retraining *that* model on a new feature layout
+still needs more accumulated history than collecting-a-second-independent-model (recovery,
+below) does.
+
+**Recovery-probability model, trained in a later pass**: real now, not just contract-ready.
+Enough real history had accumulated (8 symbols, hundreds of hourly bars each by this pass) to
+revisit the earlier "too thin" call — checked concretely rather than assumed: `cmd/
+export-training-data -label-type=recovery` (new flag, reuses the existing correction export's
+loop and CSV writer, just swapping which label function computes the target column) produced
+222 real usable rows, and `training/train.py --target recovery` (the same training procedure as
+the correction model, parametrized rather than duplicated — only the output filename prefix and
+metadata's label-definition text differ) trained a real model against them: holdout AUC 0.83,
+accuracy 0.65 on n=46. Scoped with the Author first (train on it despite the caveats — same
+standard this project already applied to the correction model's own first, imperfect pass — vs.
+wait for more data; training was chosen). Honestly, this dataset is thinner than it looks: recovery labels
+are only meaningful conditional on a correction happening at all, so 222 rows is a small, skewed
+subset of an already-modest correction history, not 222 independent observations, and 3 of 8
+symbols have zero recovered examples at all — see docs/ml.md's Implementation status note for
+the full caveat. Wired into live inference as a second, fully independent optional model
+(`RECOVERY_MODEL_PATH`, `ml.UseCase.RecoveryModel`/`NewUseCaseWithModels` — separate from
+`MODEL_PATH`'s correction model; either, both, or neither load independently, matching every
+other optional dependency's non-fatal pattern), with its own persisted columns
+(`predictions.recovery_probability`/`recovery_model_version` — migrations/010, following
+`correction_probability`'s existing NULL-means-not-computed convention exactly). Verified live
+end-to-end through the actual HTTP API and a real Docker container: a real prediction for MSFT
+returned a genuine, non-default `recovery_probability`, persisted correctly to TimescaleDB.
 
 ## 7. Phase 5 — Observability and Notifications
 
@@ -206,9 +229,10 @@ configmap, secret template, deployment with non-root/read-only-root security con
 runbook (`deploy/RUNBOOK.md`) with a manual TimescaleDB backup/restore procedure and an honest
 production checklist. `.github/workflows/ci.yml` covers the CI/CD pipeline's "PR" and "Build"
 stages (gofmt/vet/test against real TimescaleDB+Redis service containers, `govulncheck`, a Docker
-build validation) — the "Push"/"Deploy" stages are deliberately not implemented, since they need
-a real container registry and cluster credentials this repo doesn't have configured (see
-`deploy/README.md`'s "Not yet done"). CI's pinned action versions were bumped
+build validation) — the "Push"/"Deploy" stages are explicitly out of scope for this project
+(they'd need a real container registry and production cluster credentials, the same class of
+real-cloud-infrastructure dependency this repo deliberately doesn't take on anywhere else — see
+this section's Recovery drill note on production-cluster testing). CI's pinned action versions were bumped
 (`actions/checkout`/`actions/setup-go` v4→v7, `docker/build-push-action` v6→v7) after a run
 surfaced a Node 20 deprecation notice — confirmed by checking each action's `action.yml` that the
 v4-6 lines still declared `node20` while v7 declares `node24`; no input/behavior changes needed
@@ -246,10 +270,10 @@ Scheduled database backups are now automated in Kubernetes too, scoped with Kris
 7-day retention): `deploy/backup-cronjob.yaml` adds a `CronJob` that runs `pg_dump` against
 TimescaleDB every day at 02:00 and keeps the last 7 days of dumps on a new `PersistentVolumeClaim`
 (`atlas-db-backups`), pruning older ones on each run. Docker Compose has no CronJob equivalent, so
-its backup procedure is still the manual one in `deploy/RUNBOOK.md`. Deliberately not solved by
-this pass: copying dumps off-cluster to durable object storage (S3/GCS/etc.) — which target and
-schedule to use for that is an infrastructure/cost decision, not a code one, same reasoning as
-everything else still open below.
+its backup procedure is still the manual one in `deploy/RUNBOOK.md`. Copying dumps off-cluster to
+durable object storage (S3/GCS/etc.) is explicitly out of scope for this project — it would need
+a real cloud storage account this repo doesn't have configured, the same class of real-cloud
+dependency this project deliberately doesn't take on anywhere else.
 
 The disaster-recovery runbook has now actually been rehearsed too (Docker Compose), not just
 written — see `deploy/RUNBOOK.md`'s "Recovery drill results". This caught a real bug in the
@@ -281,9 +305,10 @@ Testing against a real managed/cloud production cluster is explicitly out of sco
 project (scoped with the Author: no production-cluster testing) — minikube is real Kubernetes,
 and that's the level of rehearsal this repo's recovery drill is scoped to.
 
-Not yet done, per `deploy/RUNBOOK.md`'s production checklist (kept deliberately unchecked rather
-than marked complete): off-cluster backup storage (the schedule exists, but dumps only live on
-an in-cluster PVC — which object storage to use is still an infrastructure/cost decision).
+With those three scope calls made, `deploy/RUNBOOK.md`'s production checklist is fully checked
+off — every remaining "not yet done" item this section used to list (a real Alertmanager
+receiver, off-cluster backup storage, production-cluster recovery testing) is now either built
+or explicitly out of scope, not open.
 
 ## 10. Phase 8 — Frontend / UI
 

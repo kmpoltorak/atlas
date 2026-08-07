@@ -104,15 +104,18 @@ history, exported to ONNX and loaded in Go via `github.com/yalue/onnxruntime_go`
 (internal/application/ml, `OnnxModel`) — verified live end-to-end (train → export → real HTTP
 prediction → persisted `correction_probability` row). No model is loaded by default; unset
 `MODEL_PATH` (or a load failure) falls back to the original deterministic RSI-derived stub, a
-normal non-fatal state, not an error. Recovery probability has a real field
-(`ml.Prediction.RecoveryProbability`) and a real, tested label definition
-(`ml.ComputeRecoveryLabel`) ready for training — but no model trains against it yet, since real
-accumulated history (1 symbol, a few hundred bars as of this pass) is far too thin to do so
-honestly; the field stays 0 until that changes (see docs/ml.md's Implementation status note).
-Market condition is real and live today, but deliberately *not* ML — `ml.ClassifyMarketCondition`
-is a deterministic ADX+EMA technical rule (BULL/BEAR/SIDEWAYS), which doesn't share recovery
-probability's data-volume problem, wired into `Recommendation.MarketCondition` (see Decision
-Engine section below).
+normal non-fatal state, not an error. Recovery probability is real now too — a second,
+independently-optional model (`RECOVERY_MODEL_PATH`, its own `OnnxModel`) trained on
+`ml.ComputeRecoveryLabel`'s real, tested label definition ("did a correction recover to its
+pre-drop price within N bars"), verified live end-to-end the same way (persisted
+`recovery_probability`/`recovery_model_version` — migrations/010). Its first real training pass
+is honestly thin, more so than the correction model's own: 222 rows across 7 symbols, 3 of which
+have zero recovered examples at all, holdout AUC 0.83 on n=46 — a real number, not fabricated,
+but one to treat with real caution, not as a settled signal (see docs/ml.md's Implementation
+status note for the full caveat). Market condition is real and live today, but deliberately
+*not* ML — `ml.ClassifyMarketCondition` is a deterministic ADX+EMA technical rule
+(BULL/BEAR/SIDEWAYS), which doesn't share either probability model's data-volume concerns, wired
+into `Recommendation.MarketCondition` (see Decision Engine section below).
 
 ---
 

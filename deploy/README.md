@@ -62,11 +62,13 @@ export both as env vars before `docker compose up` — see `docker-compose.yml`'
 it on from the dashboard's Account page (Account → Set up 2FA → scan the QR code with an
 authenticator app).
 
-## Not yet done
+## Not yet done / out of scope
 
 - No CI push/deploy stage wires an image into `deployment.yaml`'s `REGISTRY/atlas-api:latest`
   placeholder — `.github/workflows/ci.yml` stops at build validation. Pushing to a registry and
-  deploying needs real registry/cluster credentials this repo doesn't have configured.
+  deploying to a real production cluster is explicitly out of scope for this project (the same
+  real-cloud-infrastructure dependency this repo deliberately doesn't take on anywhere else —
+  see `RUNBOOK.md`'s Recovery drill results for the equivalent call on cluster testing).
 - No TimescaleDB/Redis manifests, per the Scope note above.
 - No Kustomize/Helm layering for per-environment (dev/test/prod) differences — these are flat
   manifests, matching what `docs/deployment.md` literally asks for.

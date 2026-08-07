@@ -30,16 +30,22 @@ type Prediction struct {
 	// when no trained model is loaded (the RSI-derived stub has no such concept).
 	CorrectionProbability float64 `json:"correction_probability"`
 
-	// RecoveryProbability would be the probability that a price correction recovers to its
-	// pre-drop level within application/ml.RecoveryLabelParams' horizon (see
-	// application/ml.ComputeRecoveryLabel — the label definition is real and tested). Always 0
-	// today: no model produces this. Training one honestly needs real correction+recovery
-	// events across enough symbols/history, which the currently-collected dataset (as of this
-	// field's introduction: 1 symbol, a few hundred bars) doesn't come close to providing — see
-	// docs/ml.md's Implementation status note. This field exists so the contract and label
-	// definition are ready the moment there's enough real data to train against, matching how
-	// CorrectionProbability itself started before training/train.py existed.
+	// RecoveryProbability is the probability that a price correction recovers to its pre-drop
+	// level within application/ml.RecoveryLabelParams' horizon (see
+	// application/ml.ComputeRecoveryLabel for the label definition). Real when a recovery model
+	// is loaded (RECOVERY_MODEL_PATH — a separate, optional model from ModelPath/MODEL_PATH's
+	// correction-probability one), 0 otherwise. Trained on a genuinely small, symbol-skewed
+	// first dataset (222 rows, 3 of 8 symbols with zero recovered examples as of this model's
+	// training — see docs/ml.md's Implementation status note) — honest, not fabricated, but
+	// worth reading with real caution until more history accumulates, same stance this project
+	// takes on CorrectionProbability's own first model.
 	RecoveryProbability float64 `json:"recovery_probability"`
 
 	ModelVersion string `json:"model_version"`
+
+	// RecoveryModelVersion is set only when a recovery model actually ran (see
+	// application/ml.UseCase.Predict), independent of ModelVersion above — mirrors
+	// ModelVersion's role of letting persistence tell "not computed" (empty) apart from "computed
+	// as exactly 0" (see infrastructure/persistence/ml.go's SavePrediction).
+	RecoveryModelVersion string `json:"recovery_model_version,omitempty"`
 }

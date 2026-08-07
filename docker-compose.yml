@@ -31,6 +31,10 @@ services:
       # referencing the *container* path under the training/models mount below, not the host
       # path — see training/README.md's step 4.
       MODEL_PATH: ${MODEL_PATH:-}
+      # A separate, independently-optional model from MODEL_PATH above (RecoveryProbability
+      # stays 0 if unset, the same non-fatal pattern) — e.g.:
+      #   RECOVERY_MODEL_PATH=/models/atlas-ml-recovery-v1.onnx docker compose up -d
+      RECOVERY_MODEL_PATH: ${RECOVERY_MODEL_PATH:-}
       # LIBONNXRUNTIME_PATH is intentionally not overridden here: the Dockerfile already sets
       # a working default (ENV LIBONNXRUNTIME_PATH=/usr/lib/libonnxruntime.so) matching where
       # it bundles the real onnxruntime .so; only override this if you rebuilt the image with

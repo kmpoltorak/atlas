@@ -1,8 +1,12 @@
 // Command export-training-data reads every symbol's persisted price history from TimescaleDB
-// and writes a CSV of (feature vector, correction label) rows for training/train.py to consume.
-// It reuses the exact same analyzer-backed feature computation the live inference path uses
+// and writes a CSV of (feature vector, label) rows for training/train.py to consume. It reuses
+// the exact same analyzer-backed feature computation the live inference path uses
 // (ml.BuildFeatureVector), so the training data and live features can never drift apart —
 // Python never reimplements RSI/EMA/MACD/ATR/Volume math.
+//
+// -label-type switches which target this exports: "correction" (default, every bar gets a
+// label) or "recovery" (only bars where a correction actually occurred get a label — see
+// ml.ComputeRecoveryLabel's doc comment for why recovery is conditional on correction).
 package main
 
 import (
@@ -18,16 +22,39 @@ import (
 	analyzerUC "atlas/internal/application/analyzer"
 	mlUC "atlas/internal/application/ml"
 	"atlas/internal/config"
+	"atlas/internal/domain/market"
 	"atlas/internal/infrastructure/persistence"
 )
 
 func main() {
-	outputPath := flag.String("output", "training/data/features.csv", "CSV output path")
+	labelType := flag.String("label-type", "correction", `label to export: "correction" or "recovery"`)
+	outputPath := flag.String("output", "", "CSV output path (defaults to training/data/features.csv, or training/data/recovery.csv for -label-type=recovery)")
 	horizonBars := flag.Int("horizon-bars", mlUC.DefaultCorrectionLabelParams().HorizonBars, "bars ahead to look for a correction")
 	thresholdPct := flag.Float64("threshold-pct", mlUC.DefaultCorrectionLabelParams().ThresholdPct, "drop fraction counted as a correction (0.05 = 5%)")
+	recoveryHorizonBars := flag.Int("recovery-horizon-bars", mlUC.DefaultRecoveryLabelParams().RecoveryHorizonBars, "bars after the correction breach to look for a recovery (only used with -label-type=recovery)")
 	flag.Parse()
 
-	params := mlUC.CorrectionLabelParams{HorizonBars: *horizonBars, ThresholdPct: *thresholdPct}
+	correctionParams := mlUC.CorrectionLabelParams{HorizonBars: *horizonBars, ThresholdPct: *thresholdPct}
+	recoveryParams := mlUC.RecoveryLabelParams{CorrectionParams: correctionParams, RecoveryHorizonBars: *recoveryHorizonBars}
+
+	var computeLabel func(bars []market.Bar, i int) (label int, ok bool)
+	switch *labelType {
+	case "correction":
+		computeLabel = func(bars []market.Bar, i int) (int, bool) {
+			return mlUC.ComputeCorrectionLabel(bars, i, correctionParams)
+		}
+		if *outputPath == "" {
+			*outputPath = "training/data/features.csv"
+		}
+	case "recovery":
+		computeLabel = func(bars []market.Bar, i int) (int, bool) { return mlUC.ComputeRecoveryLabel(bars, i, recoveryParams) }
+		if *outputPath == "" {
+			*outputPath = "training/data/recovery.csv"
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "unknown -label-type %q: must be \"correction\" or \"recovery\"\n", *labelType)
+		os.Exit(1)
+	}
 
 	cfg := config.Load()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -78,7 +105,7 @@ func main() {
 			continue
 		}
 		for i := mlUC.MinFeatureLookback; i < len(bars); i++ {
-			label, ok := mlUC.ComputeCorrectionLabel(bars, i, params)
+			label, ok := computeLabel(bars, i)
 			if !ok {
 				continue
 			}

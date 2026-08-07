@@ -51,19 +51,20 @@ type Application struct {
 	Cache   *cache.RedisClient
 	Discord *notifications.DiscordClient
 
-	Collector     *collectorUC.UseCase
-	Analyzer      *analyzerUC.UseCase
-	Portfolio     *portfolioUC.UseCase
-	Decision      *decisionUC.UseCase
-	Orchestrator  *decisionUC.Orchestrator
-	ML            *mlUC.UseCase
-	MLModel       *mlUC.OnnxModel // nil unless MODEL_PATH loaded successfully; owns the onnxruntime session
-	Notifications *notificationsUC.UseCase
-	Backtesting   *backtestingUC.UseCase
-	Watchlist     *watchlistUC.UseCase
-	Alerts        *alertsUC.UseCase
-	Auth          *authUC.UseCase
-	ExchangeRates *exchangerateUC.UseCase
+	Collector       *collectorUC.UseCase
+	Analyzer        *analyzerUC.UseCase
+	Portfolio       *portfolioUC.UseCase
+	Decision        *decisionUC.UseCase
+	Orchestrator    *decisionUC.Orchestrator
+	ML              *mlUC.UseCase
+	MLModel         *mlUC.OnnxModel // nil unless MODEL_PATH loaded successfully; owns the onnxruntime session
+	MLRecoveryModel *mlUC.OnnxModel // nil unless RECOVERY_MODEL_PATH loaded successfully; owns its own session
+	Notifications   *notificationsUC.UseCase
+	Backtesting     *backtestingUC.UseCase
+	Watchlist       *watchlistUC.UseCase
+	Alerts          *alertsUC.UseCase
+	Auth            *authUC.UseCase
+	ExchangeRates   *exchangerateUC.UseCase
 }
 
 // New connects to TimescaleDB and Redis and wires the full application. A connection
@@ -95,7 +96,7 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 	// TimescaleDB/Redis connections above — this is a genuinely optional enhancement, not a
 	// dependency the app can't function without. See training/README.md.
 	mlUseCase := mlUC.NewUseCase()
-	var mlModel *mlUC.OnnxModel
+	var mlModel, mlRecoveryModel *mlUC.OnnxModel
 	if cfg.ModelPath != "" {
 		model, err := mlUC.LoadOnnxModel(cfg.ModelPath, cfg.LibOnnxRuntimePath)
 		if err != nil {
@@ -103,9 +104,25 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 				zap.String("model_path", cfg.ModelPath), zap.Error(err))
 		} else {
 			mlModel = model
-			mlUseCase = mlUC.NewUseCaseWithModel(model)
 			logger.Info("loaded ML model", zap.String("version", model.Version))
 		}
+	}
+	// A separate, independently-optional model from ModelPath above — same non-fatal stance,
+	// but its own failure never falls back to anything (RecoveryProbability just stays 0, its
+	// documented default) since it's a secondary signal, not the primary correction-probability
+	// path Score/Confidence derive from.
+	if cfg.RecoveryModelPath != "" {
+		model, err := mlUC.LoadOnnxModel(cfg.RecoveryModelPath, cfg.LibOnnxRuntimePath)
+		if err != nil {
+			logger.Warn("failed to load ML recovery model; RecoveryProbability will stay 0",
+				zap.String("recovery_model_path", cfg.RecoveryModelPath), zap.Error(err))
+		} else {
+			mlRecoveryModel = model
+			logger.Info("loaded ML recovery model", zap.String("version", model.Version))
+		}
+	}
+	if mlModel != nil || mlRecoveryModel != nil {
+		mlUseCase = mlUC.NewUseCaseWithModels(mlModel, mlRecoveryModel)
 	}
 
 	// NBP being unreachable is non-fatal, same stance as the ML model above: a missing/failed
@@ -140,19 +157,20 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 		Cache:   redisCache,
 		Discord: discord,
 
-		Collector:     collector,
-		Analyzer:      analyzer,
-		Portfolio:     portfolioUseCase,
-		Decision:      decisionUseCase,
-		Orchestrator:  orchestrator,
-		ML:            mlUseCase,
-		MLModel:       mlModel,
-		Notifications: notificationsUC.NewUseCase(discord),
-		Backtesting:   backtestingUC.NewUseCase(orchestrator),
-		Watchlist:     watchlist,
-		Alerts:        alertsUC.NewUseCase(watchlist, collector, orchestrator, cfg.CollectorWindow),
-		Auth:          authUC.NewUseCase(cfg.AdminUsername, cfg.AdminPasswordHash, redisCache, storage),
-		ExchangeRates: exchangeRates,
+		Collector:       collector,
+		Analyzer:        analyzer,
+		Portfolio:       portfolioUseCase,
+		Decision:        decisionUseCase,
+		Orchestrator:    orchestrator,
+		ML:              mlUseCase,
+		MLModel:         mlModel,
+		MLRecoveryModel: mlRecoveryModel,
+		Notifications:   notificationsUC.NewUseCase(discord),
+		Backtesting:     backtestingUC.NewUseCase(orchestrator),
+		Watchlist:       watchlist,
+		Alerts:          alertsUC.NewUseCase(watchlist, collector, orchestrator, cfg.CollectorWindow),
+		Auth:            authUC.NewUseCase(cfg.AdminUsername, cfg.AdminPasswordHash, redisCache, storage),
+		ExchangeRates:   exchangeRates,
 	}, nil
 }
 
@@ -169,6 +187,11 @@ func (a *Application) Close() error {
 	if a.MLModel != nil {
 		if err := a.MLModel.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("close ml model: %w", err))
+		}
+	}
+	if a.MLRecoveryModel != nil {
+		if err := a.MLRecoveryModel.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close ml recovery model: %w", err))
 		}
 	}
 	if len(errs) == 0 {
