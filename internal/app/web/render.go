@@ -31,7 +31,18 @@ var funcMap = template.FuncMap{
 	// html/template has no arithmetic operators, so this has to happen in Go.
 	"percent": func(x float64) float64 { return x * 100 },
 	// pnl computes a position's unrealized profit/loss for the dashboard/portfolio tables.
-	"pnl":  func(p portfolio.Position) float64 { return (p.CurrentPrice - p.AverageCost) * p.Quantity },
+	"pnl": func(p portfolio.Position) float64 { return (p.CurrentPrice - p.AverageCost) * p.Quantity },
+	// totalPnL sums pnl across every position — the one number missing from both the dashboard
+	// and portfolio pages before this: an investor otherwise has to add up the P&L column by
+	// eye. Not the same figure as Risk.Exposure (total market value) or Risk.Drawdown
+	// (unrealized loss only, losing positions) — this is the real net P&L, gains included.
+	"totalPnL": func(positions []portfolio.Position) float64 {
+		var total float64
+		for _, p := range positions {
+			total += (p.CurrentPrice - p.AverageCost) * p.Quantity
+		}
+		return total
+	},
 	"join": func(items []string) string { return strings.Join(items, "; ") },
 	// actionClass maps a recommendation action to Bootstrap's own text-color utility classes
 	// (which carry !important) rather than a custom CSS rule — Bootstrap's table component sets

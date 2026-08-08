@@ -34,6 +34,12 @@
         </tr>
         {{end}}
         </tbody>
+        <tfoot>
+        <tr class="table-group-divider">
+          <th scope="row" colspan="4">{{T .Lang "table.total"}}</th>
+          <td class="text-end tabular-nums {{pnlClass (totalPnL .Positions)}}">{{money (totalPnL .Positions) $.Rates}}</td>
+        </tr>
+        </tfoot>
       </table>
     </div>
     {{else}}

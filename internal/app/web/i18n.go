@@ -50,6 +50,7 @@ var translations = map[string]map[Lang]string{
 	"table.avg_cost":      {LangEN: "Avg. Cost", LangPL: "Śr. koszt"},
 	"table.current_price": {LangEN: "Current Price", LangPL: "Aktualna cena"},
 	"table.pnl":           {LangEN: "P&L", LangPL: "Zysk/strata"},
+	"table.total":         {LangEN: "Total", LangPL: "Suma"},
 	"table.exposure":      {LangEN: "Exposure", LangPL: "Ekspozycja"},
 	// table.drawdown and table.avg_deviation are the dashboard/portfolio Risk table's own
 	// simple heuristics (portfolio.RiskSnapshot — see its doc comment), deliberately named for
