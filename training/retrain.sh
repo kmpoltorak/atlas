@@ -23,19 +23,28 @@ export DATABASE_NAME="${DATABASE_NAME:-atlas}"
 export DATABASE_USER="${DATABASE_USER:-atlas}"
 export DATABASE_PASSWORD="${DATABASE_PASSWORD:-atlas}"
 
+# VENV_DIR defaults to the same training/.venv the manual steps in training/README.md use, but
+# is overridable (see docker-compose.yml's atlas-trainer service) so a containerized run doesn't
+# reuse a venv created on a different OS — a venv's python3 is a symlink to the interpreter that
+# created it, which doesn't resolve inside a container built on a different base OS (confirmed
+# live: a macOS-created training/.venv bind-mounted into the Linux atlas-trainer container fails
+# with "training/.venv/bin/python3: No such file or directory").
+VENV_DIR="${TRAINING_VENV_DIR:-training/.venv}"
+
 echo "==> Exporting fresh training data"
 go run ./cmd/export-training-data -label-type=correction --output training/data/features.csv
 go run ./cmd/export-training-data -label-type=recovery --output training/data/recovery.csv
 
-if [ ! -d training/.venv ]; then
-  echo "==> Bootstrapping training/.venv (first run)"
-  python3 -m venv training/.venv
-  training/.venv/bin/pip install --quiet -r training/requirements.txt
+if [ ! -x "$VENV_DIR/bin/python3" ]; then
+  echo "==> Bootstrapping $VENV_DIR (first run, or previous venv isn't usable here)"
+  rm -rf "$VENV_DIR"
+  python3 -m venv "$VENV_DIR"
+  "$VENV_DIR/bin/pip" install --quiet -r training/requirements.txt
 fi
 
 echo "==> Training candidate models"
-training/.venv/bin/python3 training/train.py --input training/data/features.csv --output-dir training/models --target correction
-training/.venv/bin/python3 training/train.py --input training/data/recovery.csv --output-dir training/models --target recovery
+"$VENV_DIR/bin/python3" training/train.py --input training/data/features.csv --output-dir training/models --target correction
+"$VENV_DIR/bin/python3" training/train.py --input training/data/recovery.csv --output-dir training/models --target recovery
 
 echo
 echo "==> Done. New candidate model files are listed above (wrote ...)."

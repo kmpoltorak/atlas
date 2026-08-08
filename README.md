@@ -239,7 +239,10 @@ the choice (`migrations/011`) so it survives one. This is deliberate, not just u
 how thin and skewed the real training data still is (see the caveats in
 [docs/ml.md](docs/ml.md)), a human should look at each new model's metrics before it starts
 driving real recommendations — the same "never auto-promote" stance already applied to
-walk-forward threshold optimization above.
+walk-forward threshold optimization above. Both training and deleting old candidates can also be
+triggered straight from the Account page's buttons, via an internal-only sidecar container
+(`cmd/trainer`, off by default — see training/README.md's "Triggering training from the
+dashboard") — atlas-api's own model directory stays read-only either way.
 
 ## Backtesting
 

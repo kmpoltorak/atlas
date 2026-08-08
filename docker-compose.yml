@@ -49,6 +49,12 @@ services:
       # internal/application/auth's doc comment.
       ADMIN_USERNAME: ${ADMIN_USERNAME:-}
       ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
+      # Empty by default: the Account page's "Train new candidate" button then just explains how
+      # to run training/retrain.sh by hand instead. Only meaningful together with the
+      # atlas-trainer service below (off by default, profile "trainer") — set this to
+      # http://atlas-trainer:8091 in .env once you've started that profile, e.g.:
+      #   docker compose --profile trainer up -d
+      TRAINER_URL: ${TRAINER_URL:-}
     volumes:
       # Read-only: lets MODEL_PATH above reference a locally-trained model (training/models/
       # is gitignored — these are locally/CI-generated artifacts, not committed source).
@@ -60,6 +66,46 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Backs the Account dashboard's "Train new candidate" button (cmd/trainer) — off by default
+  # (profile "trainer"): start it explicitly with `docker compose --profile trainer up -d` if
+  # you want the GUI trigger. Without it running, training/retrain.sh is still fully usable by
+  # hand or from cron, exactly as before this service existed — see training/README.md. Never
+  # exposed outside the compose network (no "ports:" below) — atlas-api reaches it at
+  # http://atlas-trainer:8091 (TRAINER_URL above), nothing else should.
+  atlas-trainer:
+    build:
+      context: .
+      dockerfile: training/Dockerfile
+    container_name: atlas-trainer
+    profiles: ["trainer"]
+    volumes:
+      # Read-write, the whole repo: retrain.sh needs cmd/export-training-data's Go source and
+      # training/train.py, and writes into training/data/ and training/models/ — the same
+      # directory atlas-api's MODEL_PATH/RECOVERY_MODEL_PATH and Account-page picker already
+      # read from (./training/models:/models:ro above). training/.venv (gitignored) persists
+      # across restarts here exactly like it would running retrain.sh on the host directly.
+      - .:/app
+    environment:
+      DATABASE_HOST: timescaledb
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: atlas
+      DATABASE_USER: atlas
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-atlas}
+      # A separate venv directory from the one training/README.md's manual host steps use — a
+      # venv's python3 is a symlink back to whichever interpreter created it, which doesn't
+      # resolve if a venv created on the host OS gets bind-mounted into this (Linux) container.
+      # Gitignored, like training/.venv itself (see .gitignore).
+      TRAINING_VENV_DIR: training/.venv-container
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8091/health"]
       interval: 10s
       timeout: 5s
       retries: 5

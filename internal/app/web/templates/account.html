@@ -64,6 +64,9 @@
                 {{end}}
               </select>
               <button type="submit" class="btn btn-sm btn-primary text-nowrap">{{T .Lang "account.ml_activate_submit"}}</button>
+              <button type="submit" formaction="/dashboard/account/ml/delete" class="btn btn-sm btn-outline-danger text-nowrap"
+                      data-confirm-template="{{T .Lang "confirm.remove_model"}}"
+                      onclick="return confirm(this.dataset.confirmTemplate.replace('%s', this.form.filename.value));">{{T .Lang "account.ml_delete_submit"}}</button>
             </form>
             {{else}}
             <p class="text-body-secondary small mb-0">{{T .Lang "account.ml_no_models"}}</p>
@@ -85,12 +88,45 @@
                 {{end}}
               </select>
               <button type="submit" class="btn btn-sm btn-primary text-nowrap">{{T .Lang "account.ml_activate_submit"}}</button>
+              <button type="submit" formaction="/dashboard/account/ml/delete" class="btn btn-sm btn-outline-danger text-nowrap"
+                      data-confirm-template="{{T .Lang "confirm.remove_model"}}"
+                      onclick="return confirm(this.dataset.confirmTemplate.replace('%s', this.form.filename.value));">{{T .Lang "account.ml_delete_submit"}}</button>
             </form>
             {{else}}
             <p class="text-body-secondary small mb-0">{{T .Lang "account.ml_no_models"}}</p>
             {{end}}
           </div>
         </div>
+      </div>
+    </div>
+
+    <h2 class="h4 mt-5 mb-2">{{T .Lang "account.train_heading"}}</h2>
+    <p class="text-body-secondary small">{{T .Lang "account.train_hint"}}</p>
+    <div class="card" style="max-width: 40rem;">
+      <div class="card-body">
+        {{if not .TrainerConfigured}}
+        <p class="text-body-secondary small mb-0">{{T .Lang "account.train_not_configured"}}</p>
+        {{else}}
+          {{if .TrainerError}}
+          <p class="text-danger small">{{T .Lang "account.train_unreachable"}} {{.TrainerError}}</p>
+          {{else if .TrainerStatus.Running}}
+          <p class="mb-2"><span class="badge text-bg-info">{{T .Lang "account.train_running"}}</span></p>
+          {{else if .TrainerStatus.FinishedAt}}
+          <p class="mb-2">
+            {{T .Lang "account.train_last_result"}} ({{.TrainerStatus.FinishedAt}}):
+            {{if .TrainerStatus.Failed}}<span class="badge text-bg-danger">{{T .Lang "account.train_failed"}}</span>{{else}}<span class="badge text-bg-success">{{T .Lang "account.train_succeeded"}}</span>{{end}}
+          </p>
+          {{if .TrainerStatus.Output}}
+          <details class="mb-2">
+            <summary class="small text-body-secondary">{{T .Lang "account.train_output"}}</summary>
+            <pre class="small bg-body-tertiary p-2 rounded" style="max-height: 20rem; overflow: auto;">{{.TrainerStatus.Output}}</pre>
+          </details>
+          {{end}}
+          {{end}}
+        <form method="post" action="/dashboard/account/ml/train">
+          <button type="submit" class="btn btn-primary" {{if .TrainerStatus.Running}}disabled{{end}}>{{T .Lang "account.train_submit"}}</button>
+        </form>
+        {{end}}
       </div>
     </div>
   </main>

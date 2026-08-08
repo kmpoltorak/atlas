@@ -107,6 +107,17 @@ training data this thin and skewed (see the caveats above), a person should look
 real metrics before it starts influencing real recommendations, the same stance already applied
 to walk-forward threshold optimization (see docs/backtesting.md).
 
+Training and deleting old candidates can also both be triggered from the Account page itself, via
+a small internal-only sidecar (`cmd/trainer`, the `atlas-trainer` service — off by default,
+`docker compose --profile trainer up -d`, `TRAINER_URL`). It runs retrain.sh on demand and reports
+real status/output back to the dashboard, and can delete a model's `.onnx`+`.json` files —
+`atlas-api`'s own model mount is read-only by design, so deletion has to go through the one
+service with write access to `training/models/`. Deleting whichever model is currently active for
+a role is refused, not silently allowed. Verified live: triggered training from the dashboard
+button, watched it install its own venv and finish for real (`exit_code: 0`, printed holdout
+metrics), saw the new candidates appear in the picker, then deleted an old one and confirmed both
+files were gone while an attempt to delete the active model was rejected.
+
 ## Production Inference
 The production system is written in Go (`internal/application/ml`, `OnnxModel`).
 The ML model is consumed through a stable interface (`UseCase.Predict(FeatureVector) Prediction`) —

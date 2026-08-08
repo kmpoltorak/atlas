@@ -27,6 +27,7 @@ chat.json
 
 # ML training artifacts (locally/CI-generated, not committed source — see training/README.md)
 training/.venv/
+training/.venv-container/
 training/data/
 training/models/
 __pycache__/
