@@ -45,13 +45,19 @@ var translations = map[string]map[Lang]string{
 	"nav.skip_to_content": {LangEN: "Skip to content", LangPL: "Przejdź do treści"},
 
 	// Shared table headers/labels, reused across multiple pages
-	"table.symbol":           {LangEN: "Symbol", LangPL: "Symbol"},
-	"table.quantity":         {LangEN: "Quantity", LangPL: "Ilość"},
-	"table.avg_cost":         {LangEN: "Avg. Cost", LangPL: "Śr. koszt"},
-	"table.current_price":    {LangEN: "Current Price", LangPL: "Aktualna cena"},
-	"table.pnl":              {LangEN: "P&L", LangPL: "Zysk/strata"},
-	"table.exposure":         {LangEN: "Exposure", LangPL: "Ekspozycja"},
-	"table.drawdown":         {LangEN: "Drawdown", LangPL: "Obsunięcie kapitału"},
+	"table.symbol":        {LangEN: "Symbol", LangPL: "Symbol"},
+	"table.quantity":      {LangEN: "Quantity", LangPL: "Ilość"},
+	"table.avg_cost":      {LangEN: "Avg. Cost", LangPL: "Śr. koszt"},
+	"table.current_price": {LangEN: "Current Price", LangPL: "Aktualna cena"},
+	"table.pnl":           {LangEN: "P&L", LangPL: "Zysk/strata"},
+	"table.exposure":      {LangEN: "Exposure", LangPL: "Ekspozycja"},
+	// table.drawdown and table.avg_deviation are the dashboard/portfolio Risk table's own
+	// simple heuristics (portfolio.RiskSnapshot — see its doc comment), deliberately named for
+	// what they actually compute rather than reusing "Drawdown"/"Volatility", which
+	// table.max_drawdown/table.volatility below already mean something different and real
+	// (backtesting.Result — peak-to-trough drawdown, annualized return stddev).
+	"table.drawdown":         {LangEN: "Unrealized Loss / Exposure", LangPL: "Strata niezrealizowana / ekspozycja"},
+	"table.avg_deviation":    {LangEN: "Avg. Deviation from Cost", LangPL: "Śr. odchylenie od kosztu"},
 	"table.volatility":       {LangEN: "Volatility", LangPL: "Zmienność"},
 	"table.type":             {LangEN: "Type", LangPL: "Typ"},
 	"table.price":            {LangEN: "Price", LangPL: "Cena"},

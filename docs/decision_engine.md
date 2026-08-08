@@ -142,11 +142,18 @@ Market trend
 Drawdown
 ```
 
-**Implementation status**: Exposure, Volatility, and Drawdown are real (`portfolio.UseCase.
-ComputeRisk`, blended into scoring via `computeRiskScore` — see this doc's top status note).
-Position size is implicitly covered by Exposure (sum across positions) rather than surfaced per-
-position here. Market trend is not implemented — there's no trend/regime classifier (see
-PROJECT_CONTEXT.md's ML Engine section on market condition).
+**Implementation status**: Exposure, Volatility, and Drawdown are real, honestly-computed numbers
+(`portfolio.UseCase.ComputeRisk`, blended into scoring via `computeRiskScore` — see this doc's
+top status note) — but "Volatility"/"Drawdown" here are cheap single-scan heuristics, not the
+statistically real measures those names usually imply: Drawdown is unrealized-loss/exposure (no
+tracked equity-curve peak), Volatility is the unweighted mean of \|CurrentPrice-AverageCost\|
+across positions (not a return-based standard deviation) — see `portfolio.RiskSnapshot`'s doc
+comment. The dashboard/portfolio pages label them "Unrealized Loss / Exposure" and "Avg.
+Deviation from Cost" for this reason; only backtesting's genuinely statistical Volatility/
+MaxDrawdown (see docs/backtesting.md) keep the "real" names. Position size is implicitly covered
+by Exposure (sum across positions) rather than surfaced per-position here. Market trend is not
+implemented — there's no trend/regime classifier (see PROJECT_CONTEXT.md's ML Engine section on
+market condition).
 ---
 # Recommendation Types
 The engine returns:

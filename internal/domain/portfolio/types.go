@@ -36,6 +36,14 @@ type Transaction struct {
 	Timestamp string `json:"timestamp"`
 }
 
+// RiskSnapshot is a cheap, single-portfolio-scan risk heuristic (see UseCase.ComputeRisk) — not
+// the statistically real measures their field names suggest. Drawdown is unrealizedLoss/
+// Exposure, not a peak-to-trough drawdown (there's no tracked equity-curve peak here); Volatility
+// is the unweighted mean of |CurrentPrice-AverageCost| across positions, not a return-based
+// standard deviation. Both are real, honestly-computed numbers — they are just a different,
+// simpler statistic than their names imply. Contrast backtesting.Result's Volatility/MaxDrawdown
+// (internal/domain/backtesting/types.go), which genuinely are annualized-stddev and
+// peak-to-trough respectively — a different, unrelated pair of fields despite the shared names.
 type RiskSnapshot struct {
 	Exposure   float64 `json:"exposure"`
 	Drawdown   float64 `json:"drawdown"`
