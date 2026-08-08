@@ -30,9 +30,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 FROM debian:bookworm-slim
 
 # libstdc++6/libgomp1: onnxruntime's CPU execution provider links against both; bookworm-slim's
-# --no-install-recommends base doesn't guarantee libgomp1 is already present.
+# --no-install-recommends base doesn't guarantee libgomp1 is already present. curl: needed by
+# docker-compose.yml's healthcheck (a plain "exec wget ..." — this image never had wget, which
+# was a real, live bug: `docker inspect` showed this container reporting "unhealthy" nonstop
+# despite /health genuinely returning 200, since every healthcheck exec failed with "wget:
+# executable file not found". Kubernetes' deploy/deployment.yaml is unaffected — it uses
+# httpGet probes, which kubelet performs itself with no binary required inside the container.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates libstdc++6 libgomp1 \
+    ca-certificates curl libstdc++6 libgomp1 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --no-create-home --shell /usr/sbin/nologin --uid 10001 appuser
 

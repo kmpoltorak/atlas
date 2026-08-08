@@ -133,8 +133,13 @@ regenerate candidates periodically as more real history accumulates — e.g. a w
 
 It never changes which model is active — that's always the manual step-4-or-5 decision above.
 Set `TRAINING_DISCORD_WEBHOOK_URL` if you want a Discord ping when a new candidate is ready for
-review (separate from `DISCORD_WEBHOOK_URL`/`ALERTMANAGER_DISCORD_WEBHOOK_URL`, both of which are
-about something else entirely).
+review (separate from `DISCORD_WEBHOOK_URL`, which is about something else entirely — business
+alerts, not training). When triggered from the dashboard (section 7 below) rather than by hand,
+this same variable is sourced from `.env`'s `ALERTMANAGER_DISCORD_WEBHOOK_URL`, so it lands in
+the same channel as infra alerts — both are "is Atlas itself working" signals. Because this
+script runs under `set -euo pipefail`, a failed run exits before ever reaching the notification
+code above — a failed run triggered from the dashboard is still reported, though: see section 7's
+note on `cmd/trainer`'s own failure notification.
 
 ## 7. Triggering training from the dashboard
 
@@ -154,6 +159,13 @@ docker compose --profile trainer up -d
 then set `TRAINER_URL=http://atlas-trainer:8091` in `.env` and restart `atlas-api`. Without
 either step, the Account page's button just explains how to run retrain.sh by hand instead —
 nothing breaks, this is a genuinely optional enhancement over the manual/cron path above.
+
+Set `ALERTMANAGER_DISCORD_WEBHOOK_URL` in `.env` (docker-compose.yml passes it through as
+`TRAINING_DISCORD_WEBHOOK_URL`) to be notified either way a dashboard-triggered run ends: success
+still comes from retrain.sh's own notification (see section 6 above), but `cmd/trainer` also
+sends its own message if the run fails — the one case retrain.sh's `set -e` can never report
+itself. Leaving it unset just means no notification either way (non-fatal, like every optional
+integration in Atlas).
 
 The trainer container bind-mounts the whole repo read-write (not a copied-at-build-time image),
 so it always runs the exact same `cmd/export-training-data`/`training/train.py` code a human

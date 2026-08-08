@@ -49,6 +49,7 @@ func (a *Application) pollAlertsOnce(lastAction map[string]string) {
 	result, err := a.Alerts.Evaluate()
 	if err != nil {
 		a.Logger.Warn("alert evaluation completed with per-symbol errors", zap.Error(err))
+		a.Metrics.AlertPollErrors.Inc()
 	}
 
 	for _, alert := range result {

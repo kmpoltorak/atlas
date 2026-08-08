@@ -154,11 +154,18 @@ integration is non-fatal when unset — Atlas degrades gracefully instead of ref
 | `MODEL_PATH` | *(empty → deterministic stub)* | Path to a trained correction-probability ONNX model |
 | `RECOVERY_MODEL_PATH` | *(empty → recovery probability stays 0)* | Path to a trained recovery-probability ONNX model, fully independent of `MODEL_PATH` |
 | `LIBONNXRUNTIME_PATH` | Dockerfile default (`/usr/lib/libonnxruntime.so`) | Native ONNX Runtime library location |
-| `ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH` | *(empty → no login gate)* | Enables password+TOTP auth for the dashboard/API — generate a hash with `go run ./cmd/generate-admin-credentials` |
+| `ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH` | *(empty → no login gate)* | Enables password+TOTP auth for the dashboard/API — generate a hash with `go run ./cmd/generate-admin-credentials`. Login is locked out globally (not per-IP — there's only ever one account) for 15 minutes after 5 failed attempts in a row. |
+| `COOKIE_SECURE` | `false` | Adds the `Secure` flag to the session cookie — set to `true` once Atlas is actually served over HTTPS (e.g. `deploy/ingress.yaml`'s TLS termination); leave `false` for the plain-HTTP local Compose stack. |
 
 `GRAFANA_ADMIN_PASSWORD` and `DATABASE_PASSWORD` are also read directly by `docker-compose.yml`
 for the `grafana`/`timescaledb` containers themselves. See `.env.example` for the full,
 copy-pasteable list with inline comments.
+
+**`.env` gotcha:** a bcrypt hash (`ADMIN_PASSWORD_HASH`) contains literal `$` characters, which
+Docker Compose's variable interpolation will otherwise silently eat — confirmed live: pasting a
+real hash straight into `.env` truncated it mid-string and made every login fail with no error
+explaining why. Escape every `$` as `$$` in `.env` (not in the shell, not in `docker-compose.yml`
+itself — only in the `.env` file), e.g. `$2a$10$Slp...` becomes `$$2a$$10$$Slp...`.
 
 ## Web dashboard
 
@@ -259,8 +266,14 @@ never auto-applied to the live decision engine. Full detail: [docs/backtesting.m
 - `/metrics` exposes HTTP, provider, decision, ML, and Discord-alert counters (Prometheus format),
   scraped by `prometheus/prometheus.yml` and visualized via `grafana/dashboards/`.
 - Infrastructure alerting rules (`prometheus/alerts.yml`: API down, crash-loop/flapping, high
-  error rate) route through Alertmanager to a Discord channel — deliberately separate from the
-  business-alert webhook above, so infra noise never mixes with investment notifications.
+  error rate, background alert-poll failures) route through Alertmanager to a Discord channel —
+  deliberately separate from the business-alert webhook above, so infra noise never mixes with
+  investment notifications. Training run outcomes post to the same channel via
+  `TRAINING_DISCORD_WEBHOOK_URL` (sourced from the same `ALERTMANAGER_DISCORD_WEBHOOK_URL` value
+  in `.env` when using the dashboard trigger) — `training/retrain.sh` itself notifies on success,
+  `cmd/trainer` notifies on failure (the one outcome retrain.sh's `set -e` never lets it reach),
+  since a training outcome is the same "is Atlas itself working" category, not an investment
+  signal.
 - Structured JSON logs throughout (zap).
 
 ## Kubernetes deployment

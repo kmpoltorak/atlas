@@ -57,3 +57,19 @@ func (c *RedisClient) Get(ctx context.Context, key string) (value string, found 
 func (c *RedisClient) Delete(ctx context.Context, key string) error {
 	return c.client.Del(ctx, key).Err()
 }
+
+// Increment atomically increments key and returns the new count, setting ttl only the first
+// time the key is created (a fixed window counter) — used by auth.UseCase to count failed login
+// attempts without a separate read-modify-write race.
+func (c *RedisClient) Increment(ctx context.Context, key string, ttl time.Duration) (count int64, err error) {
+	count, err = c.client.Incr(ctx, key).Result()
+	if err != nil {
+		return 0, err
+	}
+	if count == 1 && ttl > 0 {
+		if err := c.client.Expire(ctx, key, ttl).Err(); err != nil {
+			return count, err
+		}
+	}
+	return count, nil
+}

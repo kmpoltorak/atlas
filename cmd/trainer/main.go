@@ -14,6 +14,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -22,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"atlas/internal/infrastructure/notifications"
 	"atlas/internal/observability"
 
 	"go.uber.org/zap"
@@ -82,6 +84,15 @@ func main() {
 	}
 	defer logger.Sync() //nolint:errcheck
 
+	// training/retrain.sh already posts its own Discord notification on *success*
+	// (TRAINING_DISCORD_WEBHOOK_URL, inherited by the child process below since cmd.Env is
+	// left unset) — see training/README.md's "Regenerating candidates on a schedule". It can
+	// never do the same for a *failure*, though: `set -euo pipefail` makes the script exit
+	// before ever reaching that notification code. This client fills exactly that gap — see
+	// runRetrain — using the identical env var so there's still only one training-notification
+	// webhook concept, not two. Empty by default (non-fatal, like every optional dependency).
+	discordClient := notifications.NewDiscordClient(envOrDefault("TRAINING_DISCORD_WEBHOOK_URL", ""))
+
 	s := &state{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +118,7 @@ func main() {
 		s.mu.Unlock()
 
 		logger.Info("training run started")
-		go runRetrain(s, logger)
+		go runRetrain(s, logger, discordClient)
 
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
 	})
@@ -152,8 +163,9 @@ func main() {
 // or from cron (see training/README.md) — and records its outcome. Errors here are expected,
 // real outcomes (e.g. no new history since the last run, a bad DB connection), not programming
 // bugs: they're captured in state.failed/output for the Account page to display, not panicked
-// on.
-func runRetrain(s *state, logger *zap.Logger) {
+// on. discord is notified of the outcome (best-effort, never blocks/fails this function) so a
+// run triggered from the Account page and then left unattended is still noticed.
+func runRetrain(s *state, logger *zap.Logger, discord *notifications.DiscordClient) {
 	cmd := exec.Command("training/retrain.sh")
 	cmd.Dir = envOrDefault("ATLAS_REPO_ROOT", "/app")
 	var buf bytes.Buffer
@@ -163,7 +175,6 @@ func runRetrain(s *state, logger *zap.Logger) {
 	runErr := cmd.Run()
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.running = false
 	s.finishedAt = time.Now()
 	output := buf.String()
@@ -178,12 +189,36 @@ func runRetrain(s *state, logger *zap.Logger) {
 		} else {
 			s.exitCode = -1
 		}
+	} else {
+		s.failed = false
+		s.exitCode = 0
+	}
+	failed, exitCode := s.failed, s.exitCode
+	s.mu.Unlock()
+
+	if failed {
 		logger.Warn("training run failed", zap.Error(runErr))
+		notifyTrainingFailure(discord, logger, exitCode)
 		return
 	}
-	s.failed = false
-	s.exitCode = 0
+	// Success is intentionally not notified here — retrain.sh already did it (see discord's
+	// doc comment above) with better information (which model files were actually written)
+	// than this process has any visibility into.
 	logger.Info("training run finished")
+}
+
+// notifyTrainingFailure is best-effort: a delivery failure (or no webhook configured at all) is
+// logged and otherwise ignored, never surfaced to the training run itself — see
+// notifications.DiscordClient.Send's doc comment for the same non-fatal stance used everywhere
+// else in Atlas.
+func notifyTrainingFailure(discord *notifications.DiscordClient, logger *zap.Logger, exitCode int) {
+	if discord.WebhookURL == "" {
+		return
+	}
+	message := fmt.Sprintf("[Atlas trainer] Training run FAILED (exit code %d). Check the Account dashboard page for the full log.", exitCode)
+	if err := discord.Send(message); err != nil {
+		logger.Warn("failed to send training failure to discord", zap.Error(err))
+	}
 }
 
 // isValidModelFilename rejects anything that isn't a flat, well-formed model filename

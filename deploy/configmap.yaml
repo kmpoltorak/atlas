@@ -30,3 +30,7 @@ data:
   # "": auth disabled, no login gate at all — the same non-fatal-optional pattern. Set to enable
   # the dashboard/API login gate; ADMIN_PASSWORD_HASH (the matching secret) lives in secret.yaml.
   ADMIN_USERNAME: ""
+  # "true" here (unlike docker-compose.yml's local-dev default of "false") because ingress.yaml
+  # terminates TLS in front of this deployment — the session cookie only makes sense as Secure
+  # when the connection actually is HTTPS.
+  COOKIE_SECURE: "true"

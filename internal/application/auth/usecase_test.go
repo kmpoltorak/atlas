@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -32,6 +33,13 @@ func (m *memorySessionStore) Get(_ context.Context, key string) (string, bool, e
 func (m *memorySessionStore) Delete(_ context.Context, key string) error {
 	delete(m.values, key)
 	return nil
+}
+
+func (m *memorySessionStore) Increment(_ context.Context, key string, _ time.Duration) (int64, error) {
+	count, _ := strconv.Atoi(m.values[key])
+	count++
+	m.values[key] = strconv.Itoa(count)
+	return int64(count), nil
 }
 
 // memoryTOTPStore is a real, minimal in-memory TOTPStore for tests, mirroring
@@ -113,6 +121,47 @@ func TestLoginRejectsWrongUsername(t *testing.T) {
 	uc := newTestUseCase(t, "correct-horse")
 	if _, err := uc.Login(context.Background(), "someone-else", "correct-horse", ""); err != ErrInvalidCredentials {
 		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
+	}
+}
+
+func TestLoginLocksOutAfterRepeatedFailures(t *testing.T) {
+	uc := newTestUseCase(t, "correct-horse")
+	ctx := context.Background()
+
+	for i := 0; i < maxLoginFailures; i++ {
+		if _, err := uc.Login(ctx, "admin", "wrong", ""); err != ErrInvalidCredentials {
+			t.Fatalf("attempt %d: expected ErrInvalidCredentials, got %v", i, err)
+		}
+	}
+
+	if _, err := uc.Login(ctx, "admin", "correct-horse", ""); err != ErrTooManyAttempts {
+		t.Fatalf("expected ErrTooManyAttempts once locked out, got %v", err)
+	}
+}
+
+func TestLoginResetsFailureCounterOnSuccess(t *testing.T) {
+	uc := newTestUseCase(t, "correct-horse")
+	ctx := context.Background()
+
+	for i := 0; i < maxLoginFailures-1; i++ {
+		if _, err := uc.Login(ctx, "admin", "wrong", ""); err != ErrInvalidCredentials {
+			t.Fatalf("attempt %d: expected ErrInvalidCredentials, got %v", i, err)
+		}
+	}
+
+	if _, err := uc.Login(ctx, "admin", "correct-horse", ""); err != nil {
+		t.Fatalf("expected the correct password to still succeed below the lockout threshold: %v", err)
+	}
+
+	// The counter should have reset on success, so a fresh run of failures starts from zero
+	// again rather than immediately locking out.
+	for i := 0; i < maxLoginFailures-1; i++ {
+		if _, err := uc.Login(ctx, "admin", "wrong", ""); err != ErrInvalidCredentials {
+			t.Fatalf("post-reset attempt %d: expected ErrInvalidCredentials, got %v", i, err)
+		}
+	}
+	if _, err := uc.Login(ctx, "admin", "correct-horse", ""); err != nil {
+		t.Fatalf("expected login to still succeed after a reset counter's near-threshold failures: %v", err)
 	}
 }
 

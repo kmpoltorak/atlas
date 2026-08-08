@@ -23,6 +23,10 @@ type Metrics struct {
 	PredictionsTotal *prometheus.CounterVec
 	// AlertsSent counts Discord alert notifications actually delivered, labeled by action.
 	AlertsSent *prometheus.CounterVec
+	// AlertPollErrors counts background alert-poll cycles (StartAlertPolling) that failed to
+	// evaluate the watchlist at all — fed into prometheus/alerts.yml's AtlasAlertPollErrors
+	// rule, routed to the infra-discord channel like every other systemic-health alert.
+	AlertPollErrors prometheus.Counter
 }
 
 func NewMetrics() *Metrics {
@@ -70,7 +74,13 @@ func NewMetrics() *Metrics {
 		},
 		[]string{"action"},
 	)
-	registry.MustRegister(counter, duration, providerRequests, recommendationsTotal, predictionsTotal, alertsSent)
+	alertPollErrors := prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "atlas_alert_poll_errors_total",
+			Help: "Total number of background alert-poll cycles that failed to evaluate the watchlist.",
+		},
+	)
+	registry.MustRegister(counter, duration, providerRequests, recommendationsTotal, predictionsTotal, alertsSent, alertPollErrors)
 
 	return &Metrics{
 		Registry:        registry,
@@ -81,6 +91,7 @@ func NewMetrics() *Metrics {
 		RecommendationsTotal: recommendationsTotal,
 		PredictionsTotal:     predictionsTotal,
 		AlertsSent:           alertsSent,
+		AlertPollErrors:      alertPollErrors,
 	}
 }
 

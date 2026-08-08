@@ -58,3 +58,16 @@ groups:
         annotations:
           summary: "Atlas API error rate above 5%"
           description: "More than 5% of requests have returned a 5xx status over the last 5 minutes."
+
+      - alert: AtlasAlertPollErrors
+        # atlas_alert_poll_errors_total (internal/app/alerts_loop.go's pollAlertsOnce) only
+        # increments on a cycle-level Evaluate() failure (e.g. the market data provider is
+        # unreachable), not per-symbol errors within an otherwise-successful cycle — so any
+        # increase here is already a real, cycle-wide problem, not noise.
+        expr: increase(atlas_alert_poll_errors_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Atlas background alert polling is failing"
+          description: "The watchlist alert-poll loop failed to evaluate at least once in the last 15 minutes."

@@ -27,6 +27,7 @@ type Config struct {
 	TrainerURL         string
 	AdminUsername      string
 	AdminPasswordHash  string
+	CookieSecure       bool
 }
 
 func Load() Config {
@@ -80,6 +81,11 @@ func Load() Config {
 		// and migrations/008's auth_settings table), not a static secret.
 		AdminUsername:     envOrDefault("ADMIN_USERNAME", ""),
 		AdminPasswordHash: envOrDefault("ADMIN_PASSWORD_HASH", ""),
+		// False by default so the session cookie still works over the plain-HTTP local
+		// docker-compose stack (no reverse proxy terminating TLS). Set COOKIE_SECURE=true
+		// once Atlas is actually served over HTTPS (e.g. behind deploy/ingress.yaml) — a
+		// Secure cookie is simply never sent by the browser over an unencrypted connection.
+		CookieSecure: envOrDefault("COOKIE_SECURE", "false") == "true",
 	}
 }
 
