@@ -23,9 +23,21 @@ everywhere in live traffic, but backtesting's walk-forward optimizer (see docs/b
 evaluate against history without ever touching the live instance. Backtesting previously leaked
 live portfolio state into simulated HasPosition — fixed now, see docs/backtesting.md's
 Implementation status note. The real Recommendation object is `{Symbol, Action, Confidence,
-Reason, Score, TechnicalScore, MLScore, PortfolioScore, RiskScore, ModelVersion}` — no separate
-timestamp field yet (the `created_at` column below covers it); Reason does list which of
-ML/Portfolio/Risk meaningfully influenced the result. RiskScore is portfolio-wide (every held
+Reason, Score, TechnicalScore, MLScore, PortfolioScore, RiskScore, MarketCondition, ModelVersion,
+MLModelVersion}` — no separate timestamp field yet (the `created_at` column below covers it);
+Reason does list which of ML/Portfolio/Risk meaningfully influenced the result. `ModelVersion`
+and `MLModelVersion` are two different things, easy to conflate: `ModelVersion` is the decision
+engine's own scoring-logic tag (`Orchestrator.EngineVersion`, a constant, "atlas-decision-v1"
+today), while `MLModelVersion` is the real ML model that produced `MLScore` (`ml.Prediction.
+ModelVersion` — a trained model's version, or `ml.StubModelVersion` when none is loaded). Both
+are shown separately on the Recommendations dashboard page ("Engine" vs. "ML model"). Confidence
+was previously a fixed literal per action band (every BUY reported 0.78, every HOLD reported 0.6,
+regardless of how strong the actual score was — meaning most real recommendations, landing in the
+"mixed signal" HOLD band, all reported an identical 60%) — fixed to scale continuously with how
+far the blended score sits from the neutral center (0.5), the same idea `ml.UseCase.Predict`
+already used for the ML sub-model's own confidence. WAIT is the one exception: it still reports
+the real (low) ML confidence as-is, since that's the whole point of that action. RiskScore is
+portfolio-wide (every held
 position's exposure/drawdown/volatility, via `portfolio.UseCase.ComputeRisk`), distinct from
 PortfolioScore (a single symbol's own P&L) — see "Risk Context" below. Every live recommendation
 (GET /recommendations, GET /alerts, and the background alert-poll loop) is now persisted to the
