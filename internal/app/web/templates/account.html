@@ -45,6 +45,54 @@
         {{end}}
       </div>
     </div>
+
+    <h2 class="h4 mt-5 mb-2">{{T .Lang "account.ml_models_heading"}}</h2>
+    <p class="text-body-secondary small">{{T .Lang "account.ml_models_hint"}}</p>
+
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="card h-100">
+          <div class="card-body">
+            <h3 class="h6 card-title">{{T .Lang "account.ml_correction_heading"}}</h3>
+            {{if .CorrectionModels}}
+            <form method="post" action="/dashboard/account/ml/activate" class="d-flex gap-2">
+              <input type="hidden" name="role" value="correction">
+              <select name="filename" class="form-select form-select-sm">
+                {{if not .CorrectionModelActive}}<option value="" selected>{{T .Lang "account.ml_none_active"}}</option>{{end}}
+                {{range .CorrectionModels}}
+                <option value="{{.Filename}}" {{if .Active}}selected{{end}}>{{.Description}}{{if .Active}} ({{T $.Lang "account.ml_active_badge"}}){{end}}</option>
+                {{end}}
+              </select>
+              <button type="submit" class="btn btn-sm btn-primary text-nowrap">{{T .Lang "account.ml_activate_submit"}}</button>
+            </form>
+            {{else}}
+            <p class="text-body-secondary small mb-0">{{T .Lang "account.ml_no_models"}}</p>
+            {{end}}
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card h-100">
+          <div class="card-body">
+            <h3 class="h6 card-title">{{T .Lang "account.ml_recovery_heading"}}</h3>
+            {{if .RecoveryModels}}
+            <form method="post" action="/dashboard/account/ml/activate" class="d-flex gap-2">
+              <input type="hidden" name="role" value="recovery">
+              <select name="filename" class="form-select form-select-sm">
+                {{if not .RecoveryModelActive}}<option value="" selected>{{T .Lang "account.ml_none_active"}}</option>{{end}}
+                {{range .RecoveryModels}}
+                <option value="{{.Filename}}" {{if .Active}}selected{{end}}>{{.Description}}{{if .Active}} ({{T $.Lang "account.ml_active_badge"}}){{end}}</option>
+                {{end}}
+              </select>
+              <button type="submit" class="btn btn-sm btn-primary text-nowrap">{{T .Lang "account.ml_activate_submit"}}</button>
+            </form>
+            {{else}}
+            <p class="text-body-secondary small mb-0">{{T .Lang "account.ml_no_models"}}</p>
+            {{end}}
+          </div>
+        </div>
+      </div>
+    </div>
   </main>
   {{template "scripts" .}}
 </body>

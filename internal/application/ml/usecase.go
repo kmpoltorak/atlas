@@ -2,21 +2,27 @@ package ml
 
 import (
 	"math"
+	"sync/atomic"
 
 	analyzerUC "atlas/internal/application/analyzer"
 	"atlas/internal/domain/market"
 	"atlas/internal/domain/ml"
 )
 
-// UseCase defines the ML contract boundary for feature generation and prediction. Model and
-// RecoveryModel are both optional and independent (nil-safe, matching decision.Orchestrator's
-// ML/Portfolio pattern): when unset, Predict falls back to the deterministic RSI-derived stub
-// for correction probability, and leaves RecoveryProbability at 0, rather than failing to start
-// — see training/README.md for how to produce a real model and NewUseCaseWithModel(s) to wire
-// one/both in.
+// UseCase defines the ML contract boundary for feature generation and prediction. The
+// correction and recovery models are both optional and independent (nil-safe, matching
+// decision.Orchestrator's ML/Portfolio pattern): when unset, Predict falls back to the
+// deterministic RSI-derived stub for correction probability, and leaves RecoveryProbability at
+// 0, rather than failing to start — see training/README.md for how to produce a real model and
+// NewUseCaseWithModel(s) to wire one/both in.
+//
+// Both are held as atomic.Pointer, not plain fields: the Account dashboard page lets an admin
+// pick a different trained model at runtime (see SetModel/SetRecoveryModel), and Predict runs
+// concurrently with that from other in-flight HTTP requests — a plain pointer swap would be a
+// data race.
 type UseCase struct {
-	Model         *OnnxModel
-	RecoveryModel *OnnxModel
+	model         atomic.Pointer[OnnxModel]
+	recoveryModel atomic.Pointer[OnnxModel]
 }
 
 func NewUseCase() *UseCase {
@@ -24,16 +30,46 @@ func NewUseCase() *UseCase {
 }
 
 // NewUseCaseWithModel wires a loaded correction-probability ONNX model in, enabling real
-// inference in Predict. Leaves RecoveryModel unset — see NewUseCaseWithModels to wire both.
+// inference in Predict. Leaves the recovery model unset — see NewUseCaseWithModels to wire both.
 func NewUseCaseWithModel(model *OnnxModel) *UseCase {
-	return &UseCase{Model: model}
+	u := &UseCase{}
+	u.model.Store(model)
+	return u
 }
 
 // NewUseCaseWithModels wires both the correction-probability and recovery-probability models
 // in. Either may be nil independently — a nil recoveryModel behaves exactly like
 // NewUseCaseWithModel(model) alone.
 func NewUseCaseWithModels(model, recoveryModel *OnnxModel) *UseCase {
-	return &UseCase{Model: model, RecoveryModel: recoveryModel}
+	u := &UseCase{}
+	u.model.Store(model)
+	u.recoveryModel.Store(recoveryModel)
+	return u
+}
+
+// CurrentModel returns the correction-probability model currently in effect, or nil when none is
+// loaded (the deterministic stub applies).
+func (u *UseCase) CurrentModel() *OnnxModel {
+	return u.model.Load()
+}
+
+// CurrentRecoveryModel returns the recovery-probability model currently in effect, or nil.
+func (u *UseCase) CurrentRecoveryModel() *OnnxModel {
+	return u.recoveryModel.Load()
+}
+
+// SetModel swaps in a new correction-probability model (nil disables it, falling back to the
+// stub) and returns whichever model was active before the swap, so the caller can Close() it —
+// this package never closes a model out from under a request that's still using it, since the
+// swap itself is atomic, but the old session's resources still need releasing once no new
+// requests can observe it. Used by the Account page's model-activation flow.
+func (u *UseCase) SetModel(model *OnnxModel) *OnnxModel {
+	return u.model.Swap(model)
+}
+
+// SetRecoveryModel is SetModel's counterpart for the independent recovery-probability model.
+func (u *UseCase) SetRecoveryModel(model *OnnxModel) *OnnxModel {
+	return u.recoveryModel.Swap(model)
 }
 
 // GenerateFeatures returns the provided feature vectors unchanged in the first milestone.
@@ -84,7 +120,8 @@ func BuildFeatureVector(analyzer *analyzerUC.UseCase, symbol string, bars []mark
 // returned as-is rather than silently falling back to the stub — a broken model at request
 // time should be loud, not masked as a working prediction.
 func (u *UseCase) Predict(features ml.FeatureVector) (ml.Prediction, error) {
-	if u.Model == nil {
+	model := u.CurrentModel()
+	if model == nil {
 		return ml.Prediction{
 			Score:        features.RSI / 100,
 			Confidence:   0.72,
@@ -92,14 +129,14 @@ func (u *UseCase) Predict(features ml.FeatureVector) (ml.Prediction, error) {
 		}, nil
 	}
 
-	correctionProbability, err := u.Model.PredictCorrectionProbability(features)
+	correctionProbability, err := model.PredictCorrectionProbability(features)
 	if err != nil {
 		return ml.Prediction{}, err
 	}
 
 	var recoveryProbability float64
 	var recoveryModelVersion string
-	if u.RecoveryModel != nil {
+	if recoveryModel := u.CurrentRecoveryModel(); recoveryModel != nil {
 		// Reuses the same PredictCorrectionProbability method: both models are binary XGBoost
 		// classifiers with an identical feature layout and ONNX export shape (see
 		// training/train.py) — only which label they were trained against differs, not the
@@ -107,9 +144,9 @@ func (u *UseCase) Predict(features ml.FeatureVector) (ml.Prediction, error) {
 		// correction model's above: recovery is a secondary, always-optional signal (stays 0,
 		// its documented default), whereas a broken *correction* model failing loudly matters
 		// more since Score/Confidence derive from it directly.
-		if p, err := u.RecoveryModel.PredictCorrectionProbability(features); err == nil {
+		if p, err := recoveryModel.PredictCorrectionProbability(features); err == nil {
 			recoveryProbability = p
-			recoveryModelVersion = u.RecoveryModel.Version
+			recoveryModelVersion = recoveryModel.Version
 		}
 	}
 
@@ -125,6 +162,6 @@ func (u *UseCase) Predict(features ml.FeatureVector) (ml.Prediction, error) {
 		// prediction, one near 0.5 is not. No other confidence signal is available from a
 		// binary classifier's probability output alone.
 		Confidence:   math.Abs(correctionProbability-0.5) * 2,
-		ModelVersion: u.Model.Version,
+		ModelVersion: model.Version,
 	}, nil
 }

@@ -193,6 +193,18 @@ var translations = map[string]map[Lang]string{
 	},
 	"account.setup_submit": {LangEN: "Set up 2FA", LangPL: "Skonfiguruj 2FA"},
 
+	"account.ml_models_heading": {LangEN: "ML models", LangPL: "Modele ML"},
+	"account.ml_models_hint": {
+		LangEN: "Pick which trained model is active for each prediction. Takes effect immediately, no restart needed.",
+		LangPL: "Wybierz, który wytrenowany model jest aktywny dla każdej predykcji. Działa natychmiast, bez restartu.",
+	},
+	"account.ml_correction_heading": {LangEN: "Correction probability", LangPL: "Prawdopodobieństwo korekty"},
+	"account.ml_recovery_heading":   {LangEN: "Recovery probability", LangPL: "Prawdopodobieństwo odbicia"},
+	"account.ml_no_models":          {LangEN: "No trained models found in the models directory.", LangPL: "Nie znaleziono wytrenowanych modeli w katalogu modeli."},
+	"account.ml_none_active":        {LangEN: "None active — using the deterministic stub.", LangPL: "Brak aktywnego — używany deterministyczny placeholder."},
+	"account.ml_active_badge":       {LangEN: "active", LangPL: "aktywny"},
+	"account.ml_activate_submit":    {LangEN: "Activate", LangPL: "Aktywuj"},
+
 	// TOTP enrollment (totp_enroll.html)
 	"totp.title":   {LangEN: "Atlas — Set up 2FA", LangPL: "Atlas — Konfiguracja 2FA"},
 	"totp.heading": {LangEN: "Set up two-factor authentication", LangPL: "Konfiguracja uwierzytelniania dwuskładnikowego"},

@@ -17,10 +17,16 @@ data:
   COLLECTOR_WINDOW_DAYS: "30"
   ALERT_POLL_INTERVAL_SECONDS: "300"
   # Both "": no trained model available is a normal, non-fatal startup state (see
-  # internal/config/config.go). Set MODEL_PATH to a path mounted into the container (e.g. via
-  # an extra volume) if a trained ONNX model is deployed.
+  # internal/config/config.go). Set MODEL_PATH/RECOVERY_MODEL_PATH to a path mounted into the
+  # container (e.g. via an extra volume) if a trained ONNX model is deployed — the two are
+  # independent, either/both/neither may be set.
   MODEL_PATH: ""
+  RECOVERY_MODEL_PATH: ""
   LIBONNXRUNTIME_PATH: ""
+  # Directory the Account dashboard page scans for selectable trained models (see
+  # internal/application/ml.ListModels) — should match wherever MODEL_PATH/RECOVERY_MODEL_PATH
+  # above are mounted from. Only used for discovery/display, not for deciding what loads.
+  ML_MODELS_DIR: "/models"
   # "": auth disabled, no login gate at all — the same non-fatal-optional pattern. Set to enable
   # the dashboard/API login gate; ADMIN_PASSWORD_HASH (the matching secret) lives in secret.yaml.
   ADMIN_USERNAME: ""

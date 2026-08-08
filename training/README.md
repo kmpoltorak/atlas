@@ -96,3 +96,37 @@ If either path is unset (the default in both cases above) or its file can't be l
 falls back to the existing deterministic RSI-derived stub prediction for correction / leaves
 `recovery_probability` at 0 for recovery (both logged clearly at startup) rather than failing to
 start — see `internal/application/ml`'s doc comments.
+
+## 5. Picking a model from the dashboard, without a restart
+
+Instead of (or in addition to) `MODEL_PATH`/`RECOVERY_MODEL_PATH`, any trained model already
+sitting in `training/models/` (i.e. under `ML_MODELS_DIR`, `/models` inside the container) can be
+activated from the **Account** dashboard page (`/dashboard/account`) — it lists every model it
+finds a metadata sidecar for, with the same real holdout AUC/accuracy/row-count numbers step 3
+above printed, and swaps the picked one into live inference immediately (no restart) via
+`ml.UseCase.SetModel`/`SetRecoveryModel`. The choice is durably recorded (`migrations/011`) so it
+survives a restart too — at startup, a saved dashboard selection takes priority over
+`MODEL_PATH`/`RECOVERY_MODEL_PATH`'s env-var default, falling back to it only if the selected
+file no longer loads.
+
+## 6. Regenerating candidates on a schedule
+
+[retrain.sh](retrain.sh) automates steps 1–3 above end to end (export both CSVs, train both
+targets) and writes new, uniquely-versioned files without ever touching or deleting an existing
+one:
+
+```
+./training/retrain.sh
+```
+
+Run it by hand whenever you want a fresh candidate, or schedule it (cron/systemd timer) to
+regenerate candidates periodically as more real history accumulates — e.g. a weekly cron entry:
+
+```
+0 3 * * 0 cd /path/to/atlas && DATABASE_HOST=localhost ./training/retrain.sh >> /var/log/atlas-retrain.log 2>&1
+```
+
+It never changes which model is active — that's always the manual step-4-or-5 decision above.
+Set `TRAINING_DISCORD_WEBHOOK_URL` if you want a Discord ping when a new candidate is ready for
+review (separate from `DISCORD_WEBHOOK_URL`/`ALERTMANAGER_DISCORD_WEBHOOK_URL`, both of which are
+about something else entirely).

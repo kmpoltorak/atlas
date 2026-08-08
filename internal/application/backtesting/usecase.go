@@ -166,12 +166,17 @@ func (u *UseCase) simulate(symbol string, bars []market.Bar, initialCapital floa
 // evaluateML compares the loaded ML model's correction-probability predictions against what
 // actually happened afterward, per docs/backtesting.md's "ML Evaluation" section — a separate
 // concern from the trading simulation above (it doesn't affect trades or equity), so it's kept
-// as its own pass. Returns nil when no real trained model is loaded (u.Orchestrator.ML.Model ==
-// nil, the deterministic RSI-derived stub): evaluating the stub's made-up correction-probability
-// concept against reality would be a fabricated metric, not a real one.
+// as its own pass. Returns nil when no real trained model is loaded
+// (u.Orchestrator.ML.CurrentModel() == nil, the deterministic RSI-derived stub): evaluating the
+// stub's made-up correction-probability concept against reality would be a fabricated metric,
+// not a real one.
 func (u *UseCase) evaluateML(symbol string, bars []market.Bar) *backtesting.MLEvaluation {
-	model := u.Orchestrator.ML
-	if model == nil || model.Model == nil {
+	mlUseCase := u.Orchestrator.ML
+	if mlUseCase == nil {
+		return nil
+	}
+	model := mlUseCase.CurrentModel()
+	if model == nil {
 		return nil
 	}
 
@@ -185,7 +190,7 @@ func (u *UseCase) evaluateML(symbol string, bars []market.Bar) *backtesting.MLEv
 			continue // not enough forward history yet to know the real outcome
 		}
 		feature := mlUC.BuildFeatureVector(u.Orchestrator.Analyzer, symbol, bars[:i+1])
-		probability, err := model.Model.PredictCorrectionProbability(feature)
+		probability, err := model.PredictCorrectionProbability(feature)
 		if err != nil {
 			continue
 		}

@@ -46,6 +46,7 @@ func (a *Application) NewHandler() http.Handler {
 	mux.HandleFunc("/dashboard/account/totp/qr.png", a.totpQRHandler)
 	mux.HandleFunc("/dashboard/account/totp/confirm", a.totpConfirmHandler)
 	mux.HandleFunc("/dashboard/account/totp/disable", a.totpDisableHandler)
+	mux.HandleFunc("/dashboard/account/ml/activate", a.mlModelActivateHandler)
 
 	mux.HandleFunc("/", a.rootHandler)
 	return a.instrument(a.requireAuth(mux))

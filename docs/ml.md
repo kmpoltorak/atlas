@@ -85,6 +85,28 @@ definition it was trained against — `internal/application/ml.LoadOnnxModel` re
 model whose sidecar `feature_order` doesn't match Go's expected order, so a mismatched/stale
 model fails loudly at startup instead of silently mis-scoring.
 
+## Model selection and retraining
+
+Both models can be switched at runtime from the Account dashboard page (`/dashboard/account`),
+not only via `MODEL_PATH`/`RECOVERY_MODEL_PATH` at startup: it lists every model
+`ML_MODELS_DIR` has a metadata sidecar for (real holdout AUC/accuracy/row count, not fabricated),
+and activating one hot-swaps it into live inference immediately (`ml.UseCase.SetModel`/
+`SetRecoveryModel`, an `atomic.Pointer` swap — safe under concurrent requests) with no restart.
+The choice is durably recorded (`migrations/011`'s `ml_model_selection` table) so it survives one
+too — verified live: activated a freshly trained candidate from the dashboard, confirmed the very
+next `/predictions` call returned its version with no new "loaded ML model" startup log line,
+then restarted the container and confirmed it came back up on the saved selection instead of
+`MODEL_PATH`'s env-var default.
+
+[training/retrain.sh](../training/retrain.sh) automates generating a new candidate (export +
+train, both targets) and can be scheduled (cron/systemd timer) to run periodically as more real
+history accumulates — see training/README.md's "Regenerating candidates on a schedule". It only
+ever writes new, uniquely-versioned files; it never changes which model is active. Promotion is
+always the separate, human, Account-page step above — deliberately, not just unfinished: with
+training data this thin and skewed (see the caveats above), a person should look at a candidate's
+real metrics before it starts influencing real recommendations, the same stance already applied
+to walk-forward threshold optimization (see docs/backtesting.md).
+
 ## Production Inference
 The production system is written in Go (`internal/application/ml`, `OnnxModel`).
 The ML model is consumed through a stable interface (`UseCase.Predict(FeatureVector) Prediction`) —
