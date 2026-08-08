@@ -191,3 +191,20 @@ func Render(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = buf.WriteTo(w)
 }
+
+// RenderError renders a styled HTML error page (templates/error.html) with the given status
+// code, instead of net/http's plain-text http.Error default — every page handler in
+// web_handlers.go uses this so a failure looks like the rest of Atlas (nav, theme, layout), not
+// a bare unstyled browser error page. Falls back to the plain-text default if the error template
+// itself somehow fails to render — still better than nothing, and this shouldn't happen in
+// practice (ErrorPage has no fields that can make execution fail).
+func RenderError(w http.ResponseWriter, lang Lang, status int, message string) {
+	var buf bytes.Buffer
+	if err := templates.ExecuteTemplate(&buf, "error", ErrorPage{Lang: lang, Status: status, Message: message}); err != nil {
+		http.Error(w, message, status)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = buf.WriteTo(w)
+}
