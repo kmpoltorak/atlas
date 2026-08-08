@@ -88,6 +88,42 @@ func TestBuildRecommendationActionMatrix(t *testing.T) {
 	}
 }
 
+func TestBuildRecommendationConfidenceScalesWithScoreStrength(t *testing.T) {
+	uc := NewUseCase()
+
+	strong, err := uc.BuildRecommendation(decision.RecommendationInput{
+		Technical: decision.TechnicalScore{Overall: 0.95}, MLConfidence: 1.0,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	borderline, err := uc.BuildRecommendation(decision.RecommendationInput{
+		Technical: decision.TechnicalScore{Overall: 0.76}, MLConfidence: 1.0,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strong.Action != "BUY" || borderline.Action != "BUY" {
+		t.Fatalf("expected both to be BUY, got %q and %q", strong.Action, borderline.Action)
+	}
+	if strong.Confidence <= borderline.Confidence {
+		t.Fatalf("expected a stronger score to report higher confidence than a borderline one, got %v <= %v", strong.Confidence, borderline.Confidence)
+	}
+
+	mixed, err := uc.BuildRecommendation(decision.RecommendationInput{
+		Technical: decision.TechnicalScore{Overall: 0.50}, MLConfidence: 1.0,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if mixed.Action != "HOLD" {
+		t.Fatalf("expected HOLD for a perfectly neutral score, got %q", mixed.Action)
+	}
+	if mixed.Confidence != 0 {
+		t.Fatalf("expected a perfectly neutral score to report zero confidence, got %v", mixed.Confidence)
+	}
+}
+
 func TestBuildRecommendationWaitReportsRealConfidenceNotAConstant(t *testing.T) {
 	uc := NewUseCase()
 	rec, err := uc.BuildRecommendation(decision.RecommendationInput{

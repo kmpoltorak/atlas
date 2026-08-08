@@ -50,6 +50,51 @@ func TestSaveRecommendationInsertsRecord(t *testing.T) {
 	}
 }
 
+func TestSaveRecommendationStoresMLModelVersionWhenPresent(t *testing.T) {
+	db := connectTestDB(t)
+
+	rec := decision.Recommendation{
+		Symbol: "TESTRECMLV", Action: "BUY", Confidence: 0.78,
+		ModelVersion: "atlas-decision-v1", MLModelVersion: "atlas-ml-v20260808101211",
+	}
+	if err := db.SaveRecommendation(rec); err != nil {
+		t.Fatalf("SaveRecommendation failed: %v", err)
+	}
+
+	var mlModelVersion *string
+	if err := db.db.Get(&mlModelVersion, `
+		SELECT r.ml_model_version FROM recommendations r
+		JOIN symbols s ON s.id = r.symbol_id
+		WHERE s.ticker = $1
+		ORDER BY r.created_at DESC LIMIT 1`, "TESTRECMLV"); err != nil {
+		t.Fatalf("failed to read back recommendation: %v", err)
+	}
+	if mlModelVersion == nil || *mlModelVersion != "atlas-ml-v20260808101211" {
+		t.Fatalf("expected ml_model_version %q, got %+v", "atlas-ml-v20260808101211", mlModelVersion)
+	}
+}
+
+func TestSaveRecommendationStoresNullMLModelVersionWhenAbsent(t *testing.T) {
+	db := connectTestDB(t)
+
+	rec := decision.Recommendation{Symbol: "TESTRECNOMLV", Action: "HOLD", Confidence: 0.6}
+	if err := db.SaveRecommendation(rec); err != nil {
+		t.Fatalf("SaveRecommendation failed: %v", err)
+	}
+
+	var mlModelVersion *string
+	if err := db.db.Get(&mlModelVersion, `
+		SELECT r.ml_model_version FROM recommendations r
+		JOIN symbols s ON s.id = r.symbol_id
+		WHERE s.ticker = $1
+		ORDER BY r.created_at DESC LIMIT 1`, "TESTRECNOMLV"); err != nil {
+		t.Fatalf("failed to read back recommendation: %v", err)
+	}
+	if mlModelVersion != nil {
+		t.Fatalf("expected NULL ml_model_version when ML wasn't part of scoring, got %q", *mlModelVersion)
+	}
+}
+
 func TestSaveRecommendationStoresNullMarketConditionWhenUnavailable(t *testing.T) {
 	db := connectTestDB(t)
 

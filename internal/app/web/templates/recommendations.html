@@ -46,6 +46,7 @@
           <tr><th>{{T .Lang "table.risk"}}</th><td>{{printf "%.3f" .Recommendation.RiskScore}}</td></tr>
           {{if .Recommendation.MarketCondition}}<tr><th>{{T .Lang "table.market_condition"}}</th><td>{{.Recommendation.MarketCondition}}</td></tr>{{end}}
           <tr><th>{{T .Lang "table.model"}}</th><td>{{.Recommendation.ModelVersion}}</td></tr>
+          <tr><th>{{T .Lang "table.ml_model"}}</th><td>{{if .Recommendation.MLModelVersion}}{{.Recommendation.MLModelVersion}}{{else}}{{T .Lang "table.ml_model_none"}}{{end}}</td></tr>
         </tbody>
       </table>
     </div>

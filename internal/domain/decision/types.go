@@ -102,5 +102,15 @@ type Recommendation struct {
 	// to compute it (see ml.ClassifyMarketCondition's own warm-up requirement).
 	MarketCondition string `json:"market_condition,omitempty"`
 
+	// ModelVersion identifies the decision-engine scoring logic itself (weights, thresholds —
+	// see Orchestrator.EngineVersion), not the ML sub-model that fed MLScore above. Always
+	// "atlas-decision-v1" today since the engine has never been re-versioned — don't confuse a
+	// constant engine tag with "no ML model is being used."
 	ModelVersion string `json:"model_version"`
+	// MLModelVersion is the actual ML model that produced MLScore (ml.Prediction.ModelVersion —
+	// e.g. a real trained model's version, or ml.StubModelVersion when none is loaded/wired in).
+	// Empty when ML wasn't part of scoring at all (NewOrchestrator without ML — see
+	// NewOrchestratorWithML), distinct from the stub case where ML ran but with a placeholder
+	// model.
+	MLModelVersion string `json:"ml_model_version,omitempty"`
 }

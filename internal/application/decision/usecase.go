@@ -1,6 +1,10 @@
 package decision
 
-import "atlas/internal/domain/decision"
+import (
+	"math"
+
+	"atlas/internal/domain/decision"
+)
 
 // UseCase contains the first deterministic scoring rules for recommendation generation.
 // Thresholds defaults to decision.DefaultThresholds() (the original hand-picked cutoffs used
@@ -40,6 +44,16 @@ func (u *UseCase) ScoreRisk() (float64, error) {
 	return 0.6, nil
 }
 
+// scoreConfidence maps how far the blended score sits from the neutral center (0.5) into a
+// [0,1] confidence value — the same idea already used for the ML sub-model's own confidence
+// (see ml.UseCase.Predict's Confidence field), applied here to the engine's final blended score
+// so Recommendation.Confidence reflects how decisive the actual signal was instead of a fixed
+// literal per action band (the previous behavior: every BUY reported 0.78, every HOLD reported
+// 0.6, regardless of how strong or borderline the underlying score actually was).
+func scoreConfidence(overall float64) float64 {
+	return clamp01(math.Abs(overall-0.5) * 2)
+}
+
 // BuildRecommendation synthesizes a recommendation from the blended technical score, real
 // portfolio position state, and ML confidence — see docs/decision_engine.md's "Recommendation
 // Types". BUY/SELL are gated on NOT already holding vs. holding a position; ACCUMULATE/REDUCE
@@ -50,18 +64,19 @@ func (u *UseCase) ScoreRisk() (float64, error) {
 // real signal, just not a trustworthy one yet — rather than being silently collapsed into HOLD.
 func (u *UseCase) BuildRecommendation(input decision.RecommendationInput) (decision.Recommendation, error) {
 	overall := input.Technical.Overall
+	confidence := scoreConfidence(overall)
 
 	if overall >= u.Thresholds.StrongBullish {
 		if input.HasPosition {
 			return decision.Recommendation{
 				Action:     "ACCUMULATE",
-				Confidence: 0.78,
+				Confidence: confidence,
 				Reason:     []string{"Momentum signal is favorable", "Adding to an existing position", "Decision-support layer only"},
 			}, nil
 		}
 		return decision.Recommendation{
 			Action:     "BUY",
-			Confidence: 0.78,
+			Confidence: confidence,
 			Reason:     []string{"Momentum signal is favorable", "Decision-support layer only"},
 		}, nil
 	}
@@ -70,41 +85,43 @@ func (u *UseCase) BuildRecommendation(input decision.RecommendationInput) (decis
 		if input.HasPosition {
 			return decision.Recommendation{
 				Action:     "SELL",
-				Confidence: 0.72,
+				Confidence: confidence,
 				Reason:     []string{"Momentum signal is weak", "Decision-support layer only"},
 			}, nil
 		}
-		return u.waitOrHold(input.MLConfidence, "Momentum signal is weak, but no position exists to act on"), nil
+		return u.waitOrHold(overall, input.MLConfidence, "Momentum signal is weak, but no position exists to act on"), nil
 	}
 
 	if overall <= u.Thresholds.LeanBearish {
 		if input.HasPosition {
 			return decision.Recommendation{
 				Action:     "REDUCE",
-				Confidence: 0.65,
+				Confidence: confidence,
 				Reason:     []string{"Momentum signal is softening", "Trimming an existing position rather than exiting it", "Decision-support layer only"},
 			}, nil
 		}
-		return u.waitOrHold(input.MLConfidence, "Momentum signal is softening, but no position exists to act on"), nil
+		return u.waitOrHold(overall, input.MLConfidence, "Momentum signal is softening, but no position exists to act on"), nil
 	}
 
 	if overall >= u.Thresholds.LeanBullish {
-		return u.waitOrHold(input.MLConfidence, "Momentum signal leans favorable but isn't strong enough yet"), nil
+		return u.waitOrHold(overall, input.MLConfidence, "Momentum signal leans favorable but isn't strong enough yet"), nil
 	}
 
 	return decision.Recommendation{
 		Action:     "HOLD",
-		Confidence: 0.6,
+		Confidence: confidence,
 		Reason:     []string{"Mixed signal composition", "Decision-support layer only"},
 	}, nil
 }
 
 // waitOrHold resolves WAIT vs HOLD for a score that leans one way without crossing a
-// strong-enough threshold to act (see BuildRecommendation's band structure). A confidence report
-// is used as-is for WAIT's own Confidence field: WAIT's whole point is "here's a lean, but the
-// model isn't sure" — reporting a higher confidence than the model actually has would contradict
-// the recommendation being made.
-func (u *UseCase) waitOrHold(mlConfidence float64, leadReason string) decision.Recommendation {
+// strong-enough threshold to act (see BuildRecommendation's band structure). WAIT's own
+// Confidence field reports mlConfidence as-is, not scoreConfidence(overall): WAIT's whole point
+// is "here's a lean, but the model isn't sure" — reporting a higher confidence than the model
+// actually has would contradict the recommendation being made. HOLD, when reached from here,
+// uses scoreConfidence like every other action — a lean near the WAIT/HOLD boundary is
+// genuinely less decisive than a strong one, and should report that honestly.
+func (u *UseCase) waitOrHold(overall, mlConfidence float64, leadReason string) decision.Recommendation {
 	if mlConfidence < u.Thresholds.LowMLConfidence {
 		return decision.Recommendation{
 			Action:     "WAIT",
@@ -114,7 +131,7 @@ func (u *UseCase) waitOrHold(mlConfidence float64, leadReason string) decision.R
 	}
 	return decision.Recommendation{
 		Action:     "HOLD",
-		Confidence: 0.6,
+		Confidence: scoreConfidence(overall),
 		Reason:     []string{"Mixed signal composition", "Decision-support layer only"},
 	}
 }

@@ -38,12 +38,20 @@ func (t *TimescaleDB) SaveRecommendation(rec decision.Recommendation) error {
 		marketCondition = rec.MarketCondition
 	}
 
+	// ml_model_version stays NULL, not empty-string, when ML wasn't part of scoring at all
+	// (NewOrchestrator without ML) — distinct from a real value naming the stub when ML ran
+	// without a trained model loaded.
+	var mlModelVersion any
+	if rec.MLModelVersion != "" {
+		mlModelVersion = rec.MLModelVersion
+	}
+
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO recommendations
-		   (symbol_id, action, score, confidence, technical_score, ml_score, portfolio_score, risk_score, market_condition, explanation, model_version)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		   (symbol_id, action, score, confidence, technical_score, ml_score, portfolio_score, risk_score, market_condition, explanation, model_version, ml_model_version)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
 		symbolID, rec.Action, rec.Score, rec.Confidence, rec.TechnicalScore, rec.MLScore, rec.PortfolioScore,
-		rec.RiskScore, marketCondition, explanation, rec.ModelVersion); err != nil {
+		rec.RiskScore, marketCondition, explanation, rec.ModelVersion, mlModelVersion); err != nil {
 		return fmt.Errorf("insert recommendation for %s: %w", rec.Symbol, err)
 	}
 
