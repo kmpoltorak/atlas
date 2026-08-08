@@ -350,6 +350,7 @@ func (a *Application) alertsPageHandler(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		data.Warning = err.Error()
 	}
+	data.PollAt, data.PollError = a.AlertPoll.Snapshot()
 	web.Render(w, "alerts", data)
 }
 

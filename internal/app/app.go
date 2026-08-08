@@ -69,6 +69,10 @@ type Application struct {
 	// button then just explains how to run training/retrain.sh by hand instead (see
 	// cmd/trainer, docker-compose.yml's atlas-trainer service).
 	Trainer *trainerInfra.Client
+	// AlertPoll tracks StartAlertPolling's background-loop health (see alerts_loop.go) so the
+	// Alerts page can show it directly — the Metrics.AlertPollErrors counter alone is only
+	// visible in Prometheus/Grafana, invisible to anyone just looking at the dashboard.
+	AlertPoll *AlertPollStatus
 }
 
 // New connects to TimescaleDB and Redis and wires the full application. A connection
@@ -186,6 +190,7 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 		Auth:          authUC.NewUseCase(cfg.AdminUsername, cfg.AdminPasswordHash, redisCache, storage),
 		ExchangeRates: exchangeRates,
 		Trainer:       trainerClient,
+		AlertPoll:     &AlertPollStatus{},
 	}, nil
 }
 

@@ -1,6 +1,8 @@
 package web
 
 import (
+	"time"
+
 	"atlas/internal/domain/alerts"
 	backtestingDomain "atlas/internal/domain/backtesting"
 	"atlas/internal/domain/decision"
@@ -58,6 +60,12 @@ type AlertsPage struct {
 	Lang    Lang
 	Alerts  []alerts.Alert
 	Warning string
+	// PollAt/PollError report the background alert-poll loop's last attempt (see
+	// app.AlertPollStatus) — distinct from Warning above, which reflects only this page load's
+	// own on-demand Evaluate() call. PollAt is the zero time when the loop hasn't run yet (e.g.
+	// right after startup); PollError is empty when the last attempt succeeded.
+	PollAt    time.Time
+	PollError string
 }
 
 // BacktestsPage is the view model for templates/backtests.html. Symbols is the watchlist,

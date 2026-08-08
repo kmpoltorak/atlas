@@ -14,6 +14,12 @@
     <p class="text-body-secondary small mb-4">{{T .Lang "alerts.subtitle"}}</p>
 
     {{if .Warning}}<div class="alert alert-danger">{{.Warning}}</div>{{end}}
+    {{if not .PollAt.IsZero}}
+    <p class="text-body-secondary small">
+      {{T .Lang "alerts.poll_status"}}: {{(localTime .PollAt).Format "2006-01-02 15:04"}}
+      {{if .PollError}} — <span class="text-danger">{{.PollError}}</span>{{end}}
+    </p>
+    {{end}}
 
     {{if .Alerts}}
     <div class="table-responsive">

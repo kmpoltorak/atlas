@@ -175,6 +175,7 @@ var translations = map[string]map[Lang]string{
 		LangEN: "No active alerts — every watched symbol is currently HOLD, or the watchlist is empty.",
 		LangPL: "Brak aktywnych alertów — każdy obserwowany symbol ma obecnie rekomendację HOLD albo lista obserwowanych jest pusta.",
 	},
+	"alerts.poll_status": {LangEN: "Background poll", LangPL: "Sondowanie w tle"},
 
 	// Backtests (backtests.html)
 	"backtests.title":         {LangEN: "Atlas — Backtests", LangPL: "Atlas — Backtesty"},
