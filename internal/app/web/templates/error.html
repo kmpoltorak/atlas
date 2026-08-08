@@ -1,0 +1,19 @@
+{{define "error"}}
+<!doctype html>
+<html lang="{{.Lang}}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{T .Lang "error.title"}}</title>
+  {{template "head" .}}
+</head>
+<body>
+  {{template "nav" .}}
+  <main id="main-content" class="container pb-5">
+    <h1 class="h3 mb-4">{{.Status}}</h1>
+    <div class="alert alert-danger">{{.Message}}</div>
+  </main>
+  {{template "scripts" .}}
+</body>
+</html>
+{{end}}

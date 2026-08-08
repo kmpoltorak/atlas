@@ -38,6 +38,13 @@ func (a *Application) exchangeRatesForDisplay() map[string]float64 {
 	return display
 }
 
+// renderError renders a page-handler failure as a styled HTML error page (see web.RenderError)
+// instead of net/http's plain-text http.Error default, so a failure still looks like the rest
+// of Atlas rather than a bare browser error page.
+func (a *Application) renderError(w http.ResponseWriter, r *http.Request, status int, message string) {
+	web.RenderError(w, a.resolveLang(r), status, message)
+}
+
 // currencyOptions lists the currencies the record-transaction form's dropdown offers, as plain
 // strings for templates. Sorted alphabetically for the dropdown specifically — currency.All()'s
 // own PLN-first order is kept as-is for its other callers (rate fetching, per-currency display
@@ -67,7 +74,7 @@ func (a *Application) loginPageHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		requiresTOTP, err := a.Auth.TOTPStatus()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			a.renderError(w, r, http.StatusInternalServerError, err.Error())
 			return
 		}
 		web.Render(w, "login", web.LoginPage{Lang: lang, RequiresTOTP: requiresTOTP})
@@ -80,7 +87,7 @@ func (a *Application) loginPageHandler(w http.ResponseWriter, r *http.Request) {
 		token, err := a.Auth.Login(r.Context(), r.FormValue("username"), r.FormValue("password"), r.FormValue("totp"))
 		if err != nil {
 			if statusErr != nil {
-				http.Error(w, statusErr.Error(), http.StatusInternalServerError)
+				a.renderError(w, r, http.StatusInternalServerError, statusErr.Error())
 				return
 			}
 			message := "Invalid username, password, or verification code."
@@ -116,24 +123,31 @@ func (a *Application) logoutPageHandler(w http.ResponseWriter, r *http.Request) 
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
+// dashboardPageHandler also doubles as "/"'s catch-all (see NewHandler's comment on the "/"
+// registration — net/http.ServeMux treats it as a subtree pattern matching anything unmatched
+// above it), so any path other than exactly "/" is a real 404, not the dashboard.
 func (a *Application) dashboardPageHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		a.renderError(w, r, http.StatusNotFound, web.T(a.resolveLang(r), "error.not_found"))
+		return
+	}
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
 		return
 	}
 	positions, err := a.Portfolio.GetPositions()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	risk, err := a.Portfolio.ComputeRisk()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	transactions, err := a.Portfolio.GetTransactions()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	web.Render(w, "dashboard", web.DashboardPage{
@@ -297,21 +311,16 @@ func (a *Application) portfolioTransactionBulkDeleteHandler(w http.ResponseWrite
 func (a *Application) renderPortfolioPage(w http.ResponseWriter, r *http.Request, errMsg, successMsg string) {
 	positions, err := a.Portfolio.GetPositions()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	transactions, err := a.Portfolio.GetTransactions()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	risk, err := a.Portfolio.ComputeRisk()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	web.Render(w, "portfolio", web.PortfolioPage{
-		Lang: a.resolveLang(r), Positions: positions, Transactions: transactions, Risk: risk,
+		Lang: a.resolveLang(r), Positions: positions, Transactions: transactions,
 		Rates: a.exchangeRatesForDisplay(), Currencies: currencyOptions(),
 		PriceAsOf: priceAsOf(transactions),
 		Error:     errMsg, Success: successMsg,
@@ -508,7 +517,7 @@ func (a *Application) watchlistBulkDeleteHandler(w http.ResponseWriter, r *http.
 func (a *Application) renderWatchlistPage(w http.ResponseWriter, r *http.Request, errMsg, successMsg string) {
 	items, err := a.Watchlist.List()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	web.Render(w, "watchlist", web.WatchlistPage{Lang: a.resolveLang(r), Items: items, Error: errMsg, Success: successMsg})
@@ -528,7 +537,7 @@ func (a *Application) accountPageHandler(w http.ResponseWriter, r *http.Request)
 func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, errMsg, successMsg string) {
 	enabled, err := a.Auth.TOTPStatus()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	trainerConfigured := a.Trainer != nil
@@ -757,7 +766,7 @@ func (a *Application) totpSetupHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	secret, err := a.Auth.BeginTOTPEnrollment(r.Context(), cookie.Value)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	web.Render(w, "totp_enroll", web.TOTPEnrollPage{Lang: a.resolveLang(r), Secret: secret})

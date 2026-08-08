@@ -107,6 +107,10 @@ var translations = map[string]map[Lang]string{
 		LangPL: "Wyłącznie wsparcie decyzyjne — Atlas nigdy nie realizuje transakcji.",
 	},
 
+	// Error page (error.html) — see web.RenderError.
+	"error.title":     {LangEN: "Atlas — Error", LangPL: "Atlas — Błąd"},
+	"error.not_found": {LangEN: "Page not found.", LangPL: "Nie znaleziono strony."},
+
 	// Login (login.html)
 	"login.title": {LangEN: "Atlas — Log in", LangPL: "Atlas — Logowanie"},
 	"login.subtitle": {
@@ -126,7 +130,11 @@ var translations = map[string]map[Lang]string{
 		LangEN: `No open positions yet — see <a href="/dashboard/portfolio">Portfolio</a> to record a transaction.`,
 		LangPL: `Brak otwartych pozycji — przejdź do <a href="/dashboard/portfolio">Portfela</a>, aby zapisać transakcję.`,
 	},
-	"dashboard.portfolio_risk":  {LangEN: "Portfolio Risk", LangPL: "Ryzyko portfela"},
+	"dashboard.portfolio_risk": {LangEN: "Portfolio Risk", LangPL: "Ryzyko portfela"},
+	"dashboard.no_risk": {
+		LangEN: "No risk data — no open positions.",
+		LangPL: "Brak danych o ryzyku — brak otwartych pozycji.",
+	},
 	"dashboard.active_alerts":   {LangEN: "Active Alerts", LangPL: "Aktywne alerty"},
 	"dashboard.view_all_alerts": {LangEN: "View all →", LangPL: "Zobacz wszystkie →"},
 

@@ -17,6 +17,13 @@ type LoginPage struct {
 	RequiresTOTP bool
 }
 
+// ErrorPage is the view model for templates/error.html — see RenderError.
+type ErrorPage struct {
+	Lang    Lang
+	Status  int
+	Message string
+}
+
 // DashboardPage is the view model for templates/dashboard.html.
 type DashboardPage struct {
 	Lang      Lang
@@ -42,7 +49,6 @@ type PortfolioPage struct {
 	Lang         Lang
 	Positions    []portfolio.Position
 	Transactions []portfolio.Transaction
-	Risk         portfolio.RiskSnapshot
 	// Rates — see DashboardPage.Rates.
 	Rates map[string]float64
 	// Currencies lists the currencies the record-transaction form's dropdown offers, e.g.

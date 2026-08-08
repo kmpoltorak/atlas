@@ -60,6 +60,7 @@
     {{end}}
 
     <h2 class="h5 mt-4">{{T .Lang "dashboard.portfolio_risk"}}</h2>
+    {{if .Positions}}
     <div class="table-responsive">
       <table class="table">
         <thead><tr>
@@ -76,6 +77,9 @@
         </tbody>
       </table>
     </div>
+    {{else}}
+    <p class="text-body-secondary mb-4">{{T .Lang "dashboard.no_risk"}}</p>
+    {{end}}
     <p class="text-body-secondary border-top pt-3">{{T .Lang "common.disclaimer"}}</p>
   </main>
   {{template "scripts" .}}
