@@ -10,10 +10,15 @@ import (
 	"atlas/internal/infrastructure/cache"
 )
 
-// barsCacheTTL is deliberately short: this cache exists to collapse redundant provider calls
-// within a single burst of requests (e.g. /recommendations and /predictions both collecting
-// the same symbol), not to serve meaningfully stale market data.
-const barsCacheTTL = 60 * time.Second
+// barsCacheTTL matches ALERT_POLL_INTERVAL_SECONDS' default (config.Load) rather than being
+// much shorter: with a 60s TTL, every 5-minute alert-poll iteration missed the cache entirely
+// (300s > 60s) and hit the live provider for every watchlist symbol regardless — the cache
+// wasn't actually collapsing the poll loop's own repeated calls, only unrelated bursts within
+// the same minute (e.g. /recommendations and /predictions both collecting the same symbol back
+// to back). At 300s, one poll iteration's fetch is still in cache for the next, cutting
+// provider calls roughly in line with how often Yahoo's hourly bars actually change, without
+// serving data staler than the poll loop already tolerates.
+const barsCacheTTL = 300 * time.Second
 
 // redisBarsCache adapts the infrastructure Redis client into the collector.Cache interface.
 // Any Redis or JSON error is treated as a cache miss — a broken cache must never break bar
