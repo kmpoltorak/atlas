@@ -131,8 +131,14 @@ func (a *Application) dashboardPageHandler(w http.ResponseWriter, r *http.Reques
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	transactions, err := a.Portfolio.GetTransactions()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	web.Render(w, "dashboard", web.DashboardPage{
 		Lang: a.resolveLang(r), Positions: positions, Risk: risk, Rates: a.exchangeRatesForDisplay(),
+		PriceAsOf: priceAsOf(transactions),
 	})
 }
 
@@ -286,8 +292,25 @@ func (a *Application) renderPortfolioPage(w http.ResponseWriter, r *http.Request
 	web.Render(w, "portfolio", web.PortfolioPage{
 		Lang: a.resolveLang(r), Positions: positions, Transactions: transactions, Risk: risk,
 		Rates: a.exchangeRatesForDisplay(), Currencies: currencyOptions(),
-		Error: errMsg, Success: successMsg,
+		PriceAsOf: priceAsOf(transactions),
+		Error:     errMsg, Success: successMsg,
 	})
+}
+
+// priceAsOf maps each symbol to its most recent transaction's timestamp — the same event that
+// last set Position.CurrentPrice (see portfolio.applyTransaction: every BUY/SELL sets
+// CurrentPrice = tx.PriceInPLN), so this is genuinely "as of when" the displayed price is from.
+// Plain string comparison is enough to find the max: every Timestamp is written as
+// time.Now().UTC().Format(time.RFC3339) (see web_handlers.go/alerts_loop.go), which is
+// lexicographically sortable for a fixed UTC "Z"-suffixed format.
+func priceAsOf(transactions []portfolio.Transaction) map[string]string {
+	latest := make(map[string]string)
+	for _, tx := range transactions {
+		if current, ok := latest[tx.Symbol]; !ok || tx.Timestamp > current {
+			latest[tx.Symbol] = tx.Timestamp
+		}
+	}
+	return latest
 }
 
 // watchlistSymbols returns the watchlist as a plain []string, alphabetically sorted — used to

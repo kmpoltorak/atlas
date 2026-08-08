@@ -31,7 +31,10 @@
             <td>{{.Symbol}}</td>
             <td class="text-end tabular-nums">{{printf "%.4f" .Quantity}}</td>
             <td class="text-end tabular-nums">{{money .AverageCost $.Rates}}</td>
-            <td class="text-end tabular-nums">{{money .CurrentPrice $.Rates}}</td>
+            <td class="text-end tabular-nums">
+              {{money .CurrentPrice $.Rates}}
+              {{with index $.PriceAsOf .Symbol}}<br><small class="text-body-secondary">{{T $.Lang "table.as_of"}} {{(localTime .).Format "2006-01-02"}}</small>{{end}}
+            </td>
             <td class="text-end tabular-nums {{pnlClass (pnl .)}}">{{money (pnl .) $.Rates}}</td>
             <td class="text-end">
               <button type="submit" formaction="/dashboard/portfolio/delete" name="symbol" value="{{.Symbol}}"
