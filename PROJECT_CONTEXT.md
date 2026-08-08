@@ -190,7 +190,14 @@ still placeholders. `Recommendation.RiskScore` is a real field now too (previous
 in the `recommendations` table — see migrations/001, docs/decision_engine.md's Database
 section). `Recommendation.MarketCondition` (BULL/BEAR/SIDEWAYS) is also real and persisted
 (migrations/007) — a deterministic ADX+EMA technical rule, not part of the score blend itself,
-just reported alongside it (see docs/ml.md). All six
+just reported alongside it (see docs/ml.md). `Recommendation.MLModelVersion` (distinct from
+`ModelVersion`, the decision engine's own constant tag) surfaces which real ML model actually
+produced `MLScore`, persisted too (migrations/012) — previously there was no way to see this
+outside `/predictions`. `Confidence` was a fixed literal per action band until a later pass (every
+HOLD reported 0.6 regardless of score strength, which is most real recommendations); it now
+scales with how far the score sits from the neutral center, matching how ML's own confidence is
+already computed — see docs/decision_engine.md's Implementation status note for the full story.
+All six
 actions above are now real, differentiated by real signals, not cosmetic renaming:
 - BUY vs ACCUMULATE, SELL vs REDUCE: gated on whether a real portfolio position already exists
   (Portfolio.GetPositions), independent of that position's P&L.
