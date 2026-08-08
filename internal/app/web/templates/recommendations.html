@@ -52,7 +52,7 @@
     </div>
     <h3 class="h6">{{T .Lang "recommendations.reasoning"}}</h3>
     <ul>
-      {{range .Recommendation.Reason}}<li>{{.}}</li>{{end}}
+      {{range .Recommendation.Reason}}<li>{{reasonLabel $.Lang .}}</li>{{end}}
     </ul>
     <p class="text-body-secondary border-top pt-3">{{T .Lang "common.disclaimer"}}</p>
     {{end}}

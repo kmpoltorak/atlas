@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -38,13 +39,16 @@ func (a *Application) exchangeRatesForDisplay() map[string]float64 {
 }
 
 // currencyOptions lists the currencies the record-transaction form's dropdown offers, as plain
-// strings for templates.
+// strings for templates. Sorted alphabetically for the dropdown specifically — currency.All()'s
+// own PLN-first order is kept as-is for its other callers (rate fetching, per-currency display
+// columns), where "PLN first" reflects Base rather than being a dropdown listing.
 func currencyOptions() []string {
 	all := currency.All()
 	options := make([]string, len(all))
 	for i, code := range all {
 		options[i] = string(code)
 	}
+	sort.Strings(options)
 	return options
 }
 
@@ -286,9 +290,10 @@ func (a *Application) renderPortfolioPage(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// watchlistSymbols returns the watchlist as a plain []string — used to populate the
-// recommendations/backtests page dropdowns so the common case doesn't require typing a ticker
-// by hand.
+// watchlistSymbols returns the watchlist as a plain []string, alphabetically sorted — used to
+// populate the recommendations/backtests page dropdowns so the common case doesn't require
+// typing a ticker by hand. Sorted here for the dropdown only; the Watchlist page's own table
+// keeps a.Watchlist.List()'s natural (added) order.
 func (a *Application) watchlistSymbols() ([]string, error) {
 	items, err := a.Watchlist.List()
 	if err != nil {
@@ -298,6 +303,7 @@ func (a *Application) watchlistSymbols() ([]string, error) {
 	for i, item := range items {
 		symbols[i] = item.Symbol
 	}
+	sort.Strings(symbols)
 	return symbols, nil
 }
 

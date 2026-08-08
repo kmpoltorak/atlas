@@ -276,6 +276,56 @@ var translations = map[string]map[Lang]string{
 	"action.ACCUMULATE": {LangEN: "ACCUMULATE", LangPL: "DOKUPUJ"},
 	"action.REDUCE":     {LangEN: "REDUCE", LangPL: "REDUKUJ"},
 	"action.WAIT":       {LangEN: "WAIT", LangPL: "CZEKAJ"},
+
+	// Decision-engine rationale strings — the closed, hardcoded set internal/application/
+	// decision.UseCase actually returns in Recommendation.Reason (see BuildRecommendation and
+	// waitOrHold). Keyed on the literal English sentence rather than a short code because these
+	// are plain string literals in the engine, not an enum — reasonLabel falls back to the raw
+	// English string for anything not listed here, so a future engine change adding a new reason
+	// degrades to untranslated text instead of breaking rendering.
+	"reason.Momentum signal is favorable":   {LangEN: "Momentum signal is favorable", LangPL: "Sygnał momentum jest korzystny"},
+	"reason.Adding to an existing position": {LangEN: "Adding to an existing position", LangPL: "Powiększanie istniejącej pozycji"},
+	"reason.Decision-support layer only":    {LangEN: "Decision-support layer only", LangPL: "Wyłącznie warstwa wsparcia decyzyjnego"},
+	"reason.Momentum signal is weak":        {LangEN: "Momentum signal is weak", LangPL: "Sygnał momentum jest słaby"},
+	"reason.Momentum signal is weak, but no position exists to act on": {
+		LangEN: "Momentum signal is weak, but no position exists to act on",
+		LangPL: "Sygnał momentum jest słaby, ale nie ma pozycji, na której można by działać",
+	},
+	"reason.Momentum signal is softening": {LangEN: "Momentum signal is softening", LangPL: "Sygnał momentum słabnie"},
+	"reason.Trimming an existing position rather than exiting it": {
+		LangEN: "Trimming an existing position rather than exiting it",
+		LangPL: "Ograniczanie istniejącej pozycji zamiast jej zamykania",
+	},
+	"reason.Momentum signal is softening, but no position exists to act on": {
+		LangEN: "Momentum signal is softening, but no position exists to act on",
+		LangPL: "Sygnał momentum słabnie, ale nie ma pozycji, na której można by działać",
+	},
+	"reason.Momentum signal leans favorable but isn't strong enough yet": {
+		LangEN: "Momentum signal leans favorable but isn't strong enough yet",
+		LangPL: "Sygnał momentum skłania się ku korzystnemu, ale nie jest jeszcze wystarczająco silny",
+	},
+	"reason.Mixed signal composition": {LangEN: "Mixed signal composition", LangPL: "Mieszany układ sygnałów"},
+	"reason.ML confidence too low to act on this signal yet": {
+		LangEN: "ML confidence too low to act on this signal yet",
+		LangPL: "Pewność modelu ML jest jeszcze za niska, aby działać na podstawie tego sygnału",
+	},
+	"reason.No automated trading action": {LangEN: "No automated trading action", LangPL: "Brak automatycznego działania transakcyjnego"},
+	// These four are appended separately by internal/application/decision.Orchestrator.blend
+	// (not UseCase.BuildRecommendation above) whenever ML/Portfolio/Risk scoring is wired in —
+	// a second, independent source of Reason strings on the same Recommendation.Reason slice.
+	"reason.ML signal supportive": {LangEN: "ML signal supportive", LangPL: "Sygnał ML jest wspierający"},
+	"reason.ML signal cautious":   {LangEN: "ML signal cautious", LangPL: "Sygnał ML jest ostrożny"},
+	"reason.Portfolio risk context reduces conviction": {
+		LangEN: "Portfolio risk context reduces conviction",
+		LangPL: "Kontekst ryzyka portfela obniża pewność",
+	},
+	"reason.Elevated portfolio-wide risk (drawdown/volatility)": {
+		LangEN: "Elevated portfolio-wide risk (drawdown/volatility)",
+		LangPL: "Podwyższone ryzyko całego portfela (obsunięcie/zmienność)",
+	},
+	// Orchestrator's own degraded-input fallbacks (no bars/technical signal, or Decision is nil).
+	"reason.No signal data available":    {LangEN: "No signal data available", LangPL: "Brak danych sygnałowych"},
+	"reason.Decision engine unavailable": {LangEN: "Decision engine unavailable", LangPL: "Silnik decyzyjny niedostępny"},
 }
 
 // T looks up key for lang, falling back to English, then to the key itself if the key genuinely
@@ -303,4 +353,17 @@ func actionLabel(lang Lang, action string) string {
 		}
 	}
 	return action
+}
+
+// reasonLabel translates a raw decision-engine rationale string (see the "reason.*" keys above).
+// Unlike actionLabel, an unknown value passes through as-is in whatever language it was written
+// (English) rather than falling back to a key lookup miss — these are full sentences, not a
+// short fixed vocabulary, so "untranslated but readable" is the right degrade.
+func reasonLabel(lang Lang, reason string) string {
+	if strs, ok := translations["reason."+reason]; ok {
+		if s, ok := strs[lang]; ok {
+			return s
+		}
+	}
+	return reason
 }

@@ -29,7 +29,7 @@
           <tr>
             <td><input type="checkbox" class="form-check-input watchlist-checkbox" name="symbols" value="{{.Symbol}}"></td>
             <td>{{.Symbol}}</td>
-            <td>{{.AddedAt}}</td>
+            <td>{{if .AddedAt}}{{(localTime .AddedAt).Format "2006-01-02 15:04"}}{{end}}</td>
             <td class="text-end">
               <button type="submit" formaction="/dashboard/watchlist/delete" name="symbol" value="{{.Symbol}}"
                       class="btn btn-outline-danger btn-sm"

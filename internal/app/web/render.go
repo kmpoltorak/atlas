@@ -11,6 +11,8 @@ import (
 	"html/template"
 	"net/http"
 	"strings"
+	"time"
+	_ "time/tzdata" // embeds the IANA zoneinfo DB so localTime works even on a minimal image with no system tzdata installed
 
 	"atlas/internal/domain/portfolio"
 )
@@ -43,7 +45,22 @@ var funcMap = template.FuncMap{
 		}
 		return total
 	},
-	"join": func(items []string) string { return strings.Join(items, "; ") },
+	// joinReasons translates each decision-engine rationale string (see reasonLabel) before
+	// joining them — the raw values are hardcoded English produced by
+	// internal/application/decision.UseCase, not user input, so they need the same T-style
+	// lookup actionLabel gets, just applied per-item before the join.
+	"joinReasons": func(lang Lang, reasons []string) string {
+		translated := make([]string, len(reasons))
+		for i, r := range reasons {
+			translated[i] = reasonLabel(lang, r)
+		}
+		return strings.Join(translated, "; ")
+	},
+	"reasonLabel": reasonLabel,
+	// localTime converts a persisted-as-UTC timestamp (RFC3339 string or time.Time, depending on
+	// the source field) to Atlas' display timezone — see atlasLocation. Atlas is single-user and
+	// the Author is Poland-based, so this is a fixed zone, not something derived per-request.
+	"localTime": localTime,
 	// actionClass maps a recommendation action to Bootstrap's own text-color utility classes
 	// (which carry !important) rather than a custom CSS rule — Bootstrap's table component sets
 	// cell color via a higher-specificity selector (.table > :not(caption) > * > *) than a
@@ -84,6 +101,38 @@ func money(pln float64, rates map[string]float64) template.HTML {
 	}
 	return template.HTML(fmt.Sprintf(`%s<br><small class="text-body-secondary">&asymp; %s</small>`,
 		primary, strings.Join(secondary, " / "))) //nolint:gosec // numeric-only interpolation, no user input
+}
+
+// atlasLocation is Atlas' fixed display timezone. Every persisted timestamp (transactions,
+// alert triggers, backtest trades) is stored in UTC — see internal/application/alerts.UseCase
+// and internal/app/web_handlers.go's time.Now().UTC() calls — so it has to be converted for
+// display somewhere; a single-user, Poland-based tool doesn't need per-request/browser timezone
+// detection, just one fixed zone.
+var atlasLocation = func() *time.Location {
+	loc, err := time.LoadLocation("Europe/Warsaw")
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+}()
+
+// localTime converts v — either a time.Time (backtesting.Trade.Timestamp) or an RFC3339 string
+// (portfolio.Transaction.Timestamp, alerts.Alert.TriggeredAt, watchlist.Item.AddedAt — all
+// persisted as plain strings, not time.Time) — to atlasLocation. An unparseable string returns
+// the zero time rather than panicking a template render.
+func localTime(v any) time.Time {
+	switch t := v.(type) {
+	case time.Time:
+		return t.In(atlasLocation)
+	case string:
+		parsed, err := time.Parse(time.RFC3339, t)
+		if err != nil {
+			return time.Time{}
+		}
+		return parsed.In(atlasLocation)
+	default:
+		return time.Time{}
+	}
 }
 
 func pnlClass(pln float64) string {
