@@ -49,6 +49,9 @@ services:
       # internal/application/auth's doc comment.
       ADMIN_USERNAME: ${ADMIN_USERNAME:-}
       ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
+      # False by default, matching this stack running over plain HTTP with no reverse proxy in
+      # front. Set to "true" once Atlas is actually served over HTTPS — see internal/config.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       # Empty by default: the Account page's "Train new candidate" button then just explains how
       # to run training/retrain.sh by hand instead. Only meaningful together with the
       # atlas-trainer service below (off by default, profile "trainer") — set this to
@@ -65,7 +68,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -101,6 +104,15 @@ services:
       # resolve if a venv created on the host OS gets bind-mounted into this (Linux) container.
       # Gitignored, like training/.venv itself (see .gitignore).
       TRAINING_VENV_DIR: training/.venv-container
+      # training/retrain.sh already reads this itself for its own success notification (see
+      # training/README.md) — it's inherited automatically by the retrain.sh subprocess cmd/
+      # trainer execs, no extra plumbing needed. cmd/trainer also reads it directly for the one
+      # thing retrain.sh's own notification can't cover: a failure (see cmd/trainer/main.go).
+      # Deliberately reuses the *same* .env value as alertmanager's ALERTMANAGER_DISCORD_WEBHOOK_URL
+      # below, not DISCORD_WEBHOOK_URL above (atlas-api's business-alert channel) — training
+      # outcomes are an "is Atlas itself working" signal, same category as pod-down/error-rate
+      # infra alerts, not an investment recommendation. One webhook URL in .env covers both.
+      TRAINING_DISCORD_WEBHOOK_URL: ${ALERTMANAGER_DISCORD_WEBHOOK_URL:-}
     depends_on:
       timescaledb:
         condition: service_healthy

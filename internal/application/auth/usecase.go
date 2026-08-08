@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -24,12 +25,27 @@ const PendingTOTPTTL = 10 * time.Minute
 const (
 	sessionKeyPrefix     = "auth:session:"
 	pendingTOTPKeyPrefix = "auth:pending-totp:"
+	loginFailureKey      = "auth:login-failures"
+)
+
+// maxLoginFailures and loginLockoutWindow bound brute-forcing the single admin password: Atlas
+// is a single-account tool (see UseCase's doc comment below), so the counter is global rather
+// than per-IP — there is no legitimate scenario where distinguishing callers by IP matters, and
+// a global counter needs no reverse-proxy/X-Forwarded-For trust decision to be correct.
+const (
+	maxLoginFailures   = 5
+	loginLockoutWindow = 15 * time.Minute
 )
 
 // ErrInvalidCredentials is deliberately uniform across every possible failure (wrong username,
 // wrong password, wrong/missing TOTP code) so a login response never leaks which specific
 // factor was wrong.
 var ErrInvalidCredentials = errors.New("invalid username, password, or verification code")
+
+// ErrTooManyAttempts is returned instead of ErrInvalidCredentials once the lockout threshold is
+// hit — distinct on purpose, so the one legitimate operator knows to wait rather than assuming
+// their password changed.
+var ErrTooManyAttempts = errors.New("too many failed login attempts — wait a few minutes and try again")
 
 // TOTPStore persists the account's 2FA settings — implemented by
 // infrastructure/persistence.TimescaleDB (migrations/008's auth_settings table). Unlike
@@ -76,19 +92,53 @@ func (u *UseCase) TOTPStatus() (enabled bool, err error) {
 }
 
 // Login verifies username/password and, if 2FA is currently enabled (per TOTPStore, not static
-// config), totpCode — issuing a new session only when every required factor succeeds.
+// config), totpCode — issuing a new session only when every required factor succeeds. Repeated
+// failures lock out further attempts for loginLockoutWindow — see maxLoginFailures.
 func (u *UseCase) Login(ctx context.Context, username, password, totpCode string) (token string, err error) {
+	lockedOut, err := u.tooManyRecentFailures(ctx)
+	if err != nil {
+		return "", fmt.Errorf("check login lockout: %w", err)
+	}
+	if lockedOut {
+		return "", ErrTooManyAttempts
+	}
 	if !u.verifyPassword(username, password) {
-		return "", ErrInvalidCredentials
+		return "", u.recordLoginFailure(ctx)
 	}
 	secret, enabled, err := u.TOTP.GetTOTP()
 	if err != nil {
 		return "", fmt.Errorf("load totp settings: %w", err)
 	}
 	if enabled && !ValidateTOTP(secret, totpCode, time.Now()) {
-		return "", ErrInvalidCredentials
+		return "", u.recordLoginFailure(ctx)
 	}
+	_ = u.Sessions.Delete(ctx, loginFailureKey)
 	return u.createSession(ctx)
+}
+
+func (u *UseCase) tooManyRecentFailures(ctx context.Context) (bool, error) {
+	value, found, err := u.Sessions.Get(ctx, loginFailureKey)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		return false, nil
+	}
+	count, err := strconv.Atoi(value)
+	if err != nil {
+		return false, nil
+	}
+	return count >= maxLoginFailures, nil
+}
+
+// recordLoginFailure increments the global failure counter and always returns
+// ErrInvalidCredentials — callers just return its result, so a Redis error incrementing the
+// counter never masks the real reason Login failed.
+func (u *UseCase) recordLoginFailure(ctx context.Context) error {
+	if _, err := u.Sessions.Increment(ctx, loginFailureKey, loginLockoutWindow); err != nil {
+		return fmt.Errorf("record login failure: %w", err)
+	}
+	return ErrInvalidCredentials
 }
 
 // verifyPassword uses bcrypt's constant-time comparison. On a username mismatch it still runs

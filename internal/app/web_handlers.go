@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -78,12 +79,17 @@ func (a *Application) loginPageHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, statusErr.Error(), http.StatusInternalServerError)
 				return
 			}
-			web.Render(w, "login", web.LoginPage{Lang: lang, Error: "Invalid username, password, or verification code.", RequiresTOTP: requiresTOTP})
+			message := "Invalid username, password, or verification code."
+			if errors.Is(err, authUC.ErrTooManyAttempts) {
+				message = "Too many failed login attempts. Wait a few minutes and try again."
+			}
+			web.Render(w, "login", web.LoginPage{Lang: lang, Error: message, RequiresTOTP: requiresTOTP})
 			return
 		}
 		http.SetCookie(w, &http.Cookie{
 			Name: sessionCookieName, Value: token, Path: "/",
-			HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: int(authUC.SessionTTL.Seconds()),
+			HttpOnly: true, Secure: a.Config.CookieSecure, SameSite: http.SameSiteLaxMode,
+			MaxAge: int(authUC.SessionTTL.Seconds()),
 		})
 		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 	default:
