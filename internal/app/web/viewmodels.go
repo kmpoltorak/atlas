@@ -27,6 +27,10 @@ type DashboardPage struct {
 	// denominated figure in all three currencies. Empty when NBP is unreachable and nothing is
 	// cached yet — money degrades to PLN-only in that case, not an error.
 	Rates map[string]float64
+	// PriceAsOf maps a Position's Symbol to its most recent transaction's RFC3339 timestamp —
+	// see priceAsOf (web_handlers.go). The same event that set Position.CurrentPrice, so this is
+	// genuinely "as of when" that price is from, not a live quote timestamp.
+	PriceAsOf map[string]string
 }
 
 // PortfolioPage is the view model for templates/portfolio.html.
@@ -40,8 +44,10 @@ type PortfolioPage struct {
 	// Currencies lists the currencies the record-transaction form's dropdown offers, e.g.
 	// ["PLN", "EUR", "USD"] — see currency.All().
 	Currencies []string
-	Error      string
-	Success    string
+	// PriceAsOf — see DashboardPage.PriceAsOf.
+	PriceAsOf map[string]string
+	Error     string
+	Success   string
 }
 
 // RecommendationsPage is the view model for templates/recommendations.html. Symbols is the

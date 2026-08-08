@@ -45,10 +45,15 @@ var translations = map[string]map[Lang]string{
 	"nav.skip_to_content": {LangEN: "Skip to content", LangPL: "Przejdź do treści"},
 
 	// Shared table headers/labels, reused across multiple pages
-	"table.symbol":        {LangEN: "Symbol", LangPL: "Symbol"},
-	"table.quantity":      {LangEN: "Quantity", LangPL: "Ilość"},
-	"table.avg_cost":      {LangEN: "Avg. Cost", LangPL: "Śr. koszt"},
-	"table.current_price": {LangEN: "Current Price", LangPL: "Aktualna cena"},
+	"table.symbol":   {LangEN: "Symbol", LangPL: "Symbol"},
+	"table.quantity": {LangEN: "Quantity", LangPL: "Ilość"},
+	"table.avg_cost": {LangEN: "Avg. Cost", LangPL: "Śr. koszt"},
+	// Named for what it actually is, not a live market quote: Position.CurrentPrice is set once,
+	// from the most recent transaction recorded for that symbol (see portfolio.applyTransaction)
+	// — Atlas has no live price-refresh path. table.as_of is the small "as of <date>" line shown
+	// under it, same honesty-relabeling precedent as table.drawdown/table.avg_deviation above.
+	"table.current_price": {LangEN: "Last Transaction Price", LangPL: "Cena z ostatniej transakcji"},
+	"table.as_of":         {LangEN: "as of", LangPL: "stan na"},
 	"table.pnl":           {LangEN: "P&L", LangPL: "Zysk/strata"},
 	"table.total":         {LangEN: "Total", LangPL: "Suma"},
 	"table.exposure":      {LangEN: "Exposure", LangPL: "Ekspozycja"},
