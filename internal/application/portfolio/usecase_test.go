@@ -242,6 +242,36 @@ func TestRemovePositionRejectsEmptySymbol(t *testing.T) {
 	}
 }
 
+func TestRemovePositionsDeletesEachSelectedSymbol(t *testing.T) {
+	uc := NewUseCase()
+	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Timestamp: "2024-01-01"})
+	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "MSFT", Type: "BUY", Quantity: 5, Price: 300, Timestamp: "2024-01-01"})
+	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "GOOG", Type: "BUY", Quantity: 2, Price: 150, Timestamp: "2024-01-01"})
+
+	if err := uc.RemovePositions([]string{"AAPL", "GOOG"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	positions, _ := uc.GetPositions()
+	if len(positions) != 1 || positions[0].Symbol != "MSFT" {
+		t.Fatalf("expected only MSFT to remain, got %+v", positions)
+	}
+}
+
+func TestRemovePositionsJoinsErrorsButDeletesTheRest(t *testing.T) {
+	uc := NewUseCase()
+	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Timestamp: "2024-01-01"})
+
+	err := uc.RemovePositions([]string{"", "AAPL"})
+	if err == nil {
+		t.Fatal("expected an error for the empty symbol")
+	}
+	positions, _ := uc.GetPositions()
+	if len(positions) != 0 {
+		t.Fatalf("expected AAPL to still be deleted despite the other error, got %+v", positions)
+	}
+}
+
 func TestRecordTransactionAssignsAnID(t *testing.T) {
 	uc := NewUseCase()
 	tx := portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Timestamp: "2026-01-01T00:00:00Z"}

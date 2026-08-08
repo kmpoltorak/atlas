@@ -182,6 +182,32 @@ func (a *Application) portfolioDeleteHandler(w http.ResponseWriter, r *http.Requ
 	a.renderPortfolioPage(w, r, "", "Removed "+symbol+" from your positions.")
 }
 
+// portfolioBulkDeleteHandler removes several positions at once — the Positions table's
+// checkbox-select "Delete selected" action (see portfolio.UseCase.RemovePositions). Reads
+// r.Form["symbols"] rather than a single FormValue, one per checked checkbox, distinct from the
+// per-row Remove buttons in the same template, which still submit a single "symbol" to
+// portfolioDeleteHandler via their own formaction.
+func (a *Application) portfolioBulkDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		a.renderPortfolioPage(w, r, "Invalid form submission.", "")
+		return
+	}
+	symbols := r.Form["symbols"]
+	if len(symbols) == 0 {
+		a.renderPortfolioPage(w, r, "No positions selected.", "")
+		return
+	}
+	if err := a.Portfolio.RemovePositions(symbols); err != nil {
+		a.renderPortfolioPage(w, r, err.Error(), "")
+		return
+	}
+	a.renderPortfolioPage(w, r, "", fmt.Sprintf("%d position(s) removed.", len(symbols)))
+}
+
 // portfolioTransactionDeleteHandler removes one historical transaction by id (see
 // portfolio.UseCase.RemoveTransaction) — the dashboard equivalent of DELETE /transactions.
 // Distinct from portfolioDeleteHandler: this touches the transaction history itself and
@@ -394,6 +420,32 @@ func (a *Application) watchlistDeleteHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	a.renderWatchlistPage(w, r, "", "Removed "+symbol+" from the watchlist.")
+}
+
+// watchlistBulkDeleteHandler removes several watchlist symbols at once — the checkbox-select
+// "Delete selected" action (see watchlist.UseCase.RemoveMany). Reads r.Form["symbols"] rather
+// than a single FormValue, one per checked checkbox, distinct from the per-row Remove buttons
+// in the same template, which still submit a single "symbol" to watchlistDeleteHandler via
+// their own formaction.
+func (a *Application) watchlistBulkDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		a.renderWatchlistPage(w, r, "Invalid form submission.", "")
+		return
+	}
+	symbols := r.Form["symbols"]
+	if len(symbols) == 0 {
+		a.renderWatchlistPage(w, r, "No symbols selected.", "")
+		return
+	}
+	if err := a.Watchlist.RemoveMany(symbols); err != nil {
+		a.renderWatchlistPage(w, r, err.Error(), "")
+		return
+	}
+	a.renderWatchlistPage(w, r, "", fmt.Sprintf("%d symbol(s) removed from the watchlist.", len(symbols)))
 }
 
 func (a *Application) renderWatchlistPage(w http.ResponseWriter, r *http.Request, errMsg, successMsg string) {

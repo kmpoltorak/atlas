@@ -2,6 +2,7 @@ package watchlist
 
 import (
 	"errors"
+	"fmt"
 
 	"atlas/internal/domain/watchlist"
 )
@@ -75,4 +76,18 @@ func (u *UseCase) Remove(symbol string) error {
 		return u.Repository.DeleteItem(symbol)
 	}
 	return nil
+}
+
+// RemoveMany untracks several symbols at once (the dashboard's checkbox-select bulk delete) —
+// each symbol still goes through Remove individually rather than a single batched repository
+// call, matching portfolio.UseCase.RemovePositions/RemoveTransactions' reasoning. Errors from
+// individual symbols are joined rather than aborting the whole batch.
+func (u *UseCase) RemoveMany(symbols []string) error {
+	var errs []error
+	for _, symbol := range symbols {
+		if err := u.Remove(symbol); err != nil {
+			errs = append(errs, fmt.Errorf("remove watchlist item %s: %w", symbol, err))
+		}
+	}
+	return errors.Join(errs...)
 }

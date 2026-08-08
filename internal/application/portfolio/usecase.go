@@ -161,6 +161,21 @@ func (u *UseCase) RemovePosition(symbol string) error {
 	return nil
 }
 
+// RemovePositions removes several positions at once (the dashboard's checkbox-select bulk
+// delete) — each symbol still goes through RemovePosition individually rather than a single
+// batched repository call, same reasoning as RemoveTransactions: it's simple and already
+// correct one at a time. Errors from individual symbols are joined rather than aborting the
+// whole batch.
+func (u *UseCase) RemovePositions(symbols []string) error {
+	var errs []error
+	for _, symbol := range symbols {
+		if err := u.RemovePosition(symbol); err != nil {
+			errs = append(errs, fmt.Errorf("remove position %s: %w", symbol, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // RemoveTransaction deletes one historical transaction by id (e.g. a mis-entered trade) and
 // recomputes the affected symbol's position from scratch by replaying its remaining
 // transactions in chronological order — the only reliable way to undo a transaction's effect on

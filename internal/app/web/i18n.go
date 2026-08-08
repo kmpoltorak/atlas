@@ -137,6 +137,10 @@ var translations = map[string]map[Lang]string{
 		LangEN: "Remove %d selected transaction(s) and recompute the affected positions from what remains?",
 		LangPL: "Usunąć %d wybranych transakcji i przeliczyć dotknięte pozycje na podstawie pozostałych?",
 	},
+	"confirm.remove_positions_bulk": {
+		LangEN: "Remove %d selected position(s) entirely? Transaction history is kept, only the current positions are cleared.",
+		LangPL: "Usunąć %d wybranych pozycji całkowicie? Historia transakcji zostaje zachowana, czyszczone są tylko bieżące pozycje.",
+	},
 	"portfolio.delete_selected": {LangEN: "Delete selected", LangPL: "Usuń zaznaczone"},
 	"table.select_all":          {LangEN: "Select all", LangPL: "Zaznacz wszystkie"},
 
@@ -177,6 +181,14 @@ var translations = map[string]map[Lang]string{
 	"watchlist.empty":      {LangEN: "Watchlist is empty.", LangPL: "Lista obserwowanych jest pusta."},
 	"watchlist.add_symbol": {LangEN: "Add a symbol", LangPL: "Dodaj symbol"},
 	"watchlist.add_submit": {LangEN: "Add", LangPL: "Dodaj"},
+	"confirm.remove_watchlist_item": {
+		LangEN: "Stop watching %s?",
+		LangPL: "Przestać obserwować %s?",
+	},
+	"confirm.remove_watchlist_bulk": {
+		LangEN: "Stop watching %d selected symbol(s)?",
+		LangPL: "Przestać obserwować %d wybranych symboli?",
+	},
 
 	// Account (account.html)
 	"account.title":            {LangEN: "Atlas — Account", LangPL: "Atlas — Konto"},
