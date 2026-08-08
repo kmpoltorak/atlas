@@ -166,12 +166,12 @@ A server-rendered dashboard at `/dashboard` (Bootstrap 5.3, light/dark/auto them
 frontend build — one Go binary serves everything via `go:embed`):
 
 - **Portfolio** — record BUY/SELL transactions, view positions/P&L/risk, delete individual
-  transactions or bulk-delete via checkboxes (position cost basis is recomputed from the
-  remaining transaction history, not patched in place).
+  positions/transactions or bulk-delete either via checkboxes (position cost basis is
+  recomputed from the remaining transaction history, not patched in place).
 - **Recommendations** — run the decision engine against any watchlist symbol.
 - **Alerts** — view current non-HOLD signals across the watchlist.
 - **Backtests** — run a historical simulation and view past results.
-- **Watchlist** — add/remove tracked symbols.
+- **Watchlist** — add tracked symbols, remove them individually or in bulk via checkboxes.
 - **Account** — change password, enroll/disable TOTP two-factor auth via a real in-app QR code,
   and pick which trained ML model (correction/recovery, independently) is active — see
   [Machine learning](#machine-learning) below.

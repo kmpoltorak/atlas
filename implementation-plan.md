@@ -427,6 +427,21 @@ correctly from the same page. Verified live via Docker: recorded a BUY+SELL pair
 via checkboxes, bulk-deleted them in one request, confirmed both gone from the transaction table
 and the position recomputed to zero — the same recompute semantics as a single delete.
 
+**Bulk-delete extended to every other Remove list, in a later pass**: scoped with the Author as
+"bulk-delete should exist everywhere a per-row Remove already does," not just transactions —
+Positions (`portfolio.UseCase.RemovePositions`, `POST /dashboard/portfolio/bulk-delete`) and
+Watchlist (`watchlist.UseCase.RemoveMany`, `POST /dashboard/watchlist/bulk-delete`) got the
+identical checkbox/select-all/formaction-override pattern, and the page-local JS that wires it up
+was factored into a shared `atlasSetupBulkDelete` helper (`internal/app/web/static/js/atlas.js`)
+so three near-identical inline scripts didn't accumulate across pages. Watchlist's single-row
+delete also gained a confirm dialog it was previously missing entirely — a real, if minor, gap
+found while touching that template, not a regression. The Account page's per-role ML model
+"Remove" was deliberately left as a single-selection dropdown action, not converted to a
+checkbox list: it has no enumerable row-per-item UI to attach checkboxes to (see docs/ml.md), so
+bulk-delete there would need a real list-UI redesign first, out of scope for this pass. Verified
+live via Docker: recorded two positions and two watchlist symbols, bulk-deleted each pair in one
+request, confirmed both gone from their respective pages.
+
 **Display-language switcher, built in a later pass**: English/Polish, scoped with Kris first
 (hand-rolled `map[string]map[Lang]string` dictionary + a `T`/`actionLabel` template func pair,
 not a third-party i18n library — consistent with this codebase's stance elsewhere of only

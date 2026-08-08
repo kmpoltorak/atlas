@@ -16,28 +16,37 @@
     {{if .Success}}<div class="alert alert-success">{{.Success}}</div>{{end}}
 
     {{if .Positions}}
-    <div class="table-responsive">
-      <table class="table table-striped table-hover align-middle">
-        <thead><tr><th>{{T .Lang "table.symbol"}}</th><th>{{T .Lang "table.quantity"}}</th><th>{{T .Lang "table.avg_cost"}}</th><th>{{T .Lang "table.current_price"}}</th><th>{{T .Lang "table.pnl"}}</th><th></th></tr></thead>
-        <tbody>
-        {{range .Positions}}
-        <tr>
-          <td>{{.Symbol}}</td>
-          <td>{{printf "%.4f" .Quantity}}</td>
-          <td>{{money .AverageCost $.Rates}}</td>
-          <td>{{money .CurrentPrice $.Rates}}</td>
-          <td>{{money (pnl .) $.Rates}}</td>
-          <td class="text-end">
-            <form method="post" action="/dashboard/portfolio/delete" onsubmit="return confirm('{{printf (T $.Lang "confirm.remove_position") .Symbol}}');">
-              <input type="hidden" name="symbol" value="{{.Symbol}}">
-              <button type="submit" class="btn btn-outline-danger btn-sm">{{T $.Lang "common.remove"}}</button>
-            </form>
-          </td>
-        </tr>
-        {{end}}
-        </tbody>
-      </table>
-    </div>
+    <form method="post" action="/dashboard/portfolio/bulk-delete" id="positionsForm"
+          data-confirm-bulk="{{T .Lang "confirm.remove_positions_bulk"}}">
+      <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle">
+          <thead><tr>
+            <th><input type="checkbox" class="form-check-input" id="selectAllPositions" aria-label="{{T .Lang "table.select_all"}}"></th>
+            <th>{{T .Lang "table.symbol"}}</th><th>{{T .Lang "table.quantity"}}</th><th>{{T .Lang "table.avg_cost"}}</th><th>{{T .Lang "table.current_price"}}</th><th>{{T .Lang "table.pnl"}}</th><th></th>
+          </tr></thead>
+          <tbody>
+          {{range .Positions}}
+          <tr>
+            <td><input type="checkbox" class="form-check-input position-checkbox" name="symbols" value="{{.Symbol}}"></td>
+            <td>{{.Symbol}}</td>
+            <td>{{printf "%.4f" .Quantity}}</td>
+            <td>{{money .AverageCost $.Rates}}</td>
+            <td>{{money .CurrentPrice $.Rates}}</td>
+            <td>{{money (pnl .) $.Rates}}</td>
+            <td class="text-end">
+              <button type="submit" formaction="/dashboard/portfolio/delete" name="symbol" value="{{.Symbol}}"
+                      class="btn btn-outline-danger btn-sm"
+                      onclick="return confirm('{{printf (T $.Lang "confirm.remove_position") .Symbol}}');">{{T $.Lang "common.remove"}}</button>
+            </td>
+          </tr>
+          {{end}}
+          </tbody>
+        </table>
+      </div>
+      <button type="submit" class="btn btn-outline-danger" id="bulkDeletePositionsBtn" disabled>
+        {{T .Lang "portfolio.delete_selected"}} (<span id="selectedPositionCount">0</span>)
+      </button>
+    </form>
     {{else}}
     <p class="text-body-secondary">{{T .Lang "portfolio.no_positions"}}</p>
     {{end}}
@@ -121,42 +130,11 @@
     </div>
   </main>
   {{template "scripts" .}}
+  {{if .Positions}}
+  <script>atlasSetupBulkDelete('positionsForm', 'selectAllPositions', 'position-checkbox', 'bulkDeletePositionsBtn', 'selectedPositionCount')</script>
+  {{end}}
   {{if .Transactions}}
-  <script>
-    (() => {
-      'use strict'
-      const form = document.getElementById('transactionsForm')
-      const selectAll = document.getElementById('selectAllTransactions')
-      const rowBoxes = () => Array.from(document.querySelectorAll('.transaction-checkbox'))
-      const bulkBtn = document.getElementById('bulkDeleteTransactionsBtn')
-      const countEl = document.getElementById('selectedTransactionCount')
-
-      const refresh = () => {
-        const checked = rowBoxes().filter(cb => cb.checked)
-        countEl.textContent = checked.length
-        bulkBtn.disabled = checked.length === 0
-        selectAll.checked = checked.length > 0 && checked.length === rowBoxes().length
-        selectAll.indeterminate = checked.length > 0 && checked.length < rowBoxes().length
-      }
-
-      selectAll.addEventListener('change', () => {
-        rowBoxes().forEach(cb => { cb.checked = selectAll.checked })
-        refresh()
-      })
-      rowBoxes().forEach(cb => cb.addEventListener('change', refresh))
-
-      form.addEventListener('submit', event => {
-        // Only intercept the bulk-delete submit — per-row Remove buttons use their own
-        // formaction + onclick confirm and should submit unconditionally.
-        if (document.activeElement !== bulkBtn) return
-        const count = rowBoxes().filter(cb => cb.checked).length
-        const message = form.dataset.confirmBulk.replace('%d', count)
-        if (!confirm(message)) event.preventDefault()
-      })
-
-      refresh()
-    })()
-  </script>
+  <script>atlasSetupBulkDelete('transactionsForm', 'selectAllTransactions', 'transaction-checkbox', 'bulkDeleteTransactionsBtn', 'selectedTransactionCount')</script>
   {{end}}
 </body>
 </html>

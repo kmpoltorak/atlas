@@ -74,3 +74,45 @@ func TestRemoveRejectsEmptySymbol(t *testing.T) {
 		t.Fatal("expected error for empty symbol")
 	}
 }
+
+func TestRemoveManyUntracksEachSelectedSymbol(t *testing.T) {
+	uc := NewUseCase()
+	_ = uc.Add("AAPL", "2026-08-05T00:00:00Z")
+	_ = uc.Add("MSFT", "2026-08-05T00:00:00Z")
+	_ = uc.Add("GOOG", "2026-08-05T00:00:00Z")
+
+	if err := uc.RemoveMany([]string{"AAPL", "GOOG"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	items, _ := uc.List()
+	if len(items) != 1 || items[0].Symbol != "MSFT" {
+		t.Fatalf("expected only MSFT to remain, got %+v", items)
+	}
+}
+
+func TestRemoveManyJoinsErrorsButDeletesTheRest(t *testing.T) {
+	uc := NewUseCase()
+	_ = uc.Add("AAPL", "2026-08-05T00:00:00Z")
+
+	err := uc.RemoveMany([]string{"", "AAPL"})
+	if err == nil {
+		t.Fatal("expected an error for the empty symbol")
+	}
+	items, _ := uc.List()
+	if len(items) != 0 {
+		t.Fatalf("expected AAPL to still be removed despite the other error, got %+v", items)
+	}
+}
+
+func TestRemoveManyEmptyListIsANoop(t *testing.T) {
+	uc := NewUseCase()
+	_ = uc.Add("AAPL", "2026-08-05T00:00:00Z")
+	if err := uc.RemoveMany(nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	items, _ := uc.List()
+	if len(items) != 1 {
+		t.Fatalf("expected the existing item untouched, got %+v", items)
+	}
+}
