@@ -1,0 +1,10 @@
+/* Small, deliberate additions layered on top of vendored Bootstrap defaults — see
+   templates/partials.html's "head" block. Not a design system: Bootstrap's utilities already
+   cover spacing/color/type, this file exists only for the few things Bootstrap 5.3 has no
+   utility class for. */
+
+/* Bootstrap has no tabular-figures utility — numeric table columns need this so digits align
+   vertically for at-a-glance scanning (quantities, prices, P&L). */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}

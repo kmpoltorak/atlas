@@ -1,5 +1,6 @@
 {{define "head"}}
 <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+<link href="/static/css/atlas.css" rel="stylesheet">
 <script>
   // Bootstrap 5.3's official color-mode pattern, applied before first paint (in <head>, not
   // deferred) so there's no flash of the wrong theme. "auto" tracks the OS
@@ -12,18 +13,34 @@
     const applyTheme = theme => {
       document.documentElement.setAttribute('data-bs-theme', theme === 'auto' ? preferredTheme() : theme)
     }
+    const markActiveTheme = theme => {
+      document.querySelectorAll('[data-theme-value]').forEach(el => {
+        el.classList.toggle('active', el.getAttribute('data-theme-value') === theme)
+      })
+    }
     applyTheme(getStoredTheme() || 'auto')
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
       const stored = getStoredTheme()
       if (!stored || stored === 'auto') applyTheme('auto')
     })
     window.addEventListener('DOMContentLoaded', () => {
+      markActiveTheme(getStoredTheme() || 'auto')
       document.querySelectorAll('[data-theme-value]').forEach(el => {
         el.addEventListener('click', () => {
           const theme = el.getAttribute('data-theme-value')
           setStoredTheme(theme)
           applyTheme(theme)
+          markActiveTheme(theme)
         })
+      })
+      // Marks whichever nav link matches the current path as active — every page passes the
+      // same shared "nav" partial, so this has to run client-side rather than being decided
+      // per-template.
+      document.querySelectorAll('.navbar-nav .nav-link').forEach(link => {
+        if (link.getAttribute('href') === window.location.pathname) {
+          link.classList.add('active')
+          link.setAttribute('aria-current', 'page')
+        }
       })
     })
   })()
@@ -31,6 +48,7 @@
 {{end}}
 
 {{define "nav"}}
+<a class="visually-hidden-focusable" href="#main-content">{{T .Lang "nav.skip_to_content"}}</a>
 <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom mb-4">
   <div class="container">
     <a class="navbar-brand fw-semibold" href="/">Atlas</a>
@@ -73,7 +91,7 @@
             </li>
           </ul>
         </div>
-        <form method="post" action="/logout" class="mb-0"><button class="btn btn-outline-danger btn-sm" type="submit">{{T .Lang "nav.logout"}}</button></form>
+        <form method="post" action="/logout" class="mb-0"><button class="btn btn-outline-secondary btn-sm" type="submit">{{T .Lang "nav.logout"}}</button></form>
       </div>
     </div>
   </div>

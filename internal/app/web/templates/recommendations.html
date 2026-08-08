@@ -1,6 +1,6 @@
 {{define "recommendations"}}
 <!doctype html>
-<html lang="en">
+<html lang="{{.Lang}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,7 +9,7 @@
 </head>
 <body>
   {{template "nav" .}}
-  <main class="container pb-5">
+  <main id="main-content" class="container pb-5">
     <h1 class="h3 mb-4">{{T .Lang "recommendations.heading"}}</h1>
 
     <form class="row row-cols-auto g-2 align-items-end mb-4" method="get" action="/dashboard/recommendations">
@@ -38,15 +38,15 @@
     <div class="table-responsive">
       <table class="table">
         <tbody>
-          <tr><th>{{T .Lang "table.confidence"}}</th><td>{{printf "%.0f%%" (percent .Recommendation.Confidence)}}</td></tr>
-          <tr><th>{{T .Lang "table.score"}}</th><td>{{printf "%.3f" .Recommendation.Score}}</td></tr>
-          <tr><th>{{T .Lang "table.technical"}}</th><td>{{printf "%.3f" .Recommendation.TechnicalScore}}</td></tr>
-          <tr><th>{{T .Lang "table.ml"}}</th><td>{{printf "%.3f" .Recommendation.MLScore}}</td></tr>
-          <tr><th>{{T .Lang "table.portfolio"}}</th><td>{{printf "%.3f" .Recommendation.PortfolioScore}}</td></tr>
-          <tr><th>{{T .Lang "table.risk"}}</th><td>{{printf "%.3f" .Recommendation.RiskScore}}</td></tr>
-          {{if .Recommendation.MarketCondition}}<tr><th>{{T .Lang "table.market_condition"}}</th><td>{{.Recommendation.MarketCondition}}</td></tr>{{end}}
-          <tr><th>{{T .Lang "table.model"}}</th><td>{{.Recommendation.ModelVersion}}</td></tr>
-          <tr><th>{{T .Lang "table.ml_model"}}</th><td>{{if .Recommendation.MLModelVersion}}{{.Recommendation.MLModelVersion}}{{else}}{{T .Lang "table.ml_model_none"}}{{end}}</td></tr>
+          <tr><th scope="row">{{T .Lang "table.confidence"}}</th><td class="tabular-nums">{{printf "%.0f%%" (percent .Recommendation.Confidence)}}</td></tr>
+          <tr><th scope="row">{{T .Lang "table.score"}}</th><td class="tabular-nums">{{printf "%.3f" .Recommendation.Score}}</td></tr>
+          <tr><th scope="row">{{T .Lang "table.technical"}}</th><td class="tabular-nums">{{printf "%.3f" .Recommendation.TechnicalScore}}</td></tr>
+          <tr><th scope="row">{{T .Lang "table.ml"}}</th><td class="tabular-nums">{{printf "%.3f" .Recommendation.MLScore}}</td></tr>
+          <tr><th scope="row">{{T .Lang "table.portfolio"}}</th><td class="tabular-nums">{{printf "%.3f" .Recommendation.PortfolioScore}}</td></tr>
+          <tr><th scope="row">{{T .Lang "table.risk"}}</th><td class="tabular-nums">{{printf "%.3f" .Recommendation.RiskScore}}</td></tr>
+          {{if .Recommendation.MarketCondition}}<tr><th scope="row">{{T .Lang "table.market_condition"}}</th><td>{{.Recommendation.MarketCondition}}</td></tr>{{end}}
+          <tr><th scope="row">{{T .Lang "table.model"}}</th><td>{{.Recommendation.ModelVersion}}</td></tr>
+          <tr><th scope="row">{{T .Lang "table.ml_model"}}</th><td>{{if .Recommendation.MLModelVersion}}{{.Recommendation.MLModelVersion}}{{else}}{{T .Lang "table.ml_model_none"}}{{end}}</td></tr>
         </tbody>
       </table>
     </div>
@@ -54,7 +54,7 @@
     <ul>
       {{range .Recommendation.Reason}}<li>{{.}}</li>{{end}}
     </ul>
-    <p class="text-body-secondary small">{{T .Lang "common.disclaimer"}}</p>
+    <p class="text-body-secondary border-top pt-3">{{T .Lang "common.disclaimer"}}</p>
     {{end}}
   </main>
   {{template "scripts" .}}

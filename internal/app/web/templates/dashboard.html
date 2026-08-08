@@ -1,6 +1,6 @@
 {{define "dashboard"}}
 <!doctype html>
-<html lang="en">
+<html lang="{{.Lang}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,22 +9,28 @@
 </head>
 <body>
   {{template "nav" .}}
-  <main class="container pb-5">
+  <main id="main-content" class="container pb-5">
     <h1 class="h3 mb-4">{{T .Lang "dashboard.heading"}}</h1>
 
     <h2 class="h5">{{T .Lang "dashboard.positions"}}</h2>
     {{if .Positions}}
     <div class="table-responsive">
       <table class="table table-striped table-hover align-middle">
-        <thead><tr><th>{{T .Lang "table.symbol"}}</th><th>{{T .Lang "table.quantity"}}</th><th>{{T .Lang "table.avg_cost"}}</th><th>{{T .Lang "table.current_price"}}</th><th>{{T .Lang "table.pnl"}}</th></tr></thead>
+        <thead><tr>
+          <th scope="col">{{T .Lang "table.symbol"}}</th>
+          <th scope="col" class="text-end">{{T .Lang "table.quantity"}}</th>
+          <th scope="col" class="text-end">{{T .Lang "table.avg_cost"}}</th>
+          <th scope="col" class="text-end">{{T .Lang "table.current_price"}}</th>
+          <th scope="col" class="text-end">{{T .Lang "table.pnl"}}</th>
+        </tr></thead>
         <tbody>
         {{range .Positions}}
         <tr>
           <td>{{.Symbol}}</td>
-          <td>{{printf "%.4f" .Quantity}}</td>
-          <td>{{money .AverageCost $.Rates}}</td>
-          <td>{{money .CurrentPrice $.Rates}}</td>
-          <td>{{money (pnl .) $.Rates}}</td>
+          <td class="text-end tabular-nums">{{printf "%.4f" .Quantity}}</td>
+          <td class="text-end tabular-nums">{{money .AverageCost $.Rates}}</td>
+          <td class="text-end tabular-nums">{{money .CurrentPrice $.Rates}}</td>
+          <td class="text-end tabular-nums {{pnlClass (pnl .)}}">{{money (pnl .) $.Rates}}</td>
         </tr>
         {{end}}
         </tbody>
@@ -37,17 +43,21 @@
     <h2 class="h5 mt-4">{{T .Lang "dashboard.portfolio_risk"}}</h2>
     <div class="table-responsive">
       <table class="table">
-        <thead><tr><th>{{T .Lang "table.exposure"}}</th><th>{{T .Lang "table.drawdown"}}</th><th>{{T .Lang "table.volatility"}}</th></tr></thead>
+        <thead><tr>
+          <th scope="col">{{T .Lang "table.exposure"}}</th>
+          <th scope="col">{{T .Lang "table.drawdown"}}</th>
+          <th scope="col">{{T .Lang "table.volatility"}}</th>
+        </tr></thead>
         <tbody>
         <tr>
-          <td>{{money .Risk.Exposure .Rates}}</td>
-          <td>{{printf "%.2f%%" (percent .Risk.Drawdown)}}</td>
-          <td>{{money .Risk.Volatility .Rates}}</td>
+          <td class="tabular-nums">{{money .Risk.Exposure .Rates}}</td>
+          <td class="tabular-nums">{{printf "%.2f%%" (percent .Risk.Drawdown)}}</td>
+          <td class="tabular-nums">{{money .Risk.Volatility .Rates}}</td>
         </tr>
         </tbody>
       </table>
     </div>
-    <p class="text-body-secondary small">{{T .Lang "common.disclaimer"}}</p>
+    <p class="text-body-secondary border-top pt-3">{{T .Lang "common.disclaimer"}}</p>
   </main>
   {{template "scripts" .}}
 </body>
