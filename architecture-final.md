@@ -185,7 +185,9 @@ Reason: finance-grade validation requires strict temporal correctness and histor
 
 ## 8. Open Questions
 
-The following items require clarification before implementation begins:
+The following items required clarification before implementation began — all resolved during
+implementation, see `implementation-plan.md`/`docs/*.md` for the as-built decisions, not
+restated here:
 
 - final market data provider choice,
 - user and auth model,

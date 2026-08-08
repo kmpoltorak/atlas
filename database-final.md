@@ -135,8 +135,15 @@ POSITIONS below are migrated (migrations/001). A TRANSACTIONS table also exists 
 migrations/001 — an append-only trade-history table, missing from this ERD entirely — see
 migrations/001_init_timescaledb.sql for its actual columns. WATCHLISTS and WATCHLIST_ITEMS
 were migrated later (migrations/003) once real portfolio/watchlist persistence was wired.
-ALERTS, BACKTESTS, BACKTEST_RUNS, TRADES, and PERFORMANCE_METRICS below do not exist as
-tables anywhere yet.
+BACKTEST_RUNS exists too (migrations/005) — one row per backtest run, holding its metrics and
+model-evaluation results directly in-row (not the separate BACKTESTS/TRADES/PERFORMANCE_METRICS
+split this ERD originally proposed; see docs/backtesting.md for the actual shape). An
+AUTH_SETTINGS table (migrations/008, single-row 2FA enrollment state) also exists, missing from
+this ERD entirely since the auth model wasn't scoped yet when this proposal was written. ALERTS,
+BACKTESTS, TRADES, and PERFORMANCE_METRICS as separate tables below still do not exist — alerts
+are computed live rather than persisted, and backtest results live in BACKTEST_RUNS instead of a
+BACKTESTS/TRADES/PERFORMANCE_METRICS split. As-implemented details are current in
+`migrations/*.sql`; this ERD stays as the original approved proposal, not updated to match.
 
 ```mermaid
 erDiagram
