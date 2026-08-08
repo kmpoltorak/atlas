@@ -31,6 +31,10 @@ type DashboardPage struct {
 	// see priceAsOf (web_handlers.go). The same event that set Position.CurrentPrice, so this is
 	// genuinely "as of when" that price is from, not a live quote timestamp.
 	PriceAsOf map[string]string
+	// AlertCounts is the watchlist's current non-HOLD recommendations, grouped by action (e.g.
+	// {"BUY": 2, "SELL": 1}) — see alertCountsByAction. Nil when there are none (or the
+	// watchlist is empty), matching the Alerts page's own "no active alerts" framing.
+	AlertCounts map[string]int
 }
 
 // PortfolioPage is the view model for templates/portfolio.html.

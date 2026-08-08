@@ -49,6 +49,16 @@
     <p class="text-body-secondary">{{T .Lang "dashboard.no_positions" | safeHTML}}</p>
     {{end}}
 
+    <h2 class="h5 mt-4">{{T .Lang "dashboard.active_alerts"}}</h2>
+    {{if .AlertCounts}}
+    <p class="mb-4">
+      {{range $action, $count := .AlertCounts}}<span class="badge {{actionBadgeClass $action}} me-1">{{$count}}&times; {{actionLabel $.Lang $action}}</span>{{end}}
+      <a href="/dashboard/alerts" class="ms-2">{{T .Lang "dashboard.view_all_alerts"}}</a>
+    </p>
+    {{else}}
+    <p class="text-body-secondary mb-4">{{T .Lang "alerts.empty"}}</p>
+    {{end}}
+
     <h2 class="h5 mt-4">{{T .Lang "dashboard.portfolio_risk"}}</h2>
     <div class="table-responsive">
       <table class="table">

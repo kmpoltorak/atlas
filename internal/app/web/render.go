@@ -67,6 +67,10 @@ var funcMap = template.FuncMap{
 	// plain custom class can beat without !important of its own, so fighting that with more
 	// custom CSS is the wrong tool here.
 	"actionClass": actionClass,
+	// actionBadgeClass mirrors actionClass but for Bootstrap's badge component (the dashboard's
+	// Active Alerts summary), which needs the "text-bg-*" background+text variant rather than
+	// the plain "text-*" utility actionClass uses for table cell text.
+	"actionBadgeClass": actionBadgeClass,
 	// pnlClass mirrors actionClass's pattern (Bootstrap text-color utilities, not custom CSS,
 	// for the same table-specificity reason) but keyed on a P&L value's sign instead of an
 	// action string — gain and loss otherwise render as identical body text.
@@ -143,6 +147,17 @@ func pnlClass(pln float64) string {
 		return "text-danger fw-semibold"
 	default:
 		return "text-body-secondary"
+	}
+}
+
+func actionBadgeClass(action string) string {
+	switch action {
+	case "BUY", "ACCUMULATE":
+		return "text-bg-success"
+	case "SELL", "REDUCE":
+		return "text-bg-danger"
+	default: // HOLD, WAIT
+		return "text-bg-secondary"
 	}
 }
 
