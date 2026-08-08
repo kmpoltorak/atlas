@@ -3,12 +3,53 @@ package app
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"atlas/internal/domain/alerts"
 
 	"go.uber.org/zap"
 )
+
+// AlertPollStatus is the last StartAlertPolling background-loop attempt's outcome (success or
+// failure, and when) — read by the Alerts page so a poll failure between page loads is visible
+// without needing Grafana. Always reflects the most recent attempt, overwritten every tick;
+// this is "is the background loop currently healthy," not an accumulating error log (Prometheus/
+// Grafana already keep the full history via Metrics.AlertPollErrors).
+type AlertPollStatus struct {
+	mu  sync.Mutex
+	at  time.Time
+	err string
+}
+
+// record and Snapshot are both nil-receiver-safe: Application.AlertPoll is only non-nil when
+// built via app.New (see app.go); tests that construct an Application struct literal directly,
+// without a background poll loop to track, leave it nil, and calling either method on that nil
+// *AlertPollStatus should just no-op/report "never polled" rather than panic.
+func (s *AlertPollStatus) record(at time.Time, err error) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.at = at
+	if err != nil {
+		s.err = err.Error()
+	} else {
+		s.err = ""
+	}
+}
+
+// Snapshot returns the last recorded poll's time and error message (empty if it succeeded, or
+// if no poll has run yet — check at.IsZero() for that case).
+func (s *AlertPollStatus) Snapshot() (at time.Time, errMsg string) {
+	if s == nil {
+		return time.Time{}, ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.at, s.err
+}
 
 // StartAlertPolling runs a background loop that periodically evaluates the watchlist and
 // pushes a Discord notification for each symbol whose recommended action changes since the
@@ -47,6 +88,7 @@ func (a *Application) StartAlertPolling() func() {
 // only high-priority actions actually push a Discord notification — see isHighPriorityAction.
 func (a *Application) pollAlertsOnce(lastAction map[string]string) {
 	result, err := a.Alerts.Evaluate()
+	a.AlertPoll.record(time.Now().UTC(), err)
 	if err != nil {
 		a.Logger.Warn("alert evaluation completed with per-symbol errors", zap.Error(err))
 		a.Metrics.AlertPollErrors.Inc()
