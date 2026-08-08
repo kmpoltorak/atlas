@@ -24,6 +24,7 @@ type Config struct {
 	RecoveryModelPath  string
 	LibOnnxRuntimePath string
 	MLModelsDir        string
+	TrainerURL         string
 	AdminUsername      string
 	AdminPasswordHash  string
 }
@@ -65,6 +66,11 @@ func Load() Config {
 		// RECOVERY_MODEL_PATH above (or a durable Account-page selection — migrations/011) still
 		// decide which file actually loads.
 		MLModelsDir: envOrDefault("ML_MODELS_DIR", "/models"),
+		// Empty by default: the Account page's "Train new candidate" button then just explains
+		// how to run training/retrain.sh by hand instead, the same non-fatal-optional pattern as
+		// everything else here. Only meaningful if the atlas-trainer service is also running
+		// (docker-compose.yml's "trainer" profile, off by default) — see cmd/trainer.
+		TrainerURL: envOrDefault("TRAINER_URL", ""),
 		// Both default to "": absent means auth is disabled and Atlas runs with no login gate at
 		// all, exactly as it did before this feature existed — the same non-fatal-optional
 		// pattern as ModelPath/LibOnnxRuntimePath above. See auth.UseCase.Enabled and

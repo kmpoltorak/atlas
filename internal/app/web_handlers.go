@@ -422,6 +422,20 @@ func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	trainerConfigured := a.Trainer != nil
+	var trainerStatus web.TrainerStatus
+	var trainerErr string
+	if trainerConfigured {
+		if status, err := a.Trainer.Status(); err != nil {
+			trainerErr = err.Error()
+		} else {
+			trainerStatus = web.TrainerStatus{
+				Running: status.Running, StartedAt: status.StartedAt, FinishedAt: status.FinishedAt,
+				ExitCode: status.ExitCode, Output: status.Output, Failed: status.Failed,
+			}
+		}
+	}
+
 	web.Render(w, "account", web.AccountPage{
 		Lang:                  a.resolveLang(r),
 		Username:              a.Auth.Username,
@@ -432,6 +446,9 @@ func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, 
 		RecoveryModels:        a.modelOptions(mlUC.RoleRecovery, a.ML.CurrentRecoveryModel()),
 		CorrectionModelActive: a.ML.CurrentModel() != nil,
 		RecoveryModelActive:   a.ML.CurrentRecoveryModel() != nil,
+		TrainerConfigured:     trainerConfigured,
+		TrainerStatus:         trainerStatus,
+		TrainerError:          trainerErr,
 	})
 }
 
@@ -475,13 +492,8 @@ func (a *Application) mlModelActivateHandler(w http.ResponseWriter, r *http.Requ
 	roleValue := r.FormValue("role")
 	filename := r.FormValue("filename")
 
-	var role mlUC.Role
-	switch roleValue {
-	case string(mlUC.RoleCorrection):
-		role = mlUC.RoleCorrection
-	case string(mlUC.RoleRecovery):
-		role = mlUC.RoleRecovery
-	default:
+	role, ok := parseModelRole(roleValue)
+	if !ok {
 		a.renderAccountPage(w, r, "Unknown model role.", "")
 		return
 	}
@@ -529,6 +541,96 @@ func (a *Application) mlModelActivateHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	a.renderAccountPage(w, r, "", "Activated model "+model.Version+" for "+roleValue+".")
+}
+
+// parseModelRole validates a form-submitted role value against the two real roles ml.ListModels
+// understands — used by both mlModelActivateHandler and mlModelDeleteHandler so an unrecognized
+// value is rejected the same way in either place.
+func parseModelRole(value string) (mlUC.Role, bool) {
+	switch value {
+	case string(mlUC.RoleCorrection):
+		return mlUC.RoleCorrection, true
+	case string(mlUC.RoleRecovery):
+		return mlUC.RoleRecovery, true
+	default:
+		return "", false
+	}
+}
+
+// mlModelDeleteHandler removes a trained model file the Account page's dropdown submitted —
+// via the trainer sidecar (see internal/infrastructure/trainer), since atlas-api's own
+// ./training/models mount is read-only by design (docker-compose.yml). Refuses to delete
+// whichever model is currently active for that role: that would leave the running (in-memory)
+// model's file gone from disk, breaking a future restart or re-activation without anything
+// visibly wrong right now — the safer failure mode is refusing up front.
+func (a *Application) mlModelDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if a.Trainer == nil {
+		a.renderAccountPage(w, r, "Deleting models isn't available (TRAINER_URL is unset) — see training/README.md, or remove the file by hand from training/models/.", "")
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		a.renderAccountPage(w, r, "Invalid form submission.", "")
+		return
+	}
+	roleValue := r.FormValue("role")
+	filename := r.FormValue("filename")
+
+	role, ok := parseModelRole(roleValue)
+	if !ok {
+		a.renderAccountPage(w, r, "Unknown model role.", "")
+		return
+	}
+
+	active := a.ML.CurrentModel()
+	if role == mlUC.RoleRecovery {
+		active = a.ML.CurrentRecoveryModel()
+	}
+	found := false
+	for _, info := range a.modelOptions(role, active) {
+		if info.Filename != filename {
+			continue
+		}
+		found = true
+		if info.Active {
+			a.renderAccountPage(w, r, "Can't remove the model currently active for "+roleValue+" — activate a different one first.", "")
+			return
+		}
+	}
+	if !found {
+		a.renderAccountPage(w, r, "That model is no longer available — refresh and try again.", "")
+		return
+	}
+
+	if err := a.Trainer.Delete(filename); err != nil {
+		a.renderAccountPage(w, r, "Failed to delete that model: "+err.Error(), "")
+		return
+	}
+	a.renderAccountPage(w, r, "", "Deleted "+filename+".")
+}
+
+// mlTrainHandler triggers a new training run via the atlas-trainer sidecar (see cmd/trainer,
+// TRAINER_URL) — the real action behind the Account dashboard's "Train new candidate" button.
+// This only ever produces a new, uniquely-versioned candidate model file
+// (training/retrain.sh never touches which model is active); promoting one is still the
+// separate mlModelActivateHandler action above.
+func (a *Application) mlTrainHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if a.Trainer == nil {
+		a.renderAccountPage(w, r, "Training trigger isn't configured (TRAINER_URL is unset) — see training/README.md to run it by hand, or start the atlas-trainer service to enable this button.", "")
+		return
+	}
+	if err := a.Trainer.Trigger(); err != nil {
+		a.renderAccountPage(w, r, "Failed to start training: "+err.Error(), "")
+		return
+	}
+	a.renderAccountPage(w, r, "", "Training started — this can take a few minutes (longer on the very first run). Refresh this page to check progress.")
 }
 
 // totpSetupHandler starts a new enrollment (authUC.UseCase.BeginTOTPEnrollment) and renders the

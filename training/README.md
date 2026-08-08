@@ -109,6 +109,11 @@ survives a restart too — at startup, a saved dashboard selection takes priorit
 `MODEL_PATH`/`RECOVERY_MODEL_PATH`'s env-var default, falling back to it only if the selected
 file no longer loads.
 
+The same page also has a "Remove" button next to each model to delete old candidates you no
+longer need — this needs the atlas-trainer service (step 7 below), since atlas-api's own
+`training/models` mount is read-only by design. Refuses to delete whichever model is currently
+active for that role, so you can't pull the rug out from under live inference by mistake.
+
 ## 6. Regenerating candidates on a schedule
 
 [retrain.sh](retrain.sh) automates steps 1–3 above end to end (export both CSVs, train both
@@ -130,3 +135,32 @@ It never changes which model is active — that's always the manual step-4-or-5 
 Set `TRAINING_DISCORD_WEBHOOK_URL` if you want a Discord ping when a new candidate is ready for
 review (separate from `DISCORD_WEBHOOK_URL`/`ALERTMANAGER_DISCORD_WEBHOOK_URL`, both of which are
 about something else entirely).
+
+## 7. Triggering training from the dashboard
+
+retrain.sh can also be triggered on demand from the Account page's "Train new candidate" button
+instead of a shell/cron — it calls a small internal-only service (`cmd/trainer`) that just runs
+retrain.sh and reports back its status/output. This lives in its own container
+(`training/Dockerfile`), never inside `atlas-api`'s own image: retrain.sh needs the Go toolchain
+and a Python virtualenv at runtime, and the production image is explicitly not supposed to depend
+on either (see `PROMPT.md`, `skills/ml.md`).
+
+Off by default — start it explicitly:
+
+```
+docker compose --profile trainer up -d
+```
+
+then set `TRAINER_URL=http://atlas-trainer:8091` in `.env` and restart `atlas-api`. Without
+either step, the Account page's button just explains how to run retrain.sh by hand instead —
+nothing breaks, this is a genuinely optional enhancement over the manual/cron path above.
+
+The trainer container bind-mounts the whole repo read-write (not a copied-at-build-time image),
+so it always runs the exact same `cmd/export-training-data`/`training/train.py` code a human
+would — no rebuild needed to pick up a training-pipeline change. It uses its own venv directory
+(`TRAINING_VENV_DIR=training/.venv-container`, gitignored), separate from the one the manual
+steps above create: a venv's `python3` is a symlink back to whichever interpreter created it,
+which doesn't resolve if a venv created on your host OS gets bind-mounted into this (Linux)
+container — confirmed live running this on macOS. The first run through the container bootstraps
+its own venv from scratch (installing pandas/numpy/scikit-learn/xgboost/onnx/onnxmltools/
+onnxruntime), which takes a few minutes; every run after that reuses it and is much faster.

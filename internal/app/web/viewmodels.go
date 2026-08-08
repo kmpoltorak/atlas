@@ -99,6 +99,28 @@ type AccountPage struct {
 	// dropdown instead of implying the first listed option is the active one.
 	CorrectionModelActive bool
 	RecoveryModelActive   bool
+
+	// TrainerConfigured is true when TRAINER_URL is set (see config.Config.TrainerURL) — the
+	// "Train new candidate" section always renders, but explains how to run
+	// training/retrain.sh by hand instead when this is false, rather than showing a
+	// button that can't actually do anything.
+	TrainerConfigured bool
+	TrainerStatus     TrainerStatus
+	// TrainerError is set when TrainerConfigured but the trainer wasn't reachable when this
+	// page was rendered (e.g. the atlas-trainer service isn't running) — shown instead of a
+	// stale/zero TrainerStatus.
+	TrainerError string
+}
+
+// TrainerStatus mirrors trainer.Status (internal/infrastructure/trainer) for the Account page —
+// kept as its own type so this package doesn't need to import the infrastructure layer.
+type TrainerStatus struct {
+	Running    bool
+	StartedAt  string
+	FinishedAt string
+	ExitCode   int
+	Output     string
+	Failed     bool
 }
 
 // ModelOption is one selectable entry in the Account page's model-activation dropdowns —

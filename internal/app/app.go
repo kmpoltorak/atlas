@@ -24,6 +24,7 @@ import (
 	"atlas/internal/infrastructure/notifications"
 	"atlas/internal/infrastructure/persistence"
 	"atlas/internal/infrastructure/providers"
+	trainerInfra "atlas/internal/infrastructure/trainer"
 	"atlas/internal/observability"
 
 	"go.uber.org/zap"
@@ -64,6 +65,10 @@ type Application struct {
 	Alerts        *alertsUC.UseCase
 	Auth          *authUC.UseCase
 	ExchangeRates *exchangerateUC.UseCase
+	// Trainer is nil unless TRAINER_URL is set — the Account page's "Train new candidate"
+	// button then just explains how to run training/retrain.sh by hand instead (see
+	// cmd/trainer, docker-compose.yml's atlas-trainer service).
+	Trainer *trainerInfra.Client
 }
 
 // New connects to TimescaleDB and Redis and wires the full application. A connection
@@ -154,6 +159,11 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 		return nil, fmt.Errorf("load watchlist state: %w", err)
 	}
 
+	var trainerClient *trainerInfra.Client
+	if cfg.TrainerURL != "" {
+		trainerClient = trainerInfra.NewClient(cfg.TrainerURL)
+	}
+
 	return &Application{
 		Config:  cfg,
 		Metrics: metrics,
@@ -175,6 +185,7 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 		Alerts:        alertsUC.NewUseCase(watchlist, collector, orchestrator, cfg.CollectorWindow),
 		Auth:          authUC.NewUseCase(cfg.AdminUsername, cfg.AdminPasswordHash, redisCache, storage),
 		ExchangeRates: exchangeRates,
+		Trainer:       trainerClient,
 	}, nil
 }
 

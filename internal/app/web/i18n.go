@@ -204,6 +204,28 @@ var translations = map[string]map[Lang]string{
 	"account.ml_none_active":        {LangEN: "None active — using the deterministic stub.", LangPL: "Brak aktywnego — używany deterministyczny placeholder."},
 	"account.ml_active_badge":       {LangEN: "active", LangPL: "aktywny"},
 	"account.ml_activate_submit":    {LangEN: "Activate", LangPL: "Aktywuj"},
+	"account.ml_delete_submit":      {LangEN: "Remove", LangPL: "Usuń"},
+	"confirm.remove_model": {
+		LangEN: "Delete %s permanently? This can't be undone.",
+		LangPL: "Usunąć %s na stałe? Tej operacji nie można cofnąć.",
+	},
+
+	"account.train_heading": {LangEN: "Train new candidate", LangPL: "Wytrenuj nowego kandydata"},
+	"account.train_hint": {
+		LangEN: "Exports fresh training data and trains a new, uniquely-versioned candidate for both models. Never changes what's active — pick it above once it looks good.",
+		LangPL: "Eksportuje świeże dane treningowe i trenuje nowego, jednoznacznie wersjonowanego kandydata dla obu modeli. Nigdy nie zmienia aktywnego modelu — wybierz go powyżej, gdy wygląda dobrze.",
+	},
+	"account.train_submit": {LangEN: "Train now", LangPL: "Trenuj teraz"},
+	"account.train_not_configured": {
+		LangEN: "Not configured — set TRAINER_URL and start the atlas-trainer service to enable this, or run training/retrain.sh by hand/cron instead.",
+		LangPL: "Nie skonfigurowano — ustaw TRAINER_URL i uruchom usługę atlas-trainer, żeby to włączyć, albo uruchom training/retrain.sh ręcznie/przez cron.",
+	},
+	"account.train_unreachable": {LangEN: "Trainer isn't reachable right now:", LangPL: "Trener jest teraz nieosiągalny:"},
+	"account.train_running":     {LangEN: "Training is currently running…", LangPL: "Trening jest w trakcie…"},
+	"account.train_last_result": {LangEN: "Last run", LangPL: "Ostatnie uruchomienie"},
+	"account.train_succeeded":   {LangEN: "succeeded", LangPL: "zakończone sukcesem"},
+	"account.train_failed":      {LangEN: "failed", LangPL: "nieudane"},
+	"account.train_output":      {LangEN: "Output", LangPL: "Wynik"},
 
 	// TOTP enrollment (totp_enroll.html)
 	"totp.title":   {LangEN: "Atlas — Set up 2FA", LangPL: "Atlas — Konfiguracja 2FA"},
