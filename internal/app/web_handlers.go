@@ -58,7 +58,7 @@ func (a *Application) loginPageHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		if !a.Auth.Enabled() {
-			http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
 		requiresTOTP, err := a.Auth.TOTPStatus()
@@ -91,7 +91,7 @@ func (a *Application) loginPageHandler(w http.ResponseWriter, r *http.Request) {
 			HttpOnly: true, Secure: a.Config.CookieSecure, SameSite: http.SameSiteLaxMode,
 			MaxAge: int(authUC.SessionTTL.Seconds()),
 		})
-		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 	default:
 		methodNotAllowed(w)
 	}

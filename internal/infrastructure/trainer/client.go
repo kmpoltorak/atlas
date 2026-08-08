@@ -4,6 +4,7 @@
 package trainer
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -73,6 +74,25 @@ func (c *Client) Delete(filename string) error {
 		if body.Error != "" {
 			return fmt.Errorf("%s", body.Error)
 		}
+		return fmt.Errorf("trainer returned unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// Ping reports whether the trainer service is reachable at all — used by /health (see
+// internal/app/http_handler.go) as an informational field, distinct from Status: a caller only
+// wants to know "is atlas-trainer up", not the outcome of its last training run.
+func (c *Client) Ping(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/health", nil)
+	if err != nil {
+		return fmt.Errorf("build health request: %w", err)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("reach trainer: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("trainer returned unexpected status %d", resp.StatusCode)
 	}
 	return nil
