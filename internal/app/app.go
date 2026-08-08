@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 
 	alertsUC "atlas/internal/application/alerts"
 	analyzerUC "atlas/internal/application/analyzer"
@@ -51,20 +52,18 @@ type Application struct {
 	Cache   *cache.RedisClient
 	Discord *notifications.DiscordClient
 
-	Collector       *collectorUC.UseCase
-	Analyzer        *analyzerUC.UseCase
-	Portfolio       *portfolioUC.UseCase
-	Decision        *decisionUC.UseCase
-	Orchestrator    *decisionUC.Orchestrator
-	ML              *mlUC.UseCase
-	MLModel         *mlUC.OnnxModel // nil unless MODEL_PATH loaded successfully; owns the onnxruntime session
-	MLRecoveryModel *mlUC.OnnxModel // nil unless RECOVERY_MODEL_PATH loaded successfully; owns its own session
-	Notifications   *notificationsUC.UseCase
-	Backtesting     *backtestingUC.UseCase
-	Watchlist       *watchlistUC.UseCase
-	Alerts          *alertsUC.UseCase
-	Auth            *authUC.UseCase
-	ExchangeRates   *exchangerateUC.UseCase
+	Collector     *collectorUC.UseCase
+	Analyzer      *analyzerUC.UseCase
+	Portfolio     *portfolioUC.UseCase
+	Decision      *decisionUC.UseCase
+	Orchestrator  *decisionUC.Orchestrator
+	ML            *mlUC.UseCase
+	Notifications *notificationsUC.UseCase
+	Backtesting   *backtestingUC.UseCase
+	Watchlist     *watchlistUC.UseCase
+	Alerts        *alertsUC.UseCase
+	Auth          *authUC.UseCase
+	ExchangeRates *exchangerateUC.UseCase
 }
 
 // New connects to TimescaleDB and Redis and wires the full application. A connection
@@ -121,6 +120,13 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 			logger.Info("loaded ML recovery model", zap.String("version", model.Version))
 		}
 	}
+	// A durable Account-page selection (migrations/011) overrides the env-var default above when
+	// present — set by mlModelActivateHandler after already confirming the file loads, so a
+	// failure here means the file moved/vanished since then, not a bad request. Falls back to
+	// whatever ModelPath/RecoveryModelPath above already resolved to rather than failing to
+	// start, same non-fatal stance as everything else in this block.
+	mlModel = overrideWithSelectedModel(storage, logger, mlUC.RoleCorrection, cfg, mlModel)
+	mlRecoveryModel = overrideWithSelectedModel(storage, logger, mlUC.RoleRecovery, cfg, mlRecoveryModel)
 	if mlModel != nil || mlRecoveryModel != nil {
 		mlUseCase = mlUC.NewUseCaseWithModels(mlModel, mlRecoveryModel)
 	}
@@ -157,21 +163,45 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 		Cache:   redisCache,
 		Discord: discord,
 
-		Collector:       collector,
-		Analyzer:        analyzer,
-		Portfolio:       portfolioUseCase,
-		Decision:        decisionUseCase,
-		Orchestrator:    orchestrator,
-		ML:              mlUseCase,
-		MLModel:         mlModel,
-		MLRecoveryModel: mlRecoveryModel,
-		Notifications:   notificationsUC.NewUseCase(discord),
-		Backtesting:     backtestingUC.NewUseCase(orchestrator),
-		Watchlist:       watchlist,
-		Alerts:          alertsUC.NewUseCase(watchlist, collector, orchestrator, cfg.CollectorWindow),
-		Auth:            authUC.NewUseCase(cfg.AdminUsername, cfg.AdminPasswordHash, redisCache, storage),
-		ExchangeRates:   exchangeRates,
+		Collector:     collector,
+		Analyzer:      analyzer,
+		Portfolio:     portfolioUseCase,
+		Decision:      decisionUseCase,
+		Orchestrator:  orchestrator,
+		ML:            mlUseCase,
+		Notifications: notificationsUC.NewUseCase(discord),
+		Backtesting:   backtestingUC.NewUseCase(orchestrator),
+		Watchlist:     watchlist,
+		Alerts:        alertsUC.NewUseCase(watchlist, collector, orchestrator, cfg.CollectorWindow),
+		Auth:          authUC.NewUseCase(cfg.AdminUsername, cfg.AdminPasswordHash, redisCache, storage),
+		ExchangeRates: exchangeRates,
 	}, nil
+}
+
+// overrideWithSelectedModel checks migrations/011's ml_model_selection table for a durable
+// Account-page choice for role and, if one exists and still loads successfully, returns it in
+// place of fallback (whatever ModelPath/RecoveryModelPath env-var loading already produced).
+// Any failure along the way (DB read, missing file, load error) just logs and returns fallback
+// unchanged — the Account page selection is an enhancement over the env-var default, never a
+// new way to fail startup.
+func overrideWithSelectedModel(storage *persistence.TimescaleDB, logger *zap.Logger, role mlUC.Role, cfg config.Config, fallback *mlUC.OnnxModel) *mlUC.OnnxModel {
+	filename, ok, err := storage.GetActiveModelSelection(string(role))
+	if err != nil {
+		logger.Warn("failed to read active ML model selection; keeping env-var default", zap.String("role", string(role)), zap.Error(err))
+		return fallback
+	}
+	if !ok {
+		return fallback
+	}
+	path := filepath.Join(cfg.MLModelsDir, filename)
+	model, err := mlUC.LoadOnnxModel(path, cfg.LibOnnxRuntimePath)
+	if err != nil {
+		logger.Warn("failed to load selected ML model; keeping env-var default",
+			zap.String("role", string(role)), zap.String("filename", filename), zap.Error(err))
+		return fallback
+	}
+	logger.Info("loaded ML model from Account-page selection", zap.String("role", string(role)), zap.String("version", model.Version))
+	return model
 }
 
 // Close releases the database, cache, and (if loaded) ML model resources. Call it during
@@ -184,13 +214,13 @@ func (a *Application) Close() error {
 	if err := a.Cache.Close(); err != nil {
 		errs = append(errs, fmt.Errorf("close redis: %w", err))
 	}
-	if a.MLModel != nil {
-		if err := a.MLModel.Close(); err != nil {
+	if model := a.ML.CurrentModel(); model != nil {
+		if err := model.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("close ml model: %w", err))
 		}
 	}
-	if a.MLRecoveryModel != nil {
-		if err := a.MLRecoveryModel.Close(); err != nil {
+	if model := a.ML.CurrentRecoveryModel(); model != nil {
+		if err := model.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("close ml recovery model: %w", err))
 		}
 	}

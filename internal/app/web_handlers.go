@@ -9,10 +9,12 @@ import (
 
 	"atlas/internal/app/web"
 	authUC "atlas/internal/application/auth"
+	mlUC "atlas/internal/application/ml"
 	"atlas/internal/domain/currency"
 	"atlas/internal/domain/portfolio"
 
 	qrcode "github.com/skip2/go-qrcode"
+	"go.uber.org/zap"
 )
 
 // exchangeRatesForDisplay returns today's PLN-per-unit rates as a plain map[string]float64 for
@@ -420,7 +422,113 @@ func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	web.Render(w, "account", web.AccountPage{Lang: a.resolveLang(r), Username: a.Auth.Username, TOTPEnabled: enabled, Error: errMsg, Success: successMsg})
+	web.Render(w, "account", web.AccountPage{
+		Lang:                  a.resolveLang(r),
+		Username:              a.Auth.Username,
+		TOTPEnabled:           enabled,
+		Error:                 errMsg,
+		Success:               successMsg,
+		CorrectionModels:      a.modelOptions(mlUC.RoleCorrection, a.ML.CurrentModel()),
+		RecoveryModels:        a.modelOptions(mlUC.RoleRecovery, a.ML.CurrentRecoveryModel()),
+		CorrectionModelActive: a.ML.CurrentModel() != nil,
+		RecoveryModelActive:   a.ML.CurrentRecoveryModel() != nil,
+	})
+}
+
+// modelOptions lists every trained model file available for role (see ml.ListModels) as
+// web.ModelOption values for the Account page's dropdown, marking whichever one matches
+// active's Version as the currently-loaded one. active is nil when that role has no model
+// loaded (the deterministic stub/zero default applies) — every option is then simply not
+// active, not an error. A directory-read failure logs and renders an empty list rather than
+// failing the whole Account page — the model picker is an enhancement, not a hard dependency.
+func (a *Application) modelOptions(role mlUC.Role, active *mlUC.OnnxModel) []web.ModelOption {
+	infos, err := mlUC.ListModels(a.Config.MLModelsDir, role)
+	if err != nil {
+		a.Logger.Warn("failed to list ML models", zap.String("role", string(role)), zap.Error(err))
+		return nil
+	}
+	options := make([]web.ModelOption, len(infos))
+	for i, info := range infos {
+		options[i] = web.ModelOption{
+			Filename:    info.Filename,
+			Description: info.Description(),
+			Active:      active != nil && info.Version == active.Version,
+		}
+	}
+	return options
+}
+
+// mlModelActivateHandler loads the model the Account page's dropdown submitted and, on success,
+// hot-swaps it into the running ML use case (no restart needed — see ml.UseCase.SetModel) and
+// durably records the choice (migrations/011) so it survives one. The submitted filename is
+// re-validated against a fresh ml.ListModels scan rather than trusted as-is, so this can't be
+// used to load an arbitrary path outside ML_MODELS_DIR.
+func (a *Application) mlModelActivateHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		a.renderAccountPage(w, r, "Invalid form submission.", "")
+		return
+	}
+	roleValue := r.FormValue("role")
+	filename := r.FormValue("filename")
+
+	var role mlUC.Role
+	switch roleValue {
+	case string(mlUC.RoleCorrection):
+		role = mlUC.RoleCorrection
+	case string(mlUC.RoleRecovery):
+		role = mlUC.RoleRecovery
+	default:
+		a.renderAccountPage(w, r, "Unknown model role.", "")
+		return
+	}
+
+	infos, err := mlUC.ListModels(a.Config.MLModelsDir, role)
+	if err != nil {
+		a.renderAccountPage(w, r, "Could not read the models directory: "+err.Error(), "")
+		return
+	}
+	found := false
+	for _, info := range infos {
+		if info.Filename == filename {
+			found = true
+			break
+		}
+	}
+	if !found {
+		a.renderAccountPage(w, r, "That model is no longer available — refresh and try again.", "")
+		return
+	}
+
+	path := a.Config.MLModelsDir + "/" + filename
+	model, err := mlUC.LoadOnnxModel(path, a.Config.LibOnnxRuntimePath)
+	if err != nil {
+		a.renderAccountPage(w, r, "Failed to load that model: "+err.Error(), "")
+		return
+	}
+
+	var previous *mlUC.OnnxModel
+	if role == mlUC.RoleCorrection {
+		previous = a.ML.SetModel(model)
+	} else {
+		previous = a.ML.SetRecoveryModel(model)
+	}
+	if err := a.Storage.SetActiveModelSelection(string(role), filename); err != nil {
+		// The swap already took effect in memory; only the durable record failed, so this
+		// warns rather than rolling the swap back — a restart would just re-read MODEL_PATH's
+		// default in that case, not silently lose the running model.
+		a.Logger.Warn("failed to persist ML model selection", zap.String("role", string(role)), zap.Error(err))
+	}
+	if previous != nil {
+		if err := previous.Close(); err != nil {
+			a.Logger.Warn("failed to close previous ML model", zap.String("role", string(role)), zap.Error(err))
+		}
+	}
+
+	a.renderAccountPage(w, r, "", "Activated model "+model.Version+" for "+roleValue+".")
 }
 
 // totpSetupHandler starts a new enrollment (authUC.UseCase.BeginTOTPEnrollment) and renders the

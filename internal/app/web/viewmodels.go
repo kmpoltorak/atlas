@@ -87,6 +87,28 @@ type AccountPage struct {
 	TOTPEnabled bool
 	Error       string
 	Success     string
+
+	// CorrectionModels/RecoveryModels list every trained model file ML_MODELS_DIR currently
+	// has a metadata sidecar for (see ml.ListModels), newest first, for the model-picker
+	// dropdowns below. Empty when the directory has nothing to offer yet — the section still
+	// renders, just with no options, rather than being hidden outright.
+	CorrectionModels []ModelOption
+	RecoveryModels   []ModelOption
+	// CorrectionModelActive/RecoveryModelActive is true when that role currently has a real
+	// model loaded — used to decide whether to show a "none active" placeholder in the
+	// dropdown instead of implying the first listed option is the active one.
+	CorrectionModelActive bool
+	RecoveryModelActive   bool
+}
+
+// ModelOption is one selectable entry in the Account page's model-activation dropdowns —
+// Description is entirely derived from real training metadata (ml.ModelInfo.Description), never
+// a fabricated or hand-edited string. Active marks whichever option (if any) is the model
+// currently loaded for that role, pre-selected in the dropdown.
+type ModelOption struct {
+	Filename    string
+	Description string
+	Active      bool
 }
 
 // TOTPEnrollPage is the view model for templates/totp_enroll.html.

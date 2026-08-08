@@ -1,61 +1,314 @@
-# Atlas - AI Portfolio Advisor
+# Atlas — AI Portfolio Advisor
 
-Atlas is an AI-powered portfolio decision support platform for stocks and ETFs.
+Atlas is an AI-powered **decision-support** platform for a personal stock/ETF portfolio. It
+watches a set of symbols, computes technical indicators, runs ML predictions, and blends them
+with your actual portfolio state into an explainable BUY/ACCUMULATE/HOLD/REDUCE/SELL/WAIT
+recommendation — with a confidence score and a human-readable reason every time.
 
-The goal of the project is not to automatically trade assets but to assist investors by analyzing market data, technical indicators, machine learning predictions and portfolio state.
+**Atlas never places trades.** It has no brokerage integration and no execution path. It is an
+analytical assistant, not a trading bot.
 
-See [implementation-plan.md](implementation-plan.md) for the phased build plan and
-[PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) for an honest, up-to-date breakdown of what's actually
-implemented versus still aspirational per module.
+This README gives a full tour of what the project actually does today. For a phase-by-phase,
+continuously-updated account of what's implemented vs. explicitly out of scope, see
+[implementation-plan.md](implementation-plan.md) and [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) —
+those two files (plus [docs/*.md](docs/)) are the authoritative source of truth; this README is a
+map, not a duplicate.
 
-## Core Features
+## Table of Contents
 
-- Stock & ETF monitoring
-- Technical analysis
-- Machine Learning prediction
-- Portfolio management
-- Buy/Sell/Hold suggestions
-- Discord notifications
-- Prometheus metrics
-- Grafana dashboards
-- REST API
-- TimescaleDB historical storage
+- [What it does](#what-it-does)
+- [Architecture](#architecture)
+- [Tech stack](#tech-stack)
+- [Quickstart (Docker Compose)](#quickstart-docker-compose)
+- [Configuration](#configuration)
+- [Web dashboard](#web-dashboard)
+- [REST API](#rest-api)
+- [Machine learning](#machine-learning)
+- [Backtesting](#backtesting)
+- [Observability](#observability)
+- [Kubernetes deployment](#kubernetes-deployment)
+- [Multi-currency portfolio](#multi-currency-portfolio)
+- [Development](#development)
+- [Project status & documentation map](#project-status--documentation-map)
 
-## Tech Stack
-Backend:
-- Go
+## What it does
 
-ML Training (offline, not part of the deployed service — see [training/README.md](training/README.md)):
-- Python, XGBoost, exported to ONNX for Go inference
+For every symbol on your watchlist, Atlas:
 
-Database:
-- TimescaleDB
+1. **Collects** real hourly OHLCV history from a live market data provider (Yahoo Finance's
+   unofficial chart endpoint) and persists it to TimescaleDB.
+2. **Computes technical indicators** — RSI, EMA, MACD, ATR, ADX, OBV, Bollinger Bands, volume
+   analysis.
+3. **Runs ML inference** — an XGBoost model (trained offline, exported to ONNX, run natively in
+   Go) predicts correction probability; a second, independent model predicts recovery
+   probability. A deterministic ADX+EMA rule classifies the current market regime
+   (BULL/BEAR/SIDEWAYS) — no model needed for that one.
+4. **Reads your actual portfolio** — current position, average cost, P&L, exposure, and
+   portfolio-wide risk (drawdown/volatility/concentration) all feed into the decision, not just
+   the symbol in isolation.
+5. **Produces a recommendation** — BUY, ACCUMULATE, HOLD, REDUCE, SELL, or WAIT, each with a
+   confidence score and an explanation listing which signals drove the call. Every recommendation
+   is persisted (append-only) for full traceability.
+6. **Notifies** — high-priority actions (BUY/SELL/REDUCE) push to Discord; everything is scraped
+   by Prometheus and visualized in Grafana.
 
-Cache:
-- Redis
+Everything above is real and verified live end-to-end (real HTTP requests against a real Docker
+stack, real TimescaleDB rows) — not a mockup. Where something is a known limitation (e.g. a
+small/skewed ML training dataset), the docs say so explicitly instead of hiding it; see
+[Machine learning](#machine-learning) below.
 
-Monitoring:
-- Prometheus
-- Grafana
+## Architecture
 
-Notifications:
-- Discord Webhook
+Clean Architecture, four layers, one Go binary:
 
-Deployment:
-- Docker (Debian-based; bundles libonnxruntime for ML inference — see [Dockerfile](Dockerfile))
-- Kubernetes Ready
+```
+API (HTTP handlers, request/response shaping)
+  -> Application (use cases: collector, analyzer, ml, portfolio, decision, backtesting, alerts, auth, watchlist)
+    -> Domain (market, portfolio, ml, decision, backtesting, currency, watchlist, alerts — pure types + business rules)
+      -> Infrastructure (TimescaleDB repositories, Redis cache, Yahoo/NBP provider adapters, Discord webhook, ONNX runtime, Prometheus exporter)
+```
 
-## Project Philosophy
-Architecture First
+- Business logic never lives in HTTP handlers.
+- Every cross-cutting dependency (market provider, ML model, notification channel, exchange-rate
+  source) sits behind an interface and is optional/non-fatal when unconfigured — Atlas always
+  starts, degrading gracefully (e.g. falling back to a deterministic stub prediction when no ML
+  model is loaded) rather than refusing to boot.
+- A background loop (`internal/app/alerts_loop.go`, default every 5 minutes) evaluates the
+  watchlist continuously, which is also what keeps real price history accumulating in the
+  background for later ML training — no separate ingestion job needed.
 
-Performance First
+See [architecture-final.md](architecture-final.md) for the original approved design and
+[docs/architecture.md](docs/architecture.md) / [docs/decision_engine.md](docs/decision_engine.md)
+for the as-built detail, including the exact scoring formula.
 
-Everything Observable
+## Tech stack
 
-Everything Testable
+| Concern | Choice |
+|---|---|
+| Backend | Go |
+| Database | TimescaleDB (PostgreSQL + time-series hypertables) |
+| Cache | Redis |
+| ML training | Python — pandas, XGBoost, ONNX/onnxmltools (offline only, not deployed) |
+| ML inference | Go, via `onnxruntime_go` (cgo, native `libonnxruntime`) |
+| Web dashboard | Server-rendered `html/template`, Bootstrap 5.3 (vendored, no CDN/JS build) |
+| Monitoring | Prometheus + Grafana |
+| Alerting | Alertmanager (infra alerts) + Discord webhooks (business + infra, separate channels) |
+| Deployment | Docker Compose (local/single-host) and Kubernetes manifests (`deploy/`) |
 
-Everything Configurable
+This is the project's only cgo dependency, which is why the container image is Debian
+(`debian:bookworm-slim`), not Alpine — musl-based libc can't safely load the bundled
+`libonnxruntime.so`. See the [Dockerfile](Dockerfile)'s comments for the full reasoning.
 
-No Trading Automation
+## Quickstart (Docker Compose)
 
-Decision Support Only
+Requirements: Docker + Docker Compose. Nothing else — no local Go/Python toolchain needed to run
+the stack.
+
+```bash
+git clone <this repo>
+cd atlas
+docker compose up -d
+```
+
+That's it — every setting has a working default baked into `docker-compose.yml`, so the stack
+comes up with zero configuration. What you get:
+
+| Service | URL | Purpose |
+|---|---|---|
+| `atlas-api` | http://localhost:8080 | REST API + web dashboard |
+| `timescaledb` | localhost:5432 | Primary database |
+| `redis` | localhost:6379 | Cache |
+| `prometheus` | http://localhost:9090 | Metrics scraping |
+| `alertmanager` | http://localhost:9093 | Infra alert routing |
+| `grafana` | http://localhost:3000 | Dashboards (default login `admin`/`admin`) |
+
+Open http://localhost:8080/dashboard for the web UI, or start collecting history for a symbol
+directly via the API:
+
+```bash
+curl "http://localhost:8080/prices?symbol=AAPL&window=60"
+curl "http://localhost:8080/recommendations?symbol=AAPL"
+```
+
+To use real secrets (Discord webhooks, a non-default DB password, admin login) instead of the
+baked-in defaults, copy `.env.example` to `.env` and fill it in — `.env` is gitignored, so real
+values never get committed. See [Configuration](#configuration) below for every variable.
+
+## Configuration
+
+Every setting is an environment variable (`internal/config/config.go`), and every optional
+integration is non-fatal when unset — Atlas degrades gracefully instead of refusing to start.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SERVER_PORT` | `8080` | HTTP listen port |
+| `LOG_LEVEL` | `info` | zap log level |
+| `DATABASE_HOST`/`PORT`/`NAME`/`USER`/`PASSWORD` | `timescaledb`/`5432`/`atlas`/`atlas`/`atlas` | TimescaleDB connection |
+| `REDIS_HOST`/`PORT` | `redis`/`6379` | Redis connection |
+| `PROMETHEUS_ENABLED` | `true` | Toggle metrics exposition |
+| `MARKET_PROVIDER` | `yahoo` | Metrics/logging label only — Yahoo is the sole provider (see [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)'s Market Data Providers section for why Stooq was evaluated and dropped) |
+| `COLLECTOR_WINDOW_DAYS` | `30` | How much history to request per collection call |
+| `ALERT_POLL_INTERVAL_SECONDS` | `300` | Background watchlist-evaluation interval |
+| `DISCORD_WEBHOOK_URL` | *(empty → disabled)* | Business alerts: BUY/SELL/REDUCE notifications |
+| `ALERTMANAGER_DISCORD_WEBHOOK_URL` | *(empty → disabled)* | Infra alerts: pod down/flapping/high error rate — deliberately a **separate** webhook/channel from the one above |
+| `MODEL_PATH` | *(empty → deterministic stub)* | Path to a trained correction-probability ONNX model |
+| `RECOVERY_MODEL_PATH` | *(empty → recovery probability stays 0)* | Path to a trained recovery-probability ONNX model, fully independent of `MODEL_PATH` |
+| `LIBONNXRUNTIME_PATH` | Dockerfile default (`/usr/lib/libonnxruntime.so`) | Native ONNX Runtime library location |
+| `ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH` | *(empty → no login gate)* | Enables password+TOTP auth for the dashboard/API — generate a hash with `go run ./cmd/generate-admin-credentials` |
+
+`GRAFANA_ADMIN_PASSWORD` and `DATABASE_PASSWORD` are also read directly by `docker-compose.yml`
+for the `grafana`/`timescaledb` containers themselves. See `.env.example` for the full,
+copy-pasteable list with inline comments.
+
+## Web dashboard
+
+A server-rendered dashboard at `/dashboard` (Bootstrap 5.3, light/dark/auto theme, no separate
+frontend build — one Go binary serves everything via `go:embed`):
+
+- **Portfolio** — record BUY/SELL transactions, view positions/P&L/risk, delete individual
+  transactions or bulk-delete via checkboxes (position cost basis is recomputed from the
+  remaining transaction history, not patched in place).
+- **Recommendations** — run the decision engine against any watchlist symbol.
+- **Alerts** — view current non-HOLD signals across the watchlist.
+- **Backtests** — run a historical simulation and view past results.
+- **Watchlist** — add/remove tracked symbols.
+- **Account** — change password, enroll/disable TOTP two-factor auth via a real in-app QR code,
+  and pick which trained ML model (correction/recovery, independently) is active — see
+  [Machine learning](#machine-learning) below.
+
+Authentication is opt-in: leave `ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH` unset and there's no login
+gate at all (matches every curl-based workflow above). Set both and every route except
+`/health`, `/metrics`, `/login`, and `/static/*` requires a session — the dashboard redirects to
+`/login`, while the raw JSON API returns a real `401` instead. English and Polish are both fully
+supported, switchable per-request, persisted in a cookie.
+
+## REST API
+
+All endpoints are JSON except the dashboard/auth routes, which serve HTML. Full request/response
+shapes: [docs/api.md](docs/api.md).
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/health` | GET | Liveness check |
+| `/metrics` | GET | Prometheus exposition |
+| `/symbols` | GET | List known symbols |
+| `/prices` | GET | Fetch/collect OHLCV history for a symbol |
+| `/portfolio` | GET/POST | View positions + risk / record a transaction |
+| `/transactions` | GET | List recorded transactions |
+| `/watchlist` | GET/POST | View / add tracked symbols |
+| `/alerts` | GET | Evaluate the watchlist for non-HOLD signals |
+| `/recommendations` | GET | Run the decision engine for a symbol |
+| `/predictions` | GET | Raw ML model output for a symbol |
+| `/backtests` | GET | Run a historical simulation |
+| `/backtests/history` | GET | Past backtest runs |
+| `/backtests/walkforward` | GET | Walk-forward threshold optimization (report-only, never auto-applied) |
+
+## Machine learning
+
+Two independent, optional binary classifiers (XGBoost → ONNX), trained offline on real collected
+history — never synthetic data:
+
+- **Correction probability** (`MODEL_PATH`) — probability of a >5% close-price drop within the
+  next 10 bars.
+- **Recovery probability** (`RECOVERY_MODEL_PATH`) — conditional on a correction having actually
+  happened, probability it recovers to its pre-drop price within N bars. Meaningfully thinner
+  training data than the correction model by construction (recovery is only a defined question
+  *after* a correction), so its current metrics deserve more skepticism, not less — see
+  [docs/ml.md](docs/ml.md) for the honest, current numbers.
+
+Neither model is loaded by default — Atlas falls back to a deterministic RSI-derived stub
+prediction (correction) / leaves recovery probability at `0` (recovery), both logged clearly at
+startup, not treated as an error. A **market condition** classifier also exists
+(BULL/BEAR/SIDEWAYS) but is deliberately *not* ML — it's a deterministic ADX+EMA technical rule,
+since that doesn't need labeled historical outcomes to define.
+
+Training reuses the exact same Go feature-computation code the live inference path uses
+(`cmd/export-training-data` calls the real analyzer), so training and serving can never silently
+drift apart. Full runbook, including how to point a running stack at a freshly trained model:
+[training/README.md](training/README.md). Model files are gitignored local/CI artifacts, never
+committed source.
+
+**Generating candidates is automatable; promoting one is always a human decision.**
+[training/retrain.sh](training/retrain.sh) exports fresh data and trains a new, uniquely-versioned
+candidate for both models (never overwriting an existing file) — schedule it with cron/a systemd
+timer to regenerate candidates as more real history accumulates. It never changes what's live: a
+new candidate only starts influencing real recommendations once picked from the **Account**
+dashboard page (`/dashboard/account`), which lists every trained model with its real holdout
+AUC/accuracy/row count and swaps it in immediately — no restart needed — while durably recording
+the choice (`migrations/011`) so it survives one. This is deliberate, not just unfinished: given
+how thin and skewed the real training data still is (see the caveats in
+[docs/ml.md](docs/ml.md)), a human should look at each new model's metrics before it starts
+driving real recommendations — the same "never auto-promote" stance already applied to
+walk-forward threshold optimization above.
+
+## Backtesting
+
+A historical simulation engine (`internal/application/backtesting`) that judges each action from
+its own simulated position (never leaking live portfolio state), reports Returns/Sharpe/
+Volatility/Max Drawdown/Win Rate, and scores the loaded ML model's predictions against realized
+outcomes (Accuracy/Precision/Recall/F1/ROC AUC). Every run persists to `backtest_runs`
+(queryable via `/backtests/history`). Walk-forward train/validate/test splitting and a small
+threshold grid search are also real (`/backtests/walkforward`) — results are report-only and
+never auto-applied to the live decision engine. Full detail: [docs/backtesting.md](docs/backtesting.md).
+
+## Observability
+
+- `/metrics` exposes HTTP, provider, decision, ML, and Discord-alert counters (Prometheus format),
+  scraped by `prometheus/prometheus.yml` and visualized via `grafana/dashboards/`.
+- Infrastructure alerting rules (`prometheus/alerts.yml`: API down, crash-loop/flapping, high
+  error rate) route through Alertmanager to a Discord channel — deliberately separate from the
+  business-alert webhook above, so infra noise never mixes with investment notifications.
+- Structured JSON logs throughout (zap).
+
+## Kubernetes deployment
+
+`deploy/` contains manifests for `atlas-api` (namespace, configmap, secret template, deployment
+with a non-root/read-only-root security context, `/health` probes, service, ingress, HPA, PDB)
+plus a daily TimescaleDB backup `CronJob` (7-day retention). Secret management is deliberately
+manual `kubectl create secret` — no Sealed Secrets/External Secrets Operator, judged more than
+this project's single-user scale needs. A disaster-recovery runbook
+([deploy/RUNBOOK.md](deploy/RUNBOOK.md)) has been rehearsed for real, twice — once against Docker
+Compose, once against a real Kubernetes cluster (minikube) — and documents two real bugs each
+drill found and fixed. Testing against a real managed/production cluster and off-cluster backup
+storage (S3/GCS/etc.) are explicitly out of scope for this project. See
+[deploy/README.md](deploy/README.md) for the full apply instructions.
+
+## Multi-currency portfolio
+
+Transactions can be recorded in PLN, EUR, or USD. Each is converted to PLN once, at the moment
+it's recorded, using that day's real NBP (Polish central bank) reference rate — never
+recomputed later, so a position's cost basis only changes when a real transaction is added or
+removed, not from FX movement alone. All internal math (Decision Engine, risk, ROI, backtesting)
+works in PLN only and never needs to know multi-currency exists; the dashboard shows a live
+secondary EUR/USD conversion wherever a PLN value is displayed.
+
+## Development
+
+```bash
+go build ./...
+go vet ./...
+gofmt -l .          # should print nothing
+go test ./...
+```
+
+CI (`.github/workflows/ci.yml`) runs the same checks plus `govulncheck` and a Docker build
+validation against real TimescaleDB + Redis service containers on every PR. The `Push`/`Deploy`
+stages (publishing images, deploying to a cluster) are explicitly out of scope — this project
+doesn't have a real container registry or production cluster to target.
+
+## Project status & documentation map
+
+| Document | What it's for |
+|---|---|
+| [implementation-plan.md](implementation-plan.md) | Phase-by-phase build plan with a live "Implementation status" note per phase — the single best place to check what's actually done |
+| [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) | Component-by-component architecture reference with the same honest implementation-status treatment |
+| [docs/](docs/) | Deep dives: `architecture.md`, `decision_engine.md`, `ml.md`, `backtesting.md`, `database.md`, `deployment.md`, `api.md` |
+| [training/README.md](training/README.md) | ML training pipeline runbook |
+| [deploy/README.md](deploy/README.md), [deploy/RUNBOOK.md](deploy/RUNBOOK.md) | Kubernetes apply instructions and the disaster-recovery runbook |
+| [PROMPT.md](PROMPT.md) | The standing development rules this project is built against |
+| [architecture-final.md](architecture-final.md), [database-final.md](database-final.md) | The original approved design proposals (point-in-time, kept as historical record) |
+
+As of this writing, every phase in `implementation-plan.md` is either fully implemented or
+explicitly marked out of scope — the only intentionally excluded items are multi-user accounts,
+OAuth2/OIDC, and a full SPA frontend, none of which fit this project's "single-user personal
+tool" scope today.

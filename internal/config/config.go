@@ -23,6 +23,7 @@ type Config struct {
 	ModelPath          string
 	RecoveryModelPath  string
 	LibOnnxRuntimePath string
+	MLModelsDir        string
 	AdminUsername      string
 	AdminPasswordHash  string
 }
@@ -58,6 +59,12 @@ func Load() Config {
 		ModelPath:          envOrDefault("MODEL_PATH", ""),
 		RecoveryModelPath:  envOrDefault("RECOVERY_MODEL_PATH", ""),
 		LibOnnxRuntimePath: envOrDefault("LIBONNXRUNTIME_PATH", ""),
+		// Directory the Account dashboard page scans for selectable trained models (see
+		// internal/application/ml.ListModels) — matches the container path docker-compose.yml
+		// mounts training/models to read-only. Only used for discovery/display; MODEL_PATH/
+		// RECOVERY_MODEL_PATH above (or a durable Account-page selection — migrations/011) still
+		// decide which file actually loads.
+		MLModelsDir: envOrDefault("ML_MODELS_DIR", "/models"),
 		// Both default to "": absent means auth is disabled and Atlas runs with no login gate at
 		// all, exactly as it did before this feature existed — the same non-fatal-optional
 		// pattern as ModelPath/LibOnnxRuntimePath above. See auth.UseCase.Enabled and

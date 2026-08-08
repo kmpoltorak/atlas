@@ -112,7 +112,13 @@ pre-drop price within N bars"), verified live end-to-end the same way (persisted
 is honestly thin, more so than the correction model's own: 222 rows across 7 symbols, 3 of which
 have zero recovered examples at all, holdout AUC 0.83 on n=46 — a real number, not fabricated,
 but one to treat with real caution, not as a settled signal (see docs/ml.md's Implementation
-status note for the full caveat). Market condition is real and live today, but deliberately
+status note for the full caveat). Retraining and promotion no longer require editing an env var
+and restarting: `training/retrain.sh` generates new, uniquely-versioned candidates on demand or a
+schedule, and the Account dashboard page (`/dashboard/account`) lets an admin pick which trained
+model is active per role from real holdout metrics — a hot-swap (`ml.UseCase.SetModel`/
+`SetRecoveryModel`, `atomic.Pointer`) with no restart, durably recorded so it survives one. A
+human still decides which candidate goes live; nothing auto-promotes (see docs/ml.md's "Model
+selection and retraining" section). Market condition is real and live today, but deliberately
 *not* ML — `ml.ClassifyMarketCondition` is a deterministic ADX+EMA technical rule
 (BULL/BEAR/SIDEWAYS), which doesn't share either probability model's data-volume concerns, wired
 into `Recommendation.MarketCondition` (see Decision Engine section below).

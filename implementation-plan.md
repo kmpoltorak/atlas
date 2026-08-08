@@ -160,6 +160,25 @@ other optional dependency's non-fatal pattern), with its own persisted columns
 end-to-end through the actual HTTP API and a real Docker container: a real prediction for MSFT
 returned a genuine, non-default `recovery_probability`, persisted correctly to TimescaleDB.
 
+**Model selection and retraining, built in a later pass**: retraining was manual and promotion
+meant editing `MODEL_PATH`/`RECOVERY_MODEL_PATH` and restarting — scoped with the Author as worth
+improving. `training/retrain.sh` now automates generating a new, uniquely-versioned candidate
+(export + train, both targets) and can be scheduled (cron/systemd timer) to run periodically as
+real history accumulates; it never touches which model is live. Promoting a candidate is now a
+GUI action instead of an env-var-and-restart one — the Account dashboard page lists every trained
+model with its real holdout metrics (`ml.ListModels`, reading each model's metadata sidecar) and
+activating one hot-swaps it into live inference immediately via `ml.UseCase.SetModel`/
+`SetRecoveryModel` (`atomic.Pointer`, safe under concurrent requests — `Model`/`RecoveryModel`
+were plain fields before this, which would have been a data race once swapping was possible), no
+restart needed, durably recorded (`migrations/011`) so the choice survives one too. Deliberately
+still not automatic end-to-end: a human still picks which candidate goes live, the same
+"never auto-promote" stance already applied to walk-forward threshold optimization below — with
+training data this thin, a person should see a candidate's real metrics before it drives real
+recommendations. Verified live: activated a freshly `retrain.sh`-produced candidate from the
+Account page, confirmed the next `/predictions` call returned its version with no restart, then
+restarted the container and confirmed the saved selection (not `MODEL_PATH`'s env-var default)
+came back up.
+
 ## 7. Phase 5 — Observability and Notifications
 
 Scope:
