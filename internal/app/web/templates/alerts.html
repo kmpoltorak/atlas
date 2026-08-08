@@ -25,8 +25,8 @@
           <td>{{.Recommendation.Symbol}}</td>
           <td class="{{actionClass .Recommendation.Action}}">{{actionLabel $.Lang .Recommendation.Action}}</td>
           <td class="text-end tabular-nums">{{printf "%.0f%%" (percent .Recommendation.Confidence)}}</td>
-          <td>{{.TriggeredAt}}</td>
-          <td>{{join .Recommendation.Reason}}</td>
+          <td>{{(localTime .TriggeredAt).Format "2006-01-02 15:04"}}</td>
+          <td>{{joinReasons $.Lang .Recommendation.Reason}}</td>
         </tr>
         {{end}}
         </tbody>

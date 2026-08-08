@@ -81,7 +81,7 @@
         <tbody>
         {{range .Result.Trades}}
         <tr>
-          <td>{{.Timestamp.Format "2006-01-02"}}</td>
+          <td>{{(localTime .Timestamp).Format "2006-01-02"}}</td>
           <td class="{{actionClass .Action}}">{{actionLabel $.Lang .Action}}</td>
           <td class="text-end tabular-nums">{{printf "%.2f" .Price}}</td>
           <td class="text-end tabular-nums">{{printf "%.4f" .Quantity}}</td>

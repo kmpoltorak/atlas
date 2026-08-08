@@ -78,7 +78,7 @@
             <td class="text-end tabular-nums">{{printf "%.2f" .Price}}</td>
             <td>{{.Currency}}</td>
             <td class="text-end tabular-nums">{{printf "%.2f" .PriceInPLN}}</td>
-            <td>{{.Timestamp}}</td>
+            <td>{{(localTime .Timestamp).Format "2006-01-02 15:04"}}</td>
             <td class="text-end">
               <button type="submit" formaction="/dashboard/portfolio/transactions/delete" name="id" value="{{.ID}}"
                       class="btn btn-outline-danger btn-sm"
