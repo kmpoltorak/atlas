@@ -1,6 +1,6 @@
 {{define "alerts"}}
 <!doctype html>
-<html lang="en">
+<html lang="{{.Lang}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,7 +9,7 @@
 </head>
 <body>
   {{template "nav" .}}
-  <main class="container pb-5">
+  <main id="main-content" class="container pb-5">
     <h1 class="h3 mb-1">{{T .Lang "alerts.heading"}}</h1>
     <p class="text-body-secondary small mb-4">{{T .Lang "alerts.subtitle"}}</p>
 
@@ -18,13 +18,13 @@
     {{if .Alerts}}
     <div class="table-responsive">
       <table class="table table-striped table-hover align-middle">
-        <thead><tr><th>{{T .Lang "table.symbol"}}</th><th>{{T .Lang "table.action"}}</th><th>{{T .Lang "table.confidence"}}</th><th>{{T .Lang "table.triggered_at"}}</th><th>{{T .Lang "table.reason"}}</th></tr></thead>
+        <thead><tr><th scope="col">{{T .Lang "table.symbol"}}</th><th scope="col">{{T .Lang "table.action"}}</th><th scope="col" class="text-end">{{T .Lang "table.confidence"}}</th><th scope="col">{{T .Lang "table.triggered_at"}}</th><th scope="col">{{T .Lang "table.reason"}}</th></tr></thead>
         <tbody>
         {{range .Alerts}}
         <tr>
           <td>{{.Recommendation.Symbol}}</td>
           <td class="{{actionClass .Recommendation.Action}}">{{actionLabel $.Lang .Recommendation.Action}}</td>
-          <td>{{printf "%.0f%%" (percent .Recommendation.Confidence)}}</td>
+          <td class="text-end tabular-nums">{{printf "%.0f%%" (percent .Recommendation.Confidence)}}</td>
           <td>{{.TriggeredAt}}</td>
           <td>{{join .Recommendation.Reason}}</td>
         </tr>

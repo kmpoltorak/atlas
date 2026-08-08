@@ -1,6 +1,6 @@
 {{define "account"}}
 <!doctype html>
-<html lang="en">
+<html lang="{{.Lang}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,7 +9,7 @@
 </head>
 <body>
   {{template "nav" .}}
-  <main class="container pb-5">
+  <main id="main-content" class="container pb-5">
     <h1 class="h3 mb-4">{{T .Lang "account.heading"}}</h1>
 
     {{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
@@ -18,8 +18,8 @@
     <div class="table-responsive">
       <table class="table">
         <tbody>
-          <tr><th>{{T .Lang "table.username"}}</th><td>{{.Username}}</td></tr>
-          <tr><th>{{T .Lang "account.two_factor"}}</th><td>{{if .TOTPEnabled}}<span class="badge text-bg-success">{{T .Lang "common.enabled"}}</span>{{else}}<span class="badge text-bg-secondary">{{T .Lang "common.disabled"}}</span>{{end}}</td></tr>
+          <tr><th scope="row">{{T .Lang "table.username"}}</th><td>{{.Username}}</td></tr>
+          <tr><th scope="row">{{T .Lang "account.two_factor"}}</th><td>{{if .TOTPEnabled}}<span class="badge text-bg-success">{{T .Lang "common.enabled"}}</span>{{else}}<span class="badge text-bg-secondary">{{T .Lang "common.disabled"}}</span>{{end}}</td></tr>
         </tbody>
       </table>
     </div>

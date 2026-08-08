@@ -39,6 +39,10 @@ var funcMap = template.FuncMap{
 	// plain custom class can beat without !important of its own, so fighting that with more
 	// custom CSS is the wrong tool here.
 	"actionClass": actionClass,
+	// pnlClass mirrors actionClass's pattern (Bootstrap text-color utilities, not custom CSS,
+	// for the same table-specificity reason) but keyed on a P&L value's sign instead of an
+	// action string — gain and loss otherwise render as identical body text.
+	"pnlClass": pnlClass,
 	// T and actionLabel are the i18n lookups (see i18n.go) — every page passes its own .Lang
 	// through so these can be called as {{T .Lang "key"}} / {{actionLabel .Lang .Action}}.
 	"T":           T,
@@ -69,6 +73,17 @@ func money(pln float64, rates map[string]float64) template.HTML {
 	}
 	return template.HTML(fmt.Sprintf(`%s<br><small class="text-body-secondary">&asymp; %s</small>`,
 		primary, strings.Join(secondary, " / "))) //nolint:gosec // numeric-only interpolation, no user input
+}
+
+func pnlClass(pln float64) string {
+	switch {
+	case pln > 0:
+		return "text-success fw-semibold"
+	case pln < 0:
+		return "text-danger fw-semibold"
+	default:
+		return "text-body-secondary"
+	}
 }
 
 func actionClass(action string) string {

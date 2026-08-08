@@ -1,6 +1,6 @@
 {{define "portfolio"}}
 <!doctype html>
-<html lang="en">
+<html lang="{{.Lang}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,7 +9,7 @@
 </head>
 <body>
   {{template "nav" .}}
-  <main class="container pb-5">
+  <main id="main-content" class="container pb-5">
     <h1 class="h3 mb-4">{{T .Lang "portfolio.heading"}}</h1>
 
     {{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
@@ -21,18 +21,18 @@
       <div class="table-responsive">
         <table class="table table-striped table-hover align-middle">
           <thead><tr>
-            <th><input type="checkbox" class="form-check-input" id="selectAllPositions" aria-label="{{T .Lang "table.select_all"}}"></th>
-            <th>{{T .Lang "table.symbol"}}</th><th>{{T .Lang "table.quantity"}}</th><th>{{T .Lang "table.avg_cost"}}</th><th>{{T .Lang "table.current_price"}}</th><th>{{T .Lang "table.pnl"}}</th><th></th>
+            <th scope="col"><input type="checkbox" class="form-check-input" id="selectAllPositions" aria-label="{{T .Lang "table.select_all"}}"></th>
+            <th scope="col">{{T .Lang "table.symbol"}}</th><th scope="col" class="text-end">{{T .Lang "table.quantity"}}</th><th scope="col" class="text-end">{{T .Lang "table.avg_cost"}}</th><th scope="col" class="text-end">{{T .Lang "table.current_price"}}</th><th scope="col" class="text-end">{{T .Lang "table.pnl"}}</th><th scope="col"></th>
           </tr></thead>
           <tbody>
           {{range .Positions}}
           <tr>
             <td><input type="checkbox" class="form-check-input position-checkbox" name="symbols" value="{{.Symbol}}"></td>
             <td>{{.Symbol}}</td>
-            <td>{{printf "%.4f" .Quantity}}</td>
-            <td>{{money .AverageCost $.Rates}}</td>
-            <td>{{money .CurrentPrice $.Rates}}</td>
-            <td>{{money (pnl .) $.Rates}}</td>
+            <td class="text-end tabular-nums">{{printf "%.4f" .Quantity}}</td>
+            <td class="text-end tabular-nums">{{money .AverageCost $.Rates}}</td>
+            <td class="text-end tabular-nums">{{money .CurrentPrice $.Rates}}</td>
+            <td class="text-end tabular-nums {{pnlClass (pnl .)}}">{{money (pnl .) $.Rates}}</td>
             <td class="text-end">
               <button type="submit" formaction="/dashboard/portfolio/delete" name="symbol" value="{{.Symbol}}"
                       class="btn btn-outline-danger btn-sm"
@@ -58,8 +58,8 @@
       <div class="table-responsive">
         <table class="table table-striped table-hover align-middle">
           <thead><tr>
-            <th><input type="checkbox" class="form-check-input" id="selectAllTransactions" aria-label="{{T .Lang "table.select_all"}}"></th>
-            <th>{{T .Lang "table.symbol"}}</th><th>{{T .Lang "table.type"}}</th><th>{{T .Lang "table.quantity"}}</th><th>{{T .Lang "table.price"}}</th><th>{{T .Lang "table.currency"}}</th><th>{{T .Lang "table.pln_equivalent"}}</th><th>{{T .Lang "table.timestamp"}}</th><th></th>
+            <th scope="col"><input type="checkbox" class="form-check-input" id="selectAllTransactions" aria-label="{{T .Lang "table.select_all"}}"></th>
+            <th scope="col">{{T .Lang "table.symbol"}}</th><th scope="col">{{T .Lang "table.type"}}</th><th scope="col" class="text-end">{{T .Lang "table.quantity"}}</th><th scope="col" class="text-end">{{T .Lang "table.price"}}</th><th scope="col">{{T .Lang "table.currency"}}</th><th scope="col" class="text-end">{{T .Lang "table.pln_equivalent"}}</th><th scope="col">{{T .Lang "table.timestamp"}}</th><th scope="col"></th>
           </tr></thead>
           <tbody>
           {{range .Transactions}}
@@ -67,10 +67,10 @@
             <td><input type="checkbox" class="form-check-input transaction-checkbox" name="ids" value="{{.ID}}"></td>
             <td>{{.Symbol}}</td>
             <td class="{{actionClass .Type}}">{{actionLabel $.Lang .Type}}</td>
-            <td>{{printf "%.4f" .Quantity}}</td>
-            <td>{{printf "%.2f" .Price}}</td>
+            <td class="text-end tabular-nums">{{printf "%.4f" .Quantity}}</td>
+            <td class="text-end tabular-nums">{{printf "%.2f" .Price}}</td>
             <td>{{.Currency}}</td>
-            <td>{{printf "%.2f" .PriceInPLN}}</td>
+            <td class="text-end tabular-nums">{{printf "%.2f" .PriceInPLN}}</td>
             <td>{{.Timestamp}}</td>
             <td class="text-end">
               <button type="submit" formaction="/dashboard/portfolio/transactions/delete" name="id" value="{{.ID}}"

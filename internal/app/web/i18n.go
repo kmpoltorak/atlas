@@ -42,6 +42,7 @@ var translations = map[string]map[Lang]string{
 	"nav.language_en":     {LangEN: "English", LangPL: "Angielski"},
 	"nav.language_pl":     {LangEN: "Polish", LangPL: "Polski"},
 	"nav.logout":          {LangEN: "Log out", LangPL: "Wyloguj"},
+	"nav.skip_to_content": {LangEN: "Skip to content", LangPL: "Przejdź do treści"},
 
 	// Shared table headers/labels, reused across multiple pages
 	"table.symbol":           {LangEN: "Symbol", LangPL: "Symbol"},
