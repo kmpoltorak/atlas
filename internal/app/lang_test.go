@@ -85,8 +85,8 @@ func TestLangSetHandlerDefaultsRedirectWithNoReferer(t *testing.T) {
 
 	a.langSetHandler(rec, req)
 
-	if got := rec.Header().Get("Location"); got != "/dashboard" {
-		t.Fatalf("expected a fallback redirect to /dashboard, got %q", got)
+	if got := rec.Header().Get("Location"); got != "/" {
+		t.Fatalf("expected a fallback redirect to /, got %q", got)
 	}
 }
 

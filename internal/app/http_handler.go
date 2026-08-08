@@ -31,7 +31,6 @@ func (a *Application) NewHandler() http.Handler {
 	mux.HandleFunc("/login", a.loginPageHandler)
 	mux.HandleFunc("/logout", a.logoutPageHandler)
 	mux.HandleFunc("/dashboard/lang", a.langSetHandler)
-	mux.HandleFunc("/dashboard", a.dashboardPageHandler)
 	mux.HandleFunc("/dashboard/portfolio", a.portfolioPageHandler)
 	mux.HandleFunc("/dashboard/portfolio/delete", a.portfolioDeleteHandler)
 	mux.HandleFunc("/dashboard/portfolio/bulk-delete", a.portfolioBulkDeleteHandler)
@@ -52,7 +51,9 @@ func (a *Application) NewHandler() http.Handler {
 	mux.HandleFunc("/dashboard/account/ml/delete", a.mlModelDeleteHandler)
 	mux.HandleFunc("/dashboard/account/ml/train", a.mlTrainHandler)
 
-	mux.HandleFunc("/", a.rootHandler)
+	// "/" is the dashboard itself (not a separate "/dashboard" route — a subtree pattern in
+	// net/http.ServeMux, so this is also the catch-all for anything else unmatched above).
+	mux.HandleFunc("/", a.dashboardPageHandler)
 	return a.instrument(a.requireAuth(mux))
 }
 
@@ -87,6 +88,12 @@ func (r *statusRecorder) WriteHeader(statusCode int) {
 // documented in docs/deployment.md ({"status":"healthy","database":"ok","redis":"ok"}).
 // Returns 503 when either dependency is unreachable, so this is a meaningful signal for
 // Docker/Kubernetes health probes (see deploy/deployment.yaml), not just a liveness check.
+// Trainer reachability is reported too when TRAINER_URL is configured, but — unlike
+// Database/Redis — never flips the overall status/HTTP code: the trainer is a genuinely
+// optional sidecar (see docker-compose.yml's "trainer" profile) atlas-api already degrades
+// gracefully without (the Account page's "Train new candidate" button just explains the manual
+// path instead), so Docker/Kubernetes restarting atlas-api because atlas-trainer is down would
+// be exactly the wrong response.
 func (a *Application) healthHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
@@ -98,6 +105,13 @@ func (a *Application) healthHandler(w http.ResponseWriter, r *http.Request) {
 	redisStatus := "ok"
 	if err := a.Cache.Ping(ctx); err != nil {
 		redisStatus = "error"
+	}
+	var trainerStatus string
+	if a.Trainer != nil {
+		trainerStatus = "ok"
+		if err := a.Trainer.Ping(ctx); err != nil {
+			trainerStatus = "error"
+		}
 	}
 
 	overallStatus := "healthy"
@@ -112,13 +126,9 @@ func (a *Application) healthHandler(w http.ResponseWriter, r *http.Request) {
 		Service:  "atlas-api",
 		Database: databaseStatus,
 		Redis:    redisStatus,
+		Trainer:  trainerStatus,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(httpStatus)
 	_ = json.NewEncoder(w).Encode(status)
-}
-
-func (a *Application) rootHandler(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("Atlas API ready\n"))
 }

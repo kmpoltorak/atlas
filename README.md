@@ -122,7 +122,7 @@ comes up with zero configuration. What you get:
 | `alertmanager` | http://localhost:9093 | Infra alert routing |
 | `grafana` | http://localhost:3000 | Dashboards (default login `admin`/`admin`) |
 
-Open http://localhost:8080/dashboard for the web UI, or start collecting history for a symbol
+Open http://localhost:8080/ for the web UI, or start collecting history for a symbol
 directly via the API:
 
 ```bash
@@ -169,8 +169,8 @@ itself — only in the `.env` file), e.g. `$2a$10$Slp...` becomes `$$2a$$10$$Slp
 
 ## Web dashboard
 
-A server-rendered dashboard at `/dashboard` (Bootstrap 5.3, light/dark/auto theme, no separate
-frontend build — one Go binary serves everything via `go:embed`):
+A server-rendered dashboard at `/` (Bootstrap 5.3, light/dark/auto theme, no separate frontend
+build — one Go binary serves everything via `go:embed`):
 
 - **Portfolio** — record BUY/SELL transactions, view positions/P&L/risk, delete individual
   positions/transactions or bulk-delete either via checkboxes (position cost basis is

@@ -40,7 +40,7 @@ func (a *Application) langSetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 	lang := web.Lang(r.FormValue("lang"))
@@ -53,7 +53,7 @@ func (a *Application) langSetHandler(w http.ResponseWriter, r *http.Request) {
 	})
 	redirect := r.Referer()
 	if redirect == "" {
-		redirect = "/dashboard"
+		redirect = "/"
 	}
 	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }
