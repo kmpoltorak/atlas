@@ -138,8 +138,29 @@ func (a *Application) dashboardPageHandler(w http.ResponseWriter, r *http.Reques
 	}
 	web.Render(w, "dashboard", web.DashboardPage{
 		Lang: a.resolveLang(r), Positions: positions, Risk: risk, Rates: a.exchangeRatesForDisplay(),
-		PriceAsOf: priceAsOf(transactions),
+		PriceAsOf:   priceAsOf(transactions),
+		AlertCounts: a.alertCountsByAction(),
 	})
+}
+
+// alertCountsByAction gives the dashboard's "Active Alerts" summary card a count per action
+// (e.g. {"BUY": 2, "SELL": 1}) without the page taking on Alerts' own side effects
+// (persistRecommendation/persistIndicatorSnapshot) — this is meant to stay a cheap glance, not a
+// second copy of the Alerts page. A partial-evaluation error is logged and otherwise ignored,
+// same tolerant stance pollAlertsOnce takes: whatever symbols did evaluate still count.
+func (a *Application) alertCountsByAction() map[string]int {
+	result, err := a.Alerts.Evaluate()
+	if err != nil {
+		a.Logger.Warn("dashboard alert summary: evaluation completed with per-symbol errors", zap.Error(err))
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	counts := make(map[string]int)
+	for _, alert := range result {
+		counts[alert.Recommendation.Action]++
+	}
+	return counts
 }
 
 // portfolioPageHandler lists positions (GET) and records a transaction (POST) — the dashboard
