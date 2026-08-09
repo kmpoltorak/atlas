@@ -95,7 +95,7 @@ func main() {
 	// Column names must match ml.FeatureOrder / train.py's FEATURE_ORDER exactly — train.py
 	// selects its feature columns by name, so a mismatch here fails the run loudly rather than
 	// silently training on the wrong columns.
-	if err := writer.Write([]string{"symbol", "ts", "rsi", "ema_dist", "macd_pct", "tr_pct", "volume", "label"}); err != nil {
+	if err := writer.Write([]string{"symbol", "ts", "rsi", "ema_dist", "macd_pct", "tr_pct", "atr_pct", "rvol_20", "rvol_50", "volume", "label"}); err != nil {
 		fmt.Fprintln(os.Stderr, "write header:", err)
 		os.Exit(1)
 	}
@@ -121,6 +121,9 @@ func main() {
 				strconv.FormatFloat(feature.EMADist, 'f', -1, 64),
 				strconv.FormatFloat(feature.MACDPct, 'f', -1, 64),
 				strconv.FormatFloat(feature.TRPct, 'f', -1, 64),
+				strconv.FormatFloat(feature.ATRPct, 'f', -1, 64),
+				strconv.FormatFloat(feature.RealizedVol20, 'f', -1, 64),
+				strconv.FormatFloat(feature.RealizedVol50, 'f', -1, 64),
 				strconv.FormatFloat(feature.Volume, 'f', -1, 64),
 				strconv.Itoa(label),
 			}); err != nil {

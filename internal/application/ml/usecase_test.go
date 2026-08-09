@@ -94,6 +94,15 @@ func TestBuildFeatureVectorIsScaleFree(t *testing.T) {
 	if math.Abs(cheap.TRPct-expensive.TRPct) > tolerance {
 		t.Errorf("TRPct is price-scale dependent: %v vs %v", cheap.TRPct, expensive.TRPct)
 	}
+	if math.Abs(cheap.ATRPct-expensive.ATRPct) > tolerance {
+		t.Errorf("ATRPct is price-scale dependent: %v vs %v", cheap.ATRPct, expensive.ATRPct)
+	}
+	if math.Abs(cheap.RealizedVol20-expensive.RealizedVol20) > tolerance {
+		t.Errorf("RealizedVol20 is price-scale dependent: %v vs %v", cheap.RealizedVol20, expensive.RealizedVol20)
+	}
+	if math.Abs(cheap.RealizedVol50-expensive.RealizedVol50) > tolerance {
+		t.Errorf("RealizedVol50 is price-scale dependent: %v vs %v", cheap.RealizedVol50, expensive.RealizedVol50)
+	}
 	if math.Abs(cheap.RSI-expensive.RSI) > tolerance {
 		t.Errorf("RSI is price-scale dependent: %v vs %v", cheap.RSI, expensive.RSI)
 	}
@@ -109,7 +118,8 @@ func TestBuildFeatureVectorSurvivesNonPositiveClose(t *testing.T) {
 	feature := BuildFeatureVector(analyzerUC.NewUseCase(), "X", bars)
 	for name, value := range map[string]float64{
 		"RSI": feature.RSI, "EMADist": feature.EMADist, "MACDPct": feature.MACDPct,
-		"TRPct": feature.TRPct, "Volume": feature.Volume,
+		"TRPct": feature.TRPct, "ATRPct": feature.ATRPct, "Volume": feature.Volume,
+		"RealizedVol20": feature.RealizedVol20, "RealizedVol50": feature.RealizedVol50,
 	} {
 		if math.IsNaN(value) || math.IsInf(value, 0) {
 			t.Errorf("%s is not finite: %v", name, value)

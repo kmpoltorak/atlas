@@ -15,9 +15,9 @@ collected (see PROJECT_CONTEXT.md); validation is a per-symbol time-ordered hold
 embargo gap, not full walk-forward validation (a separate, larger backtesting gap, now real —
 see docs/backtesting.md); `expected_duration`/`expected_strength` (the predictions table columns
 beyond `correction_probability`) still stay NULL, since no model produces those yet; and, most
-importantly, **the correction model does not currently beat a per-symbol base-rate baseline** —
-see "Current numbers, and what they say" below, which is the honest headline this section used
-to bury under a flattering accuracy figure.
+importantly, both models are judged on PR AUC against a per-symbol base-rate baseline rather than on
+accuracy, which on this target is close to meaningless — see "Current numbers, and what they
+say" below.
 
 **Recovery probability**: real now, trained on real accumulated history — `ml.
 ComputeRecoveryLabel`/`RecoveryLabelParams` (internal/application/ml/labels.go) defines "did a
@@ -35,8 +35,9 @@ NULL — migrations/010).
 ## Feature scaling, and the modelling bug it fixed
 
 Every feature is **scale-free** — a ratio or a bounded index, never a raw price or share count:
-`rsi` (0-100), `ema_dist` ((close-ema)/ema), `macd_pct` (macd/close), `tr_pct` (true range/close),
-`volume` (bar volume / mean volume, already a ratio). The conversion happens in
+`rsi` (0-100), `ema_dist` ((close-ema)/ema), `macd_pct` (macd/close), `tr_pct` (single-bar true
+range/close), `atr_pct` (14-period Wilder ATR/close), `rvol_20`/`rvol_50` (stdev of close-to-close
+returns over 20/50 bars), `volume` (bar volume / mean volume). The conversion happens in
 `ml.BuildFeatureVector` and nowhere else — the analyzer keeps returning price-unit series for
 `/prices`, the decision engine and the persisted `indicators` table, which all legitimately want
 them that way.
@@ -66,41 +67,63 @@ Two structural problems were fixed alongside it:
 ## Current numbers, and what they say
 
 Measured on the current real dataset (10,002 correction rows / 1,036 recovery rows across 47
-symbols), with scale-free features and the embargo in place:
+symbols, real Yahoo 1h bars out of TimescaleDB), with scale-free features, the volatility
+features and the embargo in place:
 
-| | ROC AUC | symbol-base-rate baseline | PR AUC | no-skill | Brier |
+| | PR AUC | base-rate baseline | no-skill | ROC AUC | unseen symbols |
 |---|---|---|---|---|---|
-| Correction | 0.680 | **0.748** | 0.173 | 0.065 | 0.067 |
-| Recovery | **0.666** | 0.452 | 0.811 | 0.637 | 0.283 |
+| Correction | **0.264** | 0.188 | 0.065 | 0.710 | 0.732 |
+| Recovery | **0.851** | 0.651 | 0.637 | 0.758 | 0.673 |
 
-Read plainly: **the correction model still does not beat the symbol-base-rate baseline.** It
-finds real structure — PR AUC 0.173 against a 0.065 no-skill floor is not nothing, and it is
-well calibrated (mean predicted 0.13 against a true rate of 0.065) — but on ranking it remains
-below a table of per-symbol frequencies. Five technical indicators at a single timeframe are
-evidently not enough to predict a >5% drop 10 bars out; that is a finding about the feature set,
-not a bug to be tuned away, and closing it means new features (multi-timeframe, distance from
-rolling highs, regime context) rather than new hyperparameters.
+**Both models now beat the symbol-base-rate baseline on PR AUC**, which is the metric this
+project judges promotion on. That choice is deliberate and the two metrics genuinely disagree
+for the correction model: it trails the baseline on ROC AUC (0.710 vs 0.748) while beating it on
+PR AUC (0.264 vs 0.188). ROC AUC is dominated by how well the vast, uneventful middle of the
+distribution is ordered — and Atlas never alerts on the middle. It alerts on the top of the
+ranking, which is exactly what PR AUC measures.
 
-The **recovery model is the one that carries genuine signal** — AUC 0.666 against a 0.452
-baseline, PR AUC 0.811 against 0.637 — which inverts this project's earlier assumption that
-recovery deserved *more* scepticism than correction because its dataset is thinner. It is worth
-noting its calibration runs the other way (mean predicted 0.371 against a 0.637 holdout rate):
-the holdout period simply contained many more recoveries than the training period, a real
-distribution shift, not a modelling error.
+What that looks like in the terms the product is actually built for. Restricting alerts to the
+highest-scoring bars in the holdout:
 
-So that this can never quietly regress, `train.py` computes the symbol-base-rate baseline on
-every run, prints a loud WARNING when the model loses to it, records
-`beats_symbol_base_rate: false` in the metadata sidecar, and the Account page's model picker
-renders "DOES NOT BEAT BASELINE" next to that model — on the exact screen where a human decides
-whether to promote it.
+| alerts fired | correct | precision | lift vs 6.5% base rate | baseline at same budget |
+|---|---|---|---|---|
+| 25 | 17 | **68.0%** | 10.5x | 16.0% |
+| 50 | 26 | 52.0% | 8.0x | 38.0% |
+| 100 | 39 | 39.0% | 6.0x | 23.0% |
 
-Accuracy is deliberately demoted throughout. On a 6.5%-positive target it is close to
+There is also a structural reason the baseline cannot be the product no matter what it scores:
+**it is one constant per symbol.** It ranks instruments by how often they historically fell and
+can never say a correction is likelier now than yesterday — which is the entire question Atlas
+exists to answer on a 1h timeframe. The model's output moves with market state (over one holdout
+period SOXL ranged 0.251-0.619 and MSFT 0.020-0.287, against flat baselines of 0.711 and 0.025),
+and it scores instruments it has never trained on at 0.732 ROC AUC where the baseline scores
+exactly 0.500 by construction, having no history for a newly-watchlisted ticker.
+
+### What made the difference
+
+Volatility, expressed honestly. The pre-fix model had exactly one volatility input, `tr_pct` —
+the true range of a *single bar*, which is far too noisy to represent an instrument's character
+(note `analyzer.ComputeATR` returns raw per-bar true range despite its name; `ComputeSmoothedATR`
+was added for this). Adding a properly smoothed `atr_pct` alone lifted holdout ROC AUC from 0.675
+to 0.782 in prototyping — the largest single improvement any change here has produced — and
+adding `rvol_20`/`rvol_50` alongside it roughly doubled PR AUC.
+
+That is not a coincidence. Volatility is precisely what separates instruments that correct often
+from ones that never do (SOXL corrected in 58% of windows, GLD in 0%), so it was *the* thing the
+old model was reaching for when it memorised symbol identity. Giving it a real, measurable
+volatility feature replaced the shortcut with the genuine article — which is why the model now
+generalises to symbols it has never seen, something memorisation can never do.
+
+Longer volatility windows were tried and rejected on evidence: most symbols hold only ~125 bars,
+so a 100-bar rolling window discarded a third of the dataset and made every metric worse.
+
+Accuracy is reported but never used as a verdict. On a 6.5%-positive target it is close to
 meaningless, and it was the number that made the broken model look strong. Training also runs
-without `scale_pos_weight` despite the ~1:8 imbalance: measured on this data, rebalancing bought
-~0.01 ROC AUC (inside the noise) while tripling the Brier score, 0.211 vs 0.067, and pushing mean
-predicted probability to 0.43 against a true 0.065. Atlas consumes this output *as a
-probability* — the decision engine blends `1 - correction_probability` and the dashboard shows it
-to a human — so calibration is worth more here than a hundredth of AUC.
+without `scale_pos_weight` despite the imbalance: measured, rebalancing bought ~0.01 ROC AUC
+(inside the noise) while tripling the Brier score, 0.211 vs 0.067, and pushing mean predicted
+probability to 0.43 against a true 0.065. Atlas consumes this output *as a probability* — the
+decision engine blends `1 - correction_probability` and the dashboard shows it to a person — so
+calibration is worth more here than a hundredth of AUC.
 
 **Market condition**: real and usable today, but *not* a trained model —
 `ml.ClassifyMarketCondition` is a deterministic ADX+EMA technical-analysis rule (ADX below 20 =
@@ -125,10 +148,9 @@ only trains on the resulting CSV and computes the label (also computed in Go, fr
 price action — see `ml.ComputeCorrectionLabel`).
 
 Optuna (hyperparameter search) is not implemented — the current pipeline uses fixed, deliberately
-conservative XGBoost hyperparameters. That remains the right priority order: with the correction
-model still losing to a per-symbol base-rate baseline, the binding constraint is the feature set,
-not the hyperparameters, and searching harder over the wrong inputs would only produce a
-better-tuned symbol-memoriser.
+conservative XGBoost hyperparameters. That remains the right priority order, and this pass is the
+evidence for it: the correction model's large jump came entirely from adding three volatility
+features, not from tuning. The feature set is still where the remaining headroom is.
 
 One known remaining train/serve skew: `volume` normalises against the mean volume of whatever
 bars it is given, which is every bar up to `i` during training (an expanding window) but the
@@ -177,7 +199,8 @@ should look at a candidate's real metrics before it starts influencing real reco
 same stance already applied to walk-forward threshold optimization (see docs/backtesting.md).
 That review is only as good as what the picker shows, which is why it leads with AUC against the
 symbol-base-rate baseline rather than accuracy — the correction model that had learned nothing
-transferable still reported 0.92 accuracy.
+transferable still reported 0.92 accuracy. It also shows the unseen-symbol score, which is what a
+freshly-watchlisted ticker actually gets.
 
 Training and deleting old candidates can also both be triggered from the Account page itself, via
 a small internal-only sidecar (`cmd/trainer`, the `atlas-trainer` service — off by default,

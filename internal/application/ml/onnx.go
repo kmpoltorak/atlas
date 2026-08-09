@@ -21,7 +21,7 @@ import (
 // before that change are correctly rejected by featureOrderMatches below — the rename is what
 // makes the guard able to catch them at all, since the values changed meaning rather than
 // position.
-var FeatureOrder = []string{"rsi", "ema_dist", "macd_pct", "tr_pct", "volume"}
+var FeatureOrder = []string{"rsi", "ema_dist", "macd_pct", "tr_pct", "atr_pct", "rvol_20", "rvol_50", "volume"}
 
 // onnxSession is the subset of *ort.DynamicAdvancedSession this package depends on, documenting
 // exactly what OnnxModel relies on. Note this alone doesn't make PredictCorrectionProbability
@@ -111,7 +111,10 @@ func (m *OnnxModel) Close() error {
 // correction-probability output (column 1 of the 2-class "probabilities" output, per
 // training/train.py's zipmap=False XGBoost export).
 func (m *OnnxModel) PredictCorrectionProbability(fv domainml.FeatureVector) (float64, error) {
-	input := []float32{float32(fv.RSI), float32(fv.EMADist), float32(fv.MACDPct), float32(fv.TRPct), float32(fv.Volume)}
+	input := []float32{
+		float32(fv.RSI), float32(fv.EMADist), float32(fv.MACDPct), float32(fv.TRPct),
+		float32(fv.ATRPct), float32(fv.RealizedVol20), float32(fv.RealizedVol50), float32(fv.Volume),
+	}
 	inTensor, err := ort.NewTensor(ort.NewShape(1, int64(len(input))), input)
 	if err != nil {
 		return 0, fmt.Errorf("build input tensor: %w", err)

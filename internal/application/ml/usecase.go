@@ -122,11 +122,30 @@ func BuildFeatureVector(analyzer *analyzerUC.UseCase, symbol string, bars []mark
 	if series, err := analyzer.ComputeATR(symbol, bars); err == nil && len(series) > 0 && close > 0 {
 		feature.TRPct = series[len(series)-1] / close
 	}
+	if series, err := analyzer.ComputeSmoothedATR(symbol, bars, atrPeriod); err == nil && len(series) > 0 && close > 0 {
+		feature.ATRPct = series[len(series)-1] / close
+	}
+	if series, err := analyzer.ComputeRealizedVolatility(symbol, bars, realizedVolShortWindow); err == nil && len(series) > 0 {
+		feature.RealizedVol20 = series[len(series)-1]
+	}
+	if series, err := analyzer.ComputeRealizedVolatility(symbol, bars, realizedVolLongWindow); err == nil && len(series) > 0 {
+		feature.RealizedVol50 = series[len(series)-1]
+	}
 	if series, err := analyzer.ComputeVolume(symbol, bars); err == nil && len(series) > 0 {
 		feature.Volume = series[len(series)-1]
 	}
 	return feature
 }
+
+// Volatility feature windows. Kept here rather than inlined because training and inference must
+// use identical values and both go through BuildFeatureVector — a mismatch would silently score
+// live requests against a model trained on a different definition, which the feature_order guard
+// cannot catch (the names would still line up).
+const (
+	atrPeriod              = 14
+	realizedVolShortWindow = 20
+	realizedVolLongWindow  = 50
+)
 
 // Predict runs real ONNX inference when a model is loaded (u.Model != nil), otherwise falls
 // back to a deterministic RSI-derived placeholder. A loaded model's inference error is

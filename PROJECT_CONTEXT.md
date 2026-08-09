@@ -75,12 +75,14 @@ all wired into the decision engine's scoring (Orchestrator.buildTechnicalScore b
 RSI, a Bollinger %B position signal, and an OBV accumulation/distribution signal as a weighted
 average — see docs/decision_engine.md); ADX is wired into market-condition classification
 (`ml.ClassifyMarketCondition`, ADX+EMA — see docs/ml.md) instead. `ml.FeatureVector` (the trained
-ONNX model's input contract) still draws on only those same five indicators, now as scale-free
-ratios rather than raw price-unit values (`rsi, ema_dist, macd_pct, tr_pct, volume` — see
-docs/ml.md). Extending it beyond those five is the most promising open lead, since the correction
-model currently loses to a per-symbol base-rate baseline and that looks like a feature-set limit
-rather than a tuning one — it just costs a retrain, unlike `buildTechnicalScore`'s heuristic
-blend which needs no training data at all. Broader volatility/trend
+ONNX model's input contract) holds eight scale-free features rather than raw price-unit values:
+`rsi, ema_dist, macd_pct, tr_pct, atr_pct, rvol_20, rvol_50, volume`. Two analyzer methods exist
+solely for it — `ComputeSmoothedATR` (the genuine Wilder ATR; `ComputeATR` returns raw per-bar
+true range despite its name, and is left that way because `/prices`, the decision engine and the
+persisted indicators table all consume it) and `ComputeRealizedVolatility`. Adding that volatility
+family was the single largest model improvement the project has made — see docs/ml.md. Extending
+the feature set further remains the most promising lead for the correction model, which still
+trails the base-rate baseline on ROC AUC even while beating it on PR AUC. Broader volatility/trend
 *summary* metrics (e.g. a single consolidated risk/trend score) are still not implemented — only
 the individual indicator series are.
 
@@ -114,11 +116,15 @@ pre-drop price within N bars"), verified live end-to-end the same way (persisted
 `recovery_probability`/`recovery_model_version` — migrations/010).
 
 Where both models actually stand, measured rather than assumed: on the current dataset (10,002
-correction / 1,036 recovery rows across 47 symbols) the **correction model does not beat a
-per-symbol base-rate baseline** — holdout ROC AUC 0.680 against that baseline's 0.748 — while the
-**recovery model does**, 0.666 against 0.452. That inverts the assumption this document carried
-for a while, that recovery deserved more scepticism because its dataset is thinner. It also
-follows a real fix: the feature vector originally fed raw price-unit EMA/MACD/ATR to the model,
+correction / 1,036 recovery rows across 47 symbols) **both beat the per-symbol base-rate baseline
+on PR AUC** — correction 0.264 vs 0.188, recovery 0.851 vs 0.651 — which is the metric promotion
+is judged on, since Atlas alerts on the top of the ranking rather than the uneventful middle. At
+its 25 highest-scoring bars the correction model was right 68% of the time against a 6.5% base
+rate (10.5x lift; the same alert budget on the baseline returned 16%). It reached that after
+gaining three volatility features (`atr_pct`, `rvol_20`, `rvol_50`) — volatility being exactly
+what the pre-fix model had been reaching for when it memorised symbol identity. Note it still
+trails the baseline on ROC AUC (0.710 vs 0.748); the two metrics genuinely disagree, and PR AUC
+is the one that matches what the product does. This all follows a real fix: the feature vector originally fed raw price-unit EMA/MACD/ATR to the model,
 which let it identify the symbol instead of reading its dynamics, and the reported accuracy of
 0.919 was worse than always predicting "no correction" (0.935). Features are now scale-free
 ratios, the train/holdout split has an embargo gap, and `train.py` computes the base-rate

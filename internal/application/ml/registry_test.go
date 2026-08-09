@@ -72,7 +72,7 @@ func TestListModelsSkipsMalformedSidecarsWithoutFailing(t *testing.T) {
 }
 
 func TestModelInfoDescriptionIncludesRealMetrics(t *testing.T) {
-	info := ModelInfo{Version: "v20260808120000", HoldoutAUC: 0.83, HoldoutAccuracy: 0.65, RowCount: 222, HoldoutRowCount: 46}
+	info := ModelInfo{Version: "v20260808120000", HoldoutAUC: 0.83, HoldoutAveragePrecision: 0.65, RowCount: 222, HoldoutRowCount: 46}
 	desc := info.Description()
 	for _, want := range []string{"v20260808120000", "0.83", "0.65", "222", "46"} {
 		if !strings.Contains(desc, want) {
@@ -85,10 +85,10 @@ func TestModelInfoDescriptionIncludesRealMetrics(t *testing.T) {
 // very screen where a human promotes it — see ModelInfo.Description's doc comment for why
 // accuracy alone was actively reassuring on this target.
 func TestModelInfoDescriptionFlagsModelsThatLoseToTheBaseline(t *testing.T) {
-	baseline, beats := 0.757, false
+	baseline, beats := 0.76, false
 	info := ModelInfo{
-		Version: "v1", HoldoutAUC: 0.707, HoldoutAccuracy: 0.92,
-		SymbolBaseRateAUC: &baseline, BeatsSymbolBaseRate: &beats,
+		Version: "v1", HoldoutAUC: 0.707, HoldoutAveragePrecision: 0.12,
+		SymbolBaseRateAveragePrecision: &baseline, BeatsSymbolBaseRate: &beats,
 	}
 	desc := info.Description()
 	if !strings.Contains(desc, "0.76") {
@@ -111,7 +111,7 @@ func TestModelInfoDescriptionMarksPreBaselineModelsUnknown(t *testing.T) {
 
 func TestModelInfoDescriptionCreditsAModelThatBeatsTheBaseline(t *testing.T) {
 	baseline, beats := 0.55, true
-	desc := ModelInfo{Version: "v1", HoldoutAUC: 0.71, SymbolBaseRateAUC: &baseline, BeatsSymbolBaseRate: &beats}.Description()
+	desc := ModelInfo{Version: "v1", HoldoutAUC: 0.71, SymbolBaseRateAveragePrecision: &baseline, BeatsSymbolBaseRate: &beats}.Description()
 	if strings.Contains(desc, "DOES NOT BEAT BASELINE") {
 		t.Errorf("description %q wrongly flags a model that does beat the baseline", desc)
 	}

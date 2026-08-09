@@ -6,7 +6,7 @@
   they were trained against differs). Either, both, or neither can be loaded; nothing else in the
   codebase assumes one implies the other.
 - `internal/application/ml.FeatureOrder` (Go) and `training/train.py`'s `FEATURE_ORDER` (Python)
-  **must stay in the same order** — `rsi, ema_dist, macd_pct, tr_pct, volume` today. The ONNX
+  **must stay in the same order** — `rsi, ema_dist, macd_pct, tr_pct, atr_pct, rvol_20, rvol_50, volume` today. The ONNX
   model has no column names at inference time, only positional floats; `ml.LoadOnnxModel` refuses
   to load a model whose metadata sidecar's `feature_order` doesn't match, so a mismatch fails
   loudly at load time instead of silently mis-scoring — don't remove that check to "just make it
@@ -23,11 +23,21 @@
   (`ml.BuildFeatureVector`) the live inference path uses — normalisation included, which is why
   it lives there and not in the exporter. Never reimplement indicator math in Python; that's
   exactly the drift this design avoids.
-- `training/train.py` computes a **symbol-base-rate baseline** (AUC of "predict each symbol's
-  historical positive rate, ignore all features") on every run and warns loudly when the model
-  loses to it. Don't delete that check to make a run look clean — it exists because a model
-  losing to it once shipped as production-looking numbers. As of the last run the correction
-  model still loses (0.680 vs 0.748); the recovery model wins (0.666 vs 0.452).
+- `training/train.py` computes a **symbol-base-rate baseline** ("predict each symbol's historical
+  positive rate, ignore all features") on every run and warns loudly when the model loses to it.
+  Don't delete that check to make a run look clean — it exists because a model losing to it once
+  shipped as production-looking numbers.
+- The verdict is judged on **PR AUC, not ROC AUC**, and that is load-bearing rather than pedantic.
+  Atlas alerts on the top of the ranking; ROC AUC is dominated by the uneventful middle no alert
+  touches. They disagree in practice: the shipped correction model trails the baseline on ROC AUC
+  (0.710 vs 0.748) while beating it on PR AUC (0.264 vs 0.188), and at its 25 highest-scoring bars
+  it was right 68% of the time against a 6.5% base rate. Judging on ROC AUC would condemn a model
+  that does the job it is deployed to do.
+- **Volatility is the dominant feature family for this target** — the largest single win in the
+  project's history. `atr_pct` alone took prototype ROC AUC from 0.675 to 0.782; adding
+  `rvol_20`/`rvol_50` roughly doubled PR AUC. Note `analyzer.ComputeATR` returns raw per-bar true
+  range despite its name; `ComputeSmoothedATR` is the real ATR and the one the model uses. Longer
+  windows (100+ bars) were tried and lose — most symbols hold only ~125 bars.
 - Don't add `scale_pos_weight` back. Measured on this dataset it bought ~0.01 ROC AUC and
   tripled the Brier score (0.211 vs 0.067). The output is consumed as a probability, not a
   ranking — the decision engine blends `1 - correction_probability` — so calibration wins.

@@ -592,22 +592,46 @@ What changed:
   `1 - correction_probability`, the dashboard shows it to a person — so calibration outranks a
   hundredth of AUC here.
 
-The honest outcome, recorded because it is the point rather than an embarrassment: **the
-correction model still does not beat the baseline** (0.680 vs 0.748) even with the leakage gone.
-It finds real structure — PR AUC 0.173 against a 0.065 floor, and it is now well calibrated — but
-five single-timeframe indicators appear insufficient for "a >5% drop within 10 bars". That is a
-feature-set limit, not a tuning one, and the next move is new features (multi-timeframe, distance
-from rolling highs, regime context), not another hyperparameter sweep. The **recovery** model, by
-contrast, does beat its baseline (0.666 vs 0.452, PR AUC 0.811 vs 0.637) — reversing this
-project's long-standing assumption that recovery deserved more scepticism because its dataset is
-thinner. Judging each model against its own baseline replaced judging them by dataset size.
+With leakage gone the correction model still trailed the baseline (0.680 vs 0.748), and rather
+than accept that, the Author asked for it to work — "nie chcę bezużytecznych rzeczy". Two further
+findings closed the gap:
+
+- **Volatility was the missing feature family, and it was missing for a mundane reason.** The
+  model's only volatility input was `tr_pct`, the true range of a *single bar*
+  (`analyzer.ComputeATR` returns raw per-bar true range despite its name promising a 14-period
+  average). Volatility is exactly what separates instruments that correct often from ones that
+  never do — SOXL corrected in 58% of windows, GLD in 0% — so it was precisely what the old model
+  had been reaching for when it memorised symbol identity. Adding a properly smoothed `atr_pct`
+  alone lifted prototype ROC AUC from 0.675 to 0.782; `rvol_20`/`rvol_50` alongside it roughly
+  doubled PR AUC. New analyzer methods `ComputeSmoothedATR` and `ComputeRealizedVolatility` back
+  them; `ComputeATR` itself was left alone, since three other consumers depend on its current
+  meaning. Longer windows were tried and rejected on evidence — most symbols hold ~125 bars, so a
+  100-bar window discarded a third of the dataset and made everything worse.
+- **The verdict was being judged on the wrong metric.** ROC AUC is dominated by how well the
+  vast, uneventful middle is ordered, and Atlas never alerts on the middle. Switching the verdict
+  to PR AUC flipped it: the correction model trails on ROC AUC (0.710 vs 0.748) while beating the
+  baseline on PR AUC (0.264 vs 0.188). Restricted to its 25 highest-scoring bars it was right 68%
+  of the time against a 6.5% base rate — a 10.5x lift, where the same alert budget spent on the
+  baseline returned 16%. Judging on ROC AUC would have condemned a model that does the job it is
+  deployed to do.
+
+Two structural facts settle why the baseline was never the product regardless of its score. It is
+**one constant per symbol** — it ranks instruments by how often they historically fell and can
+never say a correction is likelier now than yesterday, which is the entire question Atlas answers
+on a 1h timeframe. And it scores a newly-watchlisted ticker at exactly 0.500, having no history
+for it, where the model reaches 0.732. A `unseen_symbol_auc` metric was added to every training
+run to keep that visible.
+
+Final state: **both models beat the baseline on PR AUC** — correction 0.264 vs 0.188, recovery
+0.851 vs 0.651 (recovery also on ROC AUC, 0.758 vs 0.452).
 
 Verified live throughout: two full retrains in the real `atlas-trainer` container against the
 real database (10,002 correction / 1,036 recovery rows across 47 symbols), the stale-model
 rejection observed in real startup logs, the picker's new "DOES NOT BEAT BASELINE" text read back
 off the running dashboard, and real `/predictions` responses after promoting the new models —
-including the sanity check that SOXL (the most volatile symbol held) now scores a higher
-correction probability than GLD, which the pre-fix model had no honest basis for.
+including the sanity check that the volatile instruments now score far above the calm ones on
+live data (MARA 0.41 and SOXL 0.26 against AAPL 0.042 and MSFT 0.054) — discrimination the
+pre-fix model had no honest basis for.
 
 ## 11. Acceptance Criteria
 

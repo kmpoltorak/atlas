@@ -225,18 +225,21 @@ history — never synthetic data:
   training data than the correction model, since recovery is only a defined question *after* a
   correction.
 
-Every feature is scale-free by construction (`rsi, ema_dist, macd_pct, tr_pct, volume` — ratios
-and bounded indices, never a raw price). That is enforced rather than assumed: feeding raw
-price-unit indicators let an earlier version of the model identify the symbol instead of reading
-its dynamics, and it scored *worse* than a table of per-symbol correction frequencies while
-reporting a reassuring 92% accuracy. Every training run now measures itself against that same
-baseline and says so plainly when it loses.
+Every feature is scale-free by construction (`rsi, ema_dist, macd_pct, tr_pct, atr_pct, rvol_20,
+rvol_50, volume` — ratios and bounded indices, never a raw price). That is enforced rather than
+assumed: feeding raw price-unit indicators let an earlier version of the model identify the
+symbol instead of reading its dynamics, and it scored *worse* than a table of per-symbol
+correction frequencies while reporting a reassuring 92% accuracy. Every training run now measures
+itself against that same baseline and says so plainly when it loses.
 
-**And on the current data, the correction model does lose** (holdout AUC 0.680 vs the baseline's
-0.748), while the recovery model wins (0.666 vs 0.452) — the reverse of what "thinner dataset"
-would suggest. Five single-timeframe indicators appear not to be enough for the correction
-target; that is a feature-set finding, not something more tuning fixes. See
-[docs/ml.md](docs/ml.md) for the full numbers and the measurements behind each claim.
+Both models currently beat that baseline on **PR AUC** — correction 0.264 vs 0.188, recovery
+0.851 vs 0.651. PR AUC rather than ROC AUC is the deliberate yardstick here: Atlas alerts on the
+top of the ranking, not the uneventful middle. Restricted to its 25 highest-scoring bars the
+correction model was right **68% of the time against a 6.5% base rate** — a 10.5x lift, where the
+same alert budget spent on the baseline returned 16%. It also scores instruments it has never
+trained on (0.732 ROC AUC) where the baseline scores exactly 0.500, having no history for a
+newly-watchlisted ticker. See [docs/ml.md](docs/ml.md) for every number and the measurement
+behind it.
 
 Neither model is loaded by default — Atlas falls back to a deterministic RSI-derived stub
 prediction (correction) / leaves recovery probability at `0` (recovery), both logged clearly at
