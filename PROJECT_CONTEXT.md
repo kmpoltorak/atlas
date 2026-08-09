@@ -153,7 +153,11 @@ deployment.md), and `Position.AverageCost`/`CurrentPrice` are always in PLN rega
 currency the underlying transactions were entered in, so a symbol bought partly in USD and
 partly in PLN still has one mathematically coherent cost basis. Everything downstream (this risk
 calc, ROI, Decision Engine scoring, backtesting) reads plain PLN numbers and never needs to know
-multi-currency exists — only the recording/display layer does.
+multi-currency exists — only the recording/display layer does. `CurrentPrice` specifically is
+not a live market quote — `applyTransaction` sets it once, to the most recently recorded
+transaction's price for that symbol (BUY or SELL), and it stays there until the next
+transaction; the dashboard/portfolio pages label it "Last Transaction Price" with an "as of
+`<date>`" line for exactly this reason, not "Current Price".
 
 ---
 

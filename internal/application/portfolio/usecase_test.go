@@ -128,7 +128,7 @@ func TestRecordTransactionPropagatesExchangeRateErrors(t *testing.T) {
 	}
 }
 
-// TestMixedCurrencyPositionHasOneCoherentPLNCostBasis proves the scenario Kris explicitly
+// TestMixedCurrencyPositionHasOneCoherentPLNCostBasis proves the scenario the Author explicitly
 // wanted: buying the same symbol partly in USD and partly in PLN still produces one correct
 // weighted-average cost, computed entirely in PLN.
 func TestMixedCurrencyPositionHasOneCoherentPLNCostBasis(t *testing.T) {

@@ -211,7 +211,7 @@ Never randomly shuffle financial time series.
 
 **Implementation status**: real, via `GET /backtests/walkforward`
 (`backtesting.UseCase.RunWalkForward`, internal/application/backtesting/walkforward.go) — a
-deliberate simplification of the target design above, scoped with Kris first: the split is a
+deliberate simplification of the target design above, scoped with the Author first: the split is a
 fixed 60/20/20 proportion of whatever bar window is requested (`splitWalkForward`), not
 caller-supplied explicit date ranges like the 2015-2022/2023/2024 example. Each split is a
 strictly chronological, non-overlapping slice (never shuffled), and each gets its own
@@ -266,7 +266,7 @@ for comparing "Return/Risk/Drawdown" together, as this section asks). **Cruciall
 touches the live decision engine.** The winning thresholds are reported back
 (`WalkForwardResult.BestThresholds`) for a human to review — promoting them to
 `decision.DefaultThresholds()` is a manual code change, never automatic. This was an explicit
-scoping decision with Kris, consistent with PROJECT_CONTEXT.md's "Atlas is NOT ... an automatic
+scoping decision with the Author, consistent with PROJECT_CONTEXT.md's "Atlas is NOT ... an automatic
 investment system."
 ---
 # Reports

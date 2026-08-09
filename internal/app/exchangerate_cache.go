@@ -12,7 +12,7 @@ import (
 // ratesCacheTTL bounds how often Atlas calls out to NBP, not how fresh the underlying data can
 // be — NBP itself only republishes Table A once per business day (~11:45 CET), so anything
 // sub-daily here is purely to avoid hitting NBP on every page render, not to catch genuinely
-// newer rates. An hour is a reasonable, cheap default (Kris asked for roughly this cadence).
+// newer rates. An hour is a reasonable, cheap default (the Author asked for roughly this cadence).
 const ratesCacheTTL = time.Hour
 
 const ratesCacheKey = "atlas:fxrates:nbp-a"

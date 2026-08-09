@@ -14,9 +14,14 @@
   rehearsal on minikube; see `deploy/RUNBOOK.md`'s Recovery drill section. The same lesson applies
   to any other image without a non-root default user (e.g. the backup CronJob's
   `timescale/timescaledb` image needed an explicit `runAsUser`/`fsGroup` for the same reason).
-- Healthcheck hits the real `/health` endpoint (`wget -qO- http://localhost:8080/health`), not a
-  process-exists check — same in `docker-compose.yml` and the Kubernetes deployment's liveness
-  probe.
+- Healthcheck hits the real `/health` endpoint, not a process-exists check — same in
+  `docker-compose.yml` and the Kubernetes deployment's liveness probe. atlas-api uses
+  `curl -fsS http://localhost:8080/health`, not `wget`: its runtime base is `debian:bookworm-slim`
+  (see above), which doesn't ship `wget` — a real bug once, confirmed live via `docker inspect`
+  showing a nonstop "unhealthy" status despite `/health` genuinely returning 200 (fixed by adding
+  `curl` to the Dockerfile's package list). atlas-trainer's own healthcheck still uses
+  `wget -qO- http://localhost:8091/health`, which is fine there: its image is the full
+  `golang:1.25-bookworm` (not `-slim`), which does ship `wget`.
 - Volumes: `timescaledb-data`/`redis-data`/`prometheus-data`/`grafana-data`/`alertmanager-data`
   are named/persistent; `./training/models:/models:ro` is a read-only bind mount so
   `MODEL_PATH`/`RECOVERY_MODEL_PATH` (or the Account dashboard's model picker — see `ml.md`) can

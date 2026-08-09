@@ -65,9 +65,10 @@ trainer sidecar.
 
 ## Brand Commitments
 
-Product name is "Atlas" (tagline used in docs: "AI Portfolio Advisor"). No logo or favicon
-exists yet. No committed color palette or typography beyond the current stock Bootstrap 5.3
-defaults — this is open ground for future design work, not a locked identity. The one
+Product name is "Atlas" (tagline used in docs: "AI Portfolio Advisor"). No logo exists yet; the
+browser tab favicon is a plain glyph (a white "A" on Bootstrap's own primary blue), not a
+designed brand mark. No committed color palette or typography beyond the current stock
+Bootstrap 5.3 defaults — this is open ground for future design work, not a locked identity. The one
 consistent, deliberate voice trait across the existing docs and UI is candor: known limitations
 (a deterministic stub standing in for a real model, thin ML training data, unfinished
 scaffolding) are always labeled as such rather than glossed over. Preserve that candor in any
