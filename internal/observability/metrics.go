@@ -27,6 +27,14 @@ type Metrics struct {
 	// evaluate the watchlist at all — fed into prometheus/alerts.yml's AtlasAlertPollErrors
 	// rule, routed to the infra-discord channel like every other systemic-health alert.
 	AlertPollErrors prometheus.Counter
+	// DependencyUp is 1/0 per dependency (labeled "dependency": database/redis/trainer/
+	// prometheus/alertmanager/grafana), kept fresh by StartDependencyStatusPolling — the same
+	// checks /health itself runs (see Application.dependencyStatuses), just as a gauge Grafana
+	// can graph over time instead of a point-in-time JSON response. atlas-api's own liveness is
+	// already covered by Prometheus' built-in `up{job="atlas-api"}` — this covers everything
+	// atlas-api can't self-report by definition (if atlas-api is down, it can't push its own
+	// gauge either), which is why atlas-api isn't one of the dependency labels here.
+	DependencyUp *prometheus.GaugeVec
 }
 
 func NewMetrics() *Metrics {
@@ -80,7 +88,14 @@ func NewMetrics() *Metrics {
 			Help: "Total number of background alert-poll cycles that failed to evaluate the watchlist.",
 		},
 	)
-	registry.MustRegister(counter, duration, providerRequests, recommendationsTotal, predictionsTotal, alertsSent, alertPollErrors)
+	dependencyUp := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "atlas_dependency_up",
+			Help: "Whether a dependency atlas-api talked to on its last check was reachable (1) or not (0).",
+		},
+		[]string{"dependency"},
+	)
+	registry.MustRegister(counter, duration, providerRequests, recommendationsTotal, predictionsTotal, alertsSent, alertPollErrors, dependencyUp)
 
 	return &Metrics{
 		Registry:        registry,
@@ -92,6 +107,7 @@ func NewMetrics() *Metrics {
 		PredictionsTotal:     predictionsTotal,
 		AlertsSent:           alertsSent,
 		AlertPollErrors:      alertPollErrors,
+		DependencyUp:         dependencyUp,
 	}
 }
 
