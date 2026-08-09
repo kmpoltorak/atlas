@@ -1,11 +1,20 @@
 # Prometheus
 
 - Metrics live in `internal/observability/metrics.go`, a hand-built `*prometheus.Registry` (not
-  the global default registry) exposed at `/metrics`. Current metrics are all counters +
-  histograms — no gauges yet: HTTP request count + duration histogram, market-provider request
-  count, recommendations-generated count, predictions-generated count, Discord alerts-sent count.
-  Add a new metric by extending the `Metrics` struct and registering it in `NewMetrics()`, not by
-  reaching for the package-level `promauto` helpers elsewhere.
+  the global default registry) exposed at `/metrics`: HTTP request count + duration histogram,
+  market-provider request count, recommendations-generated count, predictions-generated count,
+  Discord alerts-sent count, background alert-poll error count, and one gauge —
+  `atlas_dependency_up{dependency="database|redis|trainer|prometheus|alertmanager|grafana"}`,
+  refreshed every 15s by `app.StartDependencyStatusPolling` from the same checks `/health` runs
+  (`Application.dependencyStatuses`). Add a new metric by extending the `Metrics` struct and
+  registering it in `NewMetrics()`, not by reaching for the package-level `promauto` helpers
+  elsewhere.
+- `cmd/trainer` is a **second, separate** registry in a separate process (`newTrainerMetrics`,
+  port 8091, scraped as the `atlas-trainer` job) — deliberately not `observability.Metrics`,
+  which is shaped around atlas-api's counters. It exposes `atlas_trainer_runs_total{outcome}`,
+  `atlas_trainer_run_duration_seconds`, `atlas_trainer_last_run_timestamp_seconds`. Its target
+  reads as permanently down while the `trainer` Compose profile isn't started; that's expected,
+  not a broken scrape.
 - Two separate alerting concerns, don't conflate them:
   - **Business alerts** (`internal/app/alerts_loop.go`) — BUY/SELL/REDUCE recommendation changes,
     pushed straight to Discord via `DISCORD_WEBHOOK_URL`. Nothing to do with Prometheus.

@@ -11,11 +11,13 @@ is set and loads successfully — verified live end-to-end (train → export →
 loaded (the default), Predict falls back to the same deterministic RSI-derived stub as before
 (`ml.StubModelVersion`, "stub-v0", fixed 0.72 confidence) — this is a normal, non-fatal startup
 state, not an error. Caveats, honestly: training data today is whatever Atlas has actually
-collected (see PROJECT_CONTEXT.md), which may be a small first dataset; validation is a simple
-per-symbol time-ordered holdout, not full walk-forward validation (a separate, larger
-backtesting gap, now real — see docs/backtesting.md); and `expected_duration`/`expected_strength`
-(the predictions table columns beyond `correction_probability`) still stay NULL — no model
-produces those yet.
+collected (see PROJECT_CONTEXT.md); validation is a per-symbol time-ordered holdout with an
+embargo gap, not full walk-forward validation (a separate, larger backtesting gap, now real —
+see docs/backtesting.md); `expected_duration`/`expected_strength` (the predictions table columns
+beyond `correction_probability`) still stay NULL, since no model produces those yet; and, most
+importantly, **the correction model does not currently beat a per-symbol base-rate baseline** —
+see "Current numbers, and what they say" below, which is the honest headline this section used
+to bury under a flattering accuracy figure.
 
 **Recovery probability**: real now, trained on real accumulated history — `ml.
 ComputeRecoveryLabel`/`RecoveryLabelParams` (internal/application/ml/labels.go) defines "did a
@@ -30,19 +32,75 @@ or neither can be loaded) — verified live end-to-end (train → export → loa
 `/predictions` response → persisted `recovery_probability`/`recovery_model_version` row, not
 NULL — migrations/010).
 
-Caveats, honestly, and more pointed than the correction model's above: the real accumulated
-dataset as of this model's first training pass is 222 rows across 7 symbols — and because a
-recovery label is only meaningful conditional on a correction having happened at all, those 222
-rows are themselves a small, skewed subset of a modest correction history, not 222 independent
-observations (many are overlapping rolling windows around the same handful of actual price
-moves). 3 of those 7 symbols (AAPL, NVDA, ORCL) have **zero** recovered examples in the data at
-all, meaning the model may be partly learning "which symbol is this" rather than genuine recovery
-dynamics. First holdout: AUC 0.83, accuracy 0.65 on an n=46 holdout — a real number, not
-fabricated, but one to read with real skepticism given the sample size and skew, not as a
-production-grade signal yet. This is the same honesty stance as `docs/backtesting.md`'s ML
-evaluation and the correction model's own first-pass caveats above — the number is printed and
-persisted to the metadata sidecar precisely so a small/overconfident model stays visible, not
-hidden.
+## Feature scaling, and the modelling bug it fixed
+
+Every feature is **scale-free** — a ratio or a bounded index, never a raw price or share count:
+`rsi` (0-100), `ema_dist` ((close-ema)/ema), `macd_pct` (macd/close), `tr_pct` (true range/close),
+`volume` (bar volume / mean volume, already a ratio). The conversion happens in
+`ml.BuildFeatureVector` and nowhere else — the analyzer keeps returning price-unit series for
+`/prices`, the decision engine and the persisted `indicators` table, which all legitimately want
+them that way.
+
+This was a real fix, and the measurement behind it is worth recording because it is exactly the
+kind of failure that hides behind a good-looking metric. The original feature set fed the
+analyzer's raw `ema`/`macd`/`atr` straight to the model. Those carry the symbol's absolute price
+level: across the collected universe EMA ranged from ~9 (PGE.WA) to ~21,957 (LPP.WA), so any
+tree threshold on it was an exact symbol lookup. Per-symbol correction base rates range from
+0.00 (GLD, SPY, QQQ, IAU, IBIT, GLDM) to 0.58 (SOXL), so memorising symbol identity was a highly
+effective strategy — and the model took it. On the same holdout, a predictor using **no features
+at all**, only each symbol's historical correction rate, scored **AUC 0.757 against the trained
+model's 0.707**. Meanwhile the reported accuracy of 0.919 was *worse* than always predicting "no
+correction" (0.935) on a target where only ~6.5% of bars qualify.
+
+Two structural problems were fixed alongside it:
+
+- **Train/holdout boundary leak.** The split cut each symbol at 80%, but a label looks 10 bars
+  forward, so ~470 training rows had labels computed from bars sitting in the holdout.
+  `train.py` now drops an embargo gap (`--embargo-bars`, defaulting to the label horizon: 10
+  correction, 30 recovery) at every symbol's boundary.
+- **Overlapping labels inflate the sample.** One drop event labels ~10 consecutive hourly bars,
+  so 1,097 positive rows correspond to only ~178 distinct events. Model capacity was cut
+  accordingly (shallower trees, subsampling, L2) — the previous unregularised 300×depth-4 fit was
+  fitting noise against ~178 effective positives.
+
+## Current numbers, and what they say
+
+Measured on the current real dataset (10,002 correction rows / 1,036 recovery rows across 47
+symbols), with scale-free features and the embargo in place:
+
+| | ROC AUC | symbol-base-rate baseline | PR AUC | no-skill | Brier |
+|---|---|---|---|---|---|
+| Correction | 0.680 | **0.748** | 0.173 | 0.065 | 0.067 |
+| Recovery | **0.666** | 0.452 | 0.811 | 0.637 | 0.283 |
+
+Read plainly: **the correction model still does not beat the symbol-base-rate baseline.** It
+finds real structure — PR AUC 0.173 against a 0.065 no-skill floor is not nothing, and it is
+well calibrated (mean predicted 0.13 against a true rate of 0.065) — but on ranking it remains
+below a table of per-symbol frequencies. Five technical indicators at a single timeframe are
+evidently not enough to predict a >5% drop 10 bars out; that is a finding about the feature set,
+not a bug to be tuned away, and closing it means new features (multi-timeframe, distance from
+rolling highs, regime context) rather than new hyperparameters.
+
+The **recovery model is the one that carries genuine signal** — AUC 0.666 against a 0.452
+baseline, PR AUC 0.811 against 0.637 — which inverts this project's earlier assumption that
+recovery deserved *more* scepticism than correction because its dataset is thinner. It is worth
+noting its calibration runs the other way (mean predicted 0.371 against a 0.637 holdout rate):
+the holdout period simply contained many more recoveries than the training period, a real
+distribution shift, not a modelling error.
+
+So that this can never quietly regress, `train.py` computes the symbol-base-rate baseline on
+every run, prints a loud WARNING when the model loses to it, records
+`beats_symbol_base_rate: false` in the metadata sidecar, and the Account page's model picker
+renders "DOES NOT BEAT BASELINE" next to that model — on the exact screen where a human decides
+whether to promote it.
+
+Accuracy is deliberately demoted throughout. On a 6.5%-positive target it is close to
+meaningless, and it was the number that made the broken model look strong. Training also runs
+without `scale_pos_weight` despite the ~1:8 imbalance: measured on this data, rebalancing bought
+~0.01 ROC AUC (inside the noise) while tripling the Brier score, 0.211 vs 0.067, and pushing mean
+predicted probability to 0.43 against a true 0.065. Atlas consumes this output *as a
+probability* — the decision engine blends `1 - correction_probability` and the dashboard shows it
+to a human — so calibration is worth more here than a hundredth of AUC.
 
 **Market condition**: real and usable today, but *not* a trained model —
 `ml.ClassifyMarketCondition` is a deterministic ADX+EMA technical-analysis rule (ADX below 20 =
@@ -61,19 +119,30 @@ hitting real conversion incompatibilities — see that file's comments).
 
 Feature computation is **not** reimplemented in Python: `cmd/export-training-data` reuses the
 exact same Go analyzer-backed `ml.BuildFeatureVector` the live inference path uses, so training
-and serving can never drift apart on RSI/EMA/MACD/ATR/Volume math. Python only trains on the
-resulting CSV and computes the label (also computed in Go, from real forward price action — see
-`ml.ComputeCorrectionLabel`).
+and serving can never drift apart on the feature math — including the normalisation described
+above, which lives in `BuildFeatureVector` precisely so both sides get it identically. Python
+only trains on the resulting CSV and computes the label (also computed in Go, from real forward
+price action — see `ml.ComputeCorrectionLabel`).
 
-Optuna (hyperparameter search) is not implemented — the current pipeline uses fixed, reasonable
-XGBoost hyperparameters, not a documented gap requiring a training-data-volume increase first.
+Optuna (hyperparameter search) is not implemented — the current pipeline uses fixed, deliberately
+conservative XGBoost hyperparameters. That remains the right priority order: with the correction
+model still losing to a per-symbol base-rate baseline, the binding constraint is the feature set,
+not the hyperparameters, and searching harder over the wrong inputs would only produce a
+better-tuned symbol-memoriser.
+
+One known remaining train/serve skew: `volume` normalises against the mean volume of whatever
+bars it is given, which is every bar up to `i` during training (an expanding window) but the
+~`COLLECTOR_WINDOW_DAYS` collection window at inference. A fixed trailing window would make the
+two agree; changing `analyzer.ComputeVolume` also affects the decision engine and the persisted
+indicators table, so it is deliberately left as a documented gap rather than a silent change.
 
 ## Model Lifecycle
 1. Collect historical data — via Atlas's existing collector (`GET /prices`), not a separate
    ingestion path.
 2. Generate features — `cmd/export-training-data` (Go, reuses live feature code).
 3. Train model — `training/train.py` (XGBoost, time-ordered holdout).
-4. Validate model — holdout AUC/accuracy + label-balance checks, printed and written to the
+4. Validate model — holdout ROC AUC against the symbol-base-rate baseline, PR AUC, Brier score,
+   accuracy, and label-balance checks, printed and written to the
    model's metadata sidecar (`training/models/atlas-ml-<version>.json`).
 5. Export model — ONNX (`onnxmltools.convert_xgboost`).
 6. Deploy model — copy/mount the `.onnx` file (+ its `.json` metadata sidecar, required — see
@@ -89,7 +158,8 @@ model fails loudly at startup instead of silently mis-scoring.
 
 Both models can be switched at runtime from the Account dashboard page (`/dashboard/account`),
 not only via `MODEL_PATH`/`RECOVERY_MODEL_PATH` at startup: it lists every model
-`ML_MODELS_DIR` has a metadata sidecar for (real holdout AUC/accuracy/row count, not fabricated),
+`ML_MODELS_DIR` has a metadata sidecar for (real holdout AUC against its baseline, accuracy and
+row count, not fabricated — and an explicit "DOES NOT BEAT BASELINE" marker when it applies),
 and activating one hot-swaps it into live inference immediately (`ml.UseCase.SetModel`/
 `SetRecoveryModel`, an `atomic.Pointer` swap — safe under concurrent requests) with no restart.
 The choice is durably recorded (`migrations/011`'s `ml_model_selection` table) so it survives one
@@ -102,10 +172,12 @@ then restarted the container and confirmed it came back up on the saved selectio
 train, both targets) and can be scheduled (cron/systemd timer) to run periodically as more real
 history accumulates — see training/README.md's "Regenerating candidates on a schedule". It only
 ever writes new, uniquely-versioned files; it never changes which model is active. Promotion is
-always the separate, human, Account-page step above — deliberately, not just unfinished: with
-training data this thin and skewed (see the caveats above), a person should look at a candidate's
-real metrics before it starts influencing real recommendations, the same stance already applied
-to walk-forward threshold optimization (see docs/backtesting.md).
+always the separate, human, Account-page step above — deliberately, not just unfinished: a person
+should look at a candidate's real metrics before it starts influencing real recommendations, the
+same stance already applied to walk-forward threshold optimization (see docs/backtesting.md).
+That review is only as good as what the picker shows, which is why it leads with AUC against the
+symbol-base-rate baseline rather than accuracy — the correction model that had learned nothing
+transferable still reported 0.92 accuracy.
 
 Training and deleting old candidates can also both be triggered from the Account page itself, via
 a small internal-only sidecar (`cmd/trainer`, the `atlas-trainer` service — off by default,

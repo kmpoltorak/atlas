@@ -1,5 +1,16 @@
 .git
+# Both venv paths: training/.venv is the host/manual one (training/README.md), .venv-container
+# the one atlas-trainer bootstraps (docker-compose.yml's TRAINING_VENV_DIR). Neither belongs in
+# any image, and at ~1.2GB the container one dominates the build context if left in — the main
+# Dockerfile only COPYs go.mod/go.sum/cmd/internal, so this is purely about not shipping a gig of
+# site-packages to the daemon on every build.
 training/.venv
+training/.venv-container
 training/data
 training/models
 *.onnx
+__pycache__
+.env
+.env.*
+.impeccable
+.claude

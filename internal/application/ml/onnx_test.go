@@ -17,7 +17,7 @@ func writeMetadataFixture(t *testing.T, dir string, content string) string {
 
 func TestLoadModelMetadataParsesSidecarJSON(t *testing.T) {
 	modelPath := writeMetadataFixture(t, t.TempDir(),
-		`{"version":"v1","feature_order":["rsi","ema","macd","atr","volume"]}`)
+		`{"version":"v1","feature_order":["rsi","ema_dist","macd_pct","tr_pct","volume"]}`)
 
 	metadata, err := loadModelMetadata(modelPath)
 	if err != nil {
@@ -38,20 +38,20 @@ func TestLoadModelMetadataErrorsWhenSidecarMissing(t *testing.T) {
 }
 
 func TestFeatureOrderMatchesRejectsWrongOrderOrLength(t *testing.T) {
-	if featureOrderMatches([]string{"ema", "rsi", "macd", "atr", "volume"}) {
+	if featureOrderMatches([]string{"ema_dist", "rsi", "macd_pct", "tr_pct", "volume"}) {
 		t.Fatal("expected a reordered feature list to be rejected")
 	}
-	if featureOrderMatches([]string{"rsi", "ema", "macd", "atr"}) {
+	if featureOrderMatches([]string{"rsi", "ema_dist", "macd_pct", "tr_pct"}) {
 		t.Fatal("expected a short feature list to be rejected")
 	}
-	if !featureOrderMatches([]string{"rsi", "ema", "macd", "atr", "volume"}) {
+	if !featureOrderMatches([]string{"rsi", "ema_dist", "macd_pct", "tr_pct", "volume"}) {
 		t.Fatal("expected the exact expected order to match")
 	}
 }
 
 func TestLoadOnnxModelRejectsMismatchedFeatureOrder(t *testing.T) {
 	modelPath := writeMetadataFixture(t, t.TempDir(),
-		`{"version":"v1","feature_order":["ema","rsi","macd","atr","volume"]}`)
+		`{"version":"v1","feature_order":["ema_dist","rsi","macd_pct","tr_pct","volume"]}`)
 
 	if _, err := LoadOnnxModel(modelPath, ""); err == nil {
 		t.Fatal("expected LoadOnnxModel to refuse a model trained on a different feature layout")

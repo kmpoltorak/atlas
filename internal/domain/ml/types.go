@@ -6,11 +6,53 @@ package ml
 // infrastructure/persistence/ml.go's SavePrediction).
 const StubModelVersion = "stub-v0"
 
+// FeatureVector is the ML model's input, and every field in it is deliberately **scale-free** —
+// a ratio or a bounded index, never a raw price or share count. This is not a style preference;
+// it was a real modelling bug once. The original version fed the analyzer's raw EMA/MACD/ATR
+// straight in, which meant a single feature carried the symbol's absolute price level: EMA
+// ranged from ~9 (PGE.WA) to ~21,957 (LPP.WA) across the collected universe, so any threshold
+// split on it was an exact symbol lookup. Since per-symbol correction base rates range from 0.00
+// (GLD, SPY, QQQ, IAU, IBIT, GLDM) to 0.58 (SOXL), the model could score well by memorising
+// "which symbol is this" while learning nothing about price dynamics — and measurably did: a
+// predictor using *no features at all*, only each symbol's historical correction rate, beat the
+// trained model on the same holdout (AUC 0.757 vs 0.707). Normalising by the latest close fixed
+// the input side of that; training/train.py's symbol-base-rate baseline keeps it honest going
+// forward by refusing to let a model that can't beat that baseline look good.
+//
+// Field names are load-bearing: application/ml.FeatureOrder and training/train.py's
+// FEATURE_ORDER must list them in this exact order, and ml.LoadOnnxModel refuses to load a model
+// whose metadata sidecar disagrees. The rename away from ema/macd/atr was itself part of the fix
+// — keeping the old names for newly-normalised values would have let a pre-normalisation model
+// load cleanly and silently mis-score, since the guard compares names, not meanings.
 type FeatureVector struct {
-	RSI    float64 `json:"rsi"`
-	EMA    float64 `json:"ema"`
-	MACD   float64 `json:"macd"`
-	ATR    float64 `json:"atr"`
+	// RSI is the 14-period Wilder RSI, already bounded to 0-100 and scale-free as-is. Falls
+	// back to a neutral 50 before the indicator's warm-up (see application/ml.BuildFeatureVector).
+	RSI float64 `json:"rsi"`
+
+	// EMADist is how far the latest close sits from its 14-period EMA, as a fraction of the EMA
+	// ((close-ema)/ema) — "3% above its average" instead of "trading at 294".
+	EMADist float64 `json:"ema_dist"`
+
+	// MACDPct is the MACD line as a fraction of the latest close (macd/close). MACD is a
+	// difference of two EMAs, so its raw magnitude scales directly with the price level.
+	MACDPct float64 `json:"macd_pct"`
+
+	// TRPct is the latest bar's true range as a fraction of the latest close (tr/close) — the
+	// single strongest feature in this set by a wide margin (holdout AUC 0.680 on its own,
+	// versus 0.490 — i.e. noise — for the same quantity unnormalised).
+	//
+	// Named for what analyzer.ComputeATR actually returns today, which is the per-bar true
+	// range, not a 14-period average of it despite the method's name and doc comment. Calling
+	// this field atr_pct would have propagated that misnomer into the model metadata; the
+	// analyzer discrepancy itself is left alone here deliberately, since ComputeATR also feeds
+	// the decision engine and the persisted indicators table, and changing its meaning is a
+	// separate decision from fixing the ML feature scaling.
+	TRPct float64 `json:"tr_pct"`
+
+	// Volume is the bar's volume relative to the mean volume of the bars supplied
+	// (analyzer.ComputeVolume) — already a ratio, so it needed no rescaling. Note the averaging
+	// window still differs between training (expanding: every bar up to i) and live inference
+	// (the ~COLLECTOR_WINDOW_DAYS collection window), a known remaining train/serve skew.
 	Volume float64 `json:"volume"`
 }
 
@@ -34,11 +76,10 @@ type Prediction struct {
 	// level within application/ml.RecoveryLabelParams' horizon (see
 	// application/ml.ComputeRecoveryLabel for the label definition). Real when a recovery model
 	// is loaded (RECOVERY_MODEL_PATH — a separate, optional model from ModelPath/MODEL_PATH's
-	// correction-probability one), 0 otherwise. Trained on a genuinely small, symbol-skewed
-	// first dataset (222 rows, 3 of 8 symbols with zero recovered examples as of this model's
-	// training — see docs/ml.md's Implementation status note) — honest, not fabricated, but
-	// worth reading with real caution until more history accumulates, same stance this project
-	// takes on CorrectionProbability's own first model.
+	// correction-probability one), 0 otherwise. Always the thinner and more skewed of the two
+	// models by construction, since a recovery label only exists for bars where a correction
+	// actually happened — treat its metrics with more scepticism than the correction model's,
+	// not the same amount. See docs/ml.md's Implementation status note for the current numbers.
 	RecoveryProbability float64 `json:"recovery_probability"`
 
 	ModelVersion string `json:"model_version"`

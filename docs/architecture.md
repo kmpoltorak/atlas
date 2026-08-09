@@ -11,9 +11,11 @@ wired end-to-end. OBV and Bollinger Bands are now blended into Decision Engine s
 `buildTechnicalScore` folds a Bollinger %B position signal and an OBV accumulation/distribution
 signal into `TechnicalScore.Overall` as weighted-average terms (weights 0.45 momentum/volume,
 0.20 RSI, 0.20 %B, 0.15 OBV — first-pass heuristics, not tuned against outcome data) whenever
-there's enough history to compute them; `ml.FeatureVector` still only uses
-RSI/EMA/MACD/ATR/Volume, unchanged, since extending it would mean retraining the ONNX model on
-features the real (still thin) collected history can't yet support honestly. ADX is consumed too,
+there's enough history to compute them; `ml.FeatureVector` still draws on only those same five
+indicators (RSI/EMA/MACD/ATR/Volume), though as scale-free ratios rather than raw price-unit
+values since the price levels themselves were letting the model identify the symbol — see
+docs/ml.md. Extending past those five is the leading open lead for the correction model, which
+currently loses to a per-symbol base-rate baseline. ADX is consumed too,
 but only by the deterministic market-condition classifier (ADX+EMA, see docs/ml.md), not blended
 into scoring or the ML feature vector either.
 Recovery probability has a real, tested label definition but no trained model (too little
@@ -62,8 +64,8 @@ Indicators:
 Implementation status: all of the above are implemented (internal/application/analyzer).
 RSI/EMA/MACD/ATR/Volume/OBV/Bollinger Bands are all blended into Decision Engine scoring
 (`buildTechnicalScore`); ADX feeds market-condition classification instead (ADX+EMA — see
-docs/ml.md); `ml.FeatureVector` still only uses RSI/EMA/MACD/ATR/Volume (see this file's top
-status note for why). "detecting trends" beyond what individual indicators already show (e.g. a
+docs/ml.md); `ml.FeatureVector` draws on those same five, as scale-free ratios (see this file's
+top status note). "detecting trends" beyond what individual indicators already show (e.g. a
 consolidated trend/volatility summary score) isn't implemented.
 
 

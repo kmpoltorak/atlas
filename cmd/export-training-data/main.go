@@ -2,7 +2,8 @@
 // and writes a CSV of (feature vector, label) rows for training/train.py to consume. It reuses
 // the exact same analyzer-backed feature computation the live inference path uses
 // (ml.BuildFeatureVector), so the training data and live features can never drift apart —
-// Python never reimplements RSI/EMA/MACD/ATR/Volume math.
+// Python never reimplements the indicator math, nor the scale-free normalisation
+// BuildFeatureVector applies on top of it (see internal/domain/ml.FeatureVector).
 //
 // -label-type switches which target this exports: "correction" (default, every bar gets a
 // label) or "recovery" (only bars where a correction actually occurred get a label — see
@@ -91,7 +92,10 @@ func main() {
 
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
-	if err := writer.Write([]string{"symbol", "ts", "rsi", "ema", "macd", "atr", "volume", "label"}); err != nil {
+	// Column names must match ml.FeatureOrder / train.py's FEATURE_ORDER exactly — train.py
+	// selects its feature columns by name, so a mismatch here fails the run loudly rather than
+	// silently training on the wrong columns.
+	if err := writer.Write([]string{"symbol", "ts", "rsi", "ema_dist", "macd_pct", "tr_pct", "volume", "label"}); err != nil {
 		fmt.Fprintln(os.Stderr, "write header:", err)
 		os.Exit(1)
 	}
@@ -114,9 +118,9 @@ func main() {
 				symbol,
 				bars[i].Timestamp.UTC().Format(time.RFC3339),
 				strconv.FormatFloat(feature.RSI, 'f', -1, 64),
-				strconv.FormatFloat(feature.EMA, 'f', -1, 64),
-				strconv.FormatFloat(feature.MACD, 'f', -1, 64),
-				strconv.FormatFloat(feature.ATR, 'f', -1, 64),
+				strconv.FormatFloat(feature.EMADist, 'f', -1, 64),
+				strconv.FormatFloat(feature.MACDPct, 'f', -1, 64),
+				strconv.FormatFloat(feature.TRPct, 'f', -1, 64),
 				strconv.FormatFloat(feature.Volume, 'f', -1, 64),
 				strconv.Itoa(label),
 			}); err != nil {

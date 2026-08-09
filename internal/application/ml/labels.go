@@ -74,10 +74,10 @@ func DefaultRecoveryLabelParams() RecoveryLabelParams {
 // question without a correction to recover from — see ComputeCorrectionLabel) or when there
 // isn't enough forward history past the breach to know whether it recovered.
 //
-// This function has no caller yet: it's a real, tested label definition ready for
-// cmd/export-training-data to use once there's enough real accumulated history to train a
-// recovery-probability model honestly — see ml.Prediction.RecoveryProbability's doc comment and
-// docs/ml.md's Implementation status note.
+// cmd/export-training-data calls this behind -label-type=recovery, writing only the bars it
+// returns ok for — see ml.Prediction.RecoveryProbability's doc comment and docs/ml.md's
+// Implementation status note for why that makes the recovery dataset structurally smaller and
+// more skewed than the correction one.
 func ComputeRecoveryLabel(bars []market.Bar, i int, params RecoveryLabelParams) (label int, ok bool) {
 	correctionLabel, correctionOK := ComputeCorrectionLabel(bars, i, params.CorrectionParams)
 	if !correctionOK || correctionLabel == 0 {

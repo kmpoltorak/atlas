@@ -551,6 +551,64 @@ Not done: multi-user accounts, OAuth2/OIDC, and a richer SPA frontend remain exp
 scope for this increment — revisit only if Atlas's use case actually changes from "personal tool"
 to something needing them.
 
+**ML feature-scaling pass, built after a project-wide audit**: a review of the whole repository
+for consistency turned up one substantive defect, and it was in the part of the system whose
+reported numbers looked healthiest. The ML feature vector fed the analyzer's raw
+`ema`/`macd`/`atr` — values in price units — straight into XGBoost. Across the collected universe
+EMA spans ~9 (PGE.WA) to ~21,957 (LPP.WA), so a single tree split on it identified the symbol
+outright, and per-symbol correction base rates run from 0.00 (GLD, SPY, QQQ, IAU, IBIT, GLDM) to
+0.58 (SOXL) — memorising which symbol was in front of it was an excellent strategy, and the model
+took it. Two measurements established this rather than argued it: a predictor using **no features
+at all**, only each symbol's historical correction rate, beat the trained model 0.757 to 0.707 on
+the same holdout; and the model's headline 0.919 accuracy was *worse* than always answering "no
+correction" (0.935) on a target where ~6.5% of bars qualify.
+
+What changed:
+
+- **Scale-free features.** `rsi, ema_dist, macd_pct, tr_pct, volume` — ratios and bounded indices
+  only. The conversion lives in `ml.BuildFeatureVector`, so training and serving get it
+  identically and the analyzer keeps returning price-unit series for `/prices`, the decision
+  engine and the `indicators` table, which all legitimately want them. The three renames were
+  load-bearing rather than cosmetic: `ml.LoadOnnxModel`'s `feature_order` guard compares names,
+  so keeping `ema`/`macd`/`atr` for newly-normalised values would have let every pre-existing
+  model load cleanly and silently mis-score. Confirmed live — both previously-active models were
+  rejected at startup with an explicit message and the API fell back to the stub, non-fatally.
+- **Embargo at the train/holdout seam.** A label looks forward, so ~470 training rows had labels
+  computed from bars sitting in the holdout. `train.py` now drops a gap sized to the label
+  horizon (10 correction, 30 recovery).
+- **Metrics that can't flatter.** Every run reports ROC AUC against a symbol-base-rate baseline,
+  PR AUC against the no-skill rate, Brier score with mean-predicted-vs-actual, and accuracy
+  against the majority-class baseline — each paired with the number that makes it interpretable.
+  A model losing to the baseline triggers a loud warning, `beats_symbol_base_rate: false` in the
+  sidecar, and a "DOES NOT BEAT BASELINE" marker in the Account page's picker, which is the exact
+  screen where a human decides to promote one.
+- **Capacity cut to match the effective sample.** 1,097 positive rows correspond to only ~178
+  distinct drop events (one event labels ~10 consecutive bars), so the unregularised 300×depth-4
+  fit was fitting noise; now 150×depth-3 with subsampling and L2.
+- **No `scale_pos_weight`, deliberately.** The reflex fix for a 1:8 imbalance, and it was
+  measured and rejected: it bought ~0.01 ROC AUC (inside the noise) while tripling the Brier
+  score, 0.211 vs 0.067, and pushing mean predicted probability to 0.43 against a true 0.065.
+  Atlas consumes this output *as* a probability — the decision engine blends
+  `1 - correction_probability`, the dashboard shows it to a person — so calibration outranks a
+  hundredth of AUC here.
+
+The honest outcome, recorded because it is the point rather than an embarrassment: **the
+correction model still does not beat the baseline** (0.680 vs 0.748) even with the leakage gone.
+It finds real structure — PR AUC 0.173 against a 0.065 floor, and it is now well calibrated — but
+five single-timeframe indicators appear insufficient for "a >5% drop within 10 bars". That is a
+feature-set limit, not a tuning one, and the next move is new features (multi-timeframe, distance
+from rolling highs, regime context), not another hyperparameter sweep. The **recovery** model, by
+contrast, does beat its baseline (0.666 vs 0.452, PR AUC 0.811 vs 0.637) — reversing this
+project's long-standing assumption that recovery deserved more scepticism because its dataset is
+thinner. Judging each model against its own baseline replaced judging them by dataset size.
+
+Verified live throughout: two full retrains in the real `atlas-trainer` container against the
+real database (10,002 correction / 1,036 recovery rows across 47 symbols), the stale-model
+rejection observed in real startup logs, the picker's new "DOES NOT BEAT BASELINE" text read back
+off the running dashboard, and real `/predictions` responses after promoting the new models —
+including the sanity check that SOXL (the most volatile symbol held) now scores a higher
+correction probability than GLD, which the pre-fix model had no honest basis for.
+
 ## 11. Acceptance Criteria
 
 A phase is considered complete only if:

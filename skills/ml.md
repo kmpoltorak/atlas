@@ -6,23 +6,44 @@
   they were trained against differs). Either, both, or neither can be loaded; nothing else in the
   codebase assumes one implies the other.
 - `internal/application/ml.FeatureOrder` (Go) and `training/train.py`'s `FEATURE_ORDER` (Python)
-  **must stay in the same order** — `rsi, ema, macd, atr, volume` today. The ONNX model has no
-  column names at inference time, only positional floats; `ml.LoadOnnxModel` refuses to load a
-  model whose metadata sidecar's `feature_order` doesn't match, so a mismatch fails loudly at
-  load time instead of silently mis-scoring — don't remove that check to "just make it load."
+  **must stay in the same order** — `rsi, ema_dist, macd_pct, tr_pct, volume` today. The ONNX
+  model has no column names at inference time, only positional floats; `ml.LoadOnnxModel` refuses
+  to load a model whose metadata sidecar's `feature_order` doesn't match, so a mismatch fails
+  loudly at load time instead of silently mis-scoring — don't remove that check to "just make it
+  load."
+- **Every feature must be scale-free** — a ratio or a bounded index, never a raw price or share
+  count. This is the one hard rule in this file. The original set (`ema`, `macd`, `atr` in price
+  units) let a single feature encode the symbol's price level, and since per-symbol correction
+  base rates run from 0.00 to 0.58, the model scored by memorising symbol identity: a predictor
+  using no features at all beat it, 0.757 AUC to 0.707. If you add a feature, normalise it by
+  close (or bound it) in `ml.BuildFeatureVector`, and rename it if you changed an existing one's
+  meaning — the `feature_order` guard compares names, so reusing a name silently loads stale
+  models against new semantics.
 - `cmd/export-training-data` reuses the exact same Go feature-computation code
-  (`ml.BuildFeatureVector`) the live inference path uses. Never reimplement RSI/EMA/MACD/ATR/
-  Volume math in Python — that's exactly the drift this design avoids.
+  (`ml.BuildFeatureVector`) the live inference path uses — normalisation included, which is why
+  it lives there and not in the exporter. Never reimplement indicator math in Python; that's
+  exactly the drift this design avoids.
+- `training/train.py` computes a **symbol-base-rate baseline** (AUC of "predict each symbol's
+  historical positive rate, ignore all features") on every run and warns loudly when the model
+  loses to it. Don't delete that check to make a run look clean — it exists because a model
+  losing to it once shipped as production-looking numbers. As of the last run the correction
+  model still loses (0.680 vs 0.748); the recovery model wins (0.666 vs 0.452).
+- Don't add `scale_pos_weight` back. Measured on this dataset it bought ~0.01 ROC AUC and
+  tripled the Brier score (0.211 vs 0.067). The output is consumed as a probability, not a
+  ranking — the decision engine blends `1 - correction_probability` — so calibration wins.
 - Every trained model ships with a `.json` metadata sidecar next to its `.onnx` file (version,
-  training row count, holdout AUC/accuracy, label distribution, label definition,
+  training row count, holdout ROC AUC, PR AUC, Brier score, accuracy, the symbol-base-rate
+  baseline and whether the model beat it, label distribution, label definition,
   `feature_order`) — required, not optional documentation. `ml.ListModels` (the Account
   dashboard's model picker) reads it to build each option's description from real numbers, never
   a fabricated or hand-edited one.
 - Recovery labels are conditional: `ml.ComputeRecoveryLabel` only produces a label for bars where
   a correction actually happened (`ComputeCorrectionLabel` returned 1) — recovery isn't a
-  meaningful question otherwise. This means the recovery training set is always much smaller and
-  more skewed than the correction set; treat any recovery model's metrics with more skepticism
-  than the correction model's, not the same amount.
+  meaningful question otherwise. This makes the recovery training set structurally much smaller
+  than the correction set. Note that "smaller" turned out not to mean "worse": once the features
+  were made scale-free, recovery was the model that beat its baseline and correction was the one
+  that didn't, reversing this project's earlier assumption. Judge each against its own baseline
+  rather than by dataset size.
 - Model deployment is never fully automatic. `training/retrain.sh` can generate a new candidate
   on a schedule, but it never changes what's live — a human picks a candidate from the Account
   dashboard page after reviewing its real holdout metrics (`ml.UseCase.SetModel`/

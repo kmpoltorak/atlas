@@ -3,9 +3,9 @@
   "trained_at": 1786041667.2396219,
   "feature_order": [
     "rsi",
-    "ema",
-    "macd",
-    "atr",
+    "ema_dist",
+    "macd_pct",
+    "tr_pct",
     "volume"
   ],
   "row_count": 400,

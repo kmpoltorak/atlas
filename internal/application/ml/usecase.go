@@ -80,8 +80,8 @@ func (u *UseCase) GenerateFeatures(rows []ml.FeatureVector) ([]ml.FeatureVector,
 // BuildTrainingDataset creates a minimal deterministic training sample for the first prototype.
 func (u *UseCase) BuildTrainingDataset() ([]ml.FeatureVector, error) {
 	return []ml.FeatureVector{
-		{RSI: 62, EMA: 0.5, MACD: 0.7, ATR: 1.1, Volume: 1.2},
-		{RSI: 35, EMA: 0.4, MACD: 0.2, ATR: 0.9, Volume: 0.8},
+		{RSI: 62, EMADist: 0.05, MACDPct: 0.007, TRPct: 0.011, Volume: 1.2},
+		{RSI: 35, EMADist: -0.04, MACDPct: -0.002, TRPct: 0.009, Volume: 0.8},
 	}, nil
 }
 
@@ -92,22 +92,35 @@ func (u *UseCase) Validate() (float64, error) {
 
 // BuildFeatureVector derives a feature vector from an analyzer's latest indicator values for a
 // symbol. RSI falls back to a neutral 50 when there isn't enough history to compute it.
+//
+// The analyzer's EMA/MACD/ATR come back in price units; this function is where they become
+// scale-free ratios, and it is the only place that conversion happens — the analyzer keeps
+// returning raw price-unit series for /prices, the decision engine, and the persisted indicators
+// table, which all legitimately want them that way. See ml.FeatureVector's doc comment for why
+// feeding the raw values to the model was a real bug and not merely untidy.
+//
+// A non-positive close (or EMA) leaves the affected ratio at its zero value rather than
+// producing an Inf/NaN the ONNX model would happily consume: bad input should degrade to
+// "no signal", not to a poisoned float32.
 func BuildFeatureVector(analyzer *analyzerUC.UseCase, symbol string, bars []market.Bar) ml.FeatureVector {
 	feature := ml.FeatureVector{RSI: 50}
 	if analyzer == nil || len(bars) == 0 {
 		return feature
 	}
+	close := bars[len(bars)-1].Close
 	if series, err := analyzer.ComputeRSI(symbol, bars); err == nil && len(series) > 0 {
 		feature.RSI = series[len(series)-1]
 	}
 	if series, err := analyzer.ComputeEMA(symbol, bars); err == nil && len(series) > 0 {
-		feature.EMA = series[len(series)-1]
+		if ema := series[len(series)-1]; ema > 0 {
+			feature.EMADist = (close - ema) / ema
+		}
 	}
-	if series, err := analyzer.ComputeMACD(symbol, bars); err == nil && len(series) > 0 {
-		feature.MACD = series[len(series)-1]
+	if series, err := analyzer.ComputeMACD(symbol, bars); err == nil && len(series) > 0 && close > 0 {
+		feature.MACDPct = series[len(series)-1] / close
 	}
-	if series, err := analyzer.ComputeATR(symbol, bars); err == nil && len(series) > 0 {
-		feature.ATR = series[len(series)-1]
+	if series, err := analyzer.ComputeATR(symbol, bars); err == nil && len(series) > 0 && close > 0 {
+		feature.TRPct = series[len(series)-1] / close
 	}
 	if series, err := analyzer.ComputeVolume(symbol, bars); err == nil && len(series) > 0 {
 		feature.Volume = series[len(series)-1]

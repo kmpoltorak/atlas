@@ -35,6 +35,13 @@ whether a >5% close-price drop occurred within the next 10 bars
 (`internal/application/ml.DefaultCorrectionLabelParams`) — override with `--horizon-bars` /
 `--threshold-pct` if you want a different label definition.
 
+The CSV columns are `rsi, ema_dist, macd_pct, tr_pct, volume` — every one scale-free (a ratio or
+a bounded index), never a raw price or share count. If you are looking at an older CSV with
+`ema, macd, atr` columns instead, it predates that change and `train.py` will refuse it: those
+carried each symbol's absolute price level, which let the model identify the symbol instead of
+reading its dynamics. See `internal/domain/ml.FeatureVector`'s doc comment for the measurement
+that established this. Re-run this command to regenerate.
+
 For the recovery model, `-label-type=recovery` instead — only rows where a correction actually
 occurred get a label at all (recovery isn't a meaningful question without one — see
 `internal/application/ml.ComputeRecoveryLabel`'s doc comment), so expect far fewer rows than the
@@ -58,15 +65,43 @@ python3 train.py --input data/recovery.csv --output-dir models --target recovery
 ```
 
 Both runs use the identical training procedure — same XGBoost params, same time-ordered
-per-symbol holdout, same ONNX export — only the input CSV and `--target` (which only affects the
-output filename prefix and the metadata's `label_definition` text) differ. Each writes
-`models/atlas-ml[-recovery]-<version>.onnx` and a matching `.json` metadata sidecar (feature
-order, holdout AUC/accuracy, label distribution, label definition). Model files are gitignored
-— they're a locally/CI-generated artifact, not committed source.
+per-symbol holdout with an embargo gap, same ONNX export — only the input CSV, `--target` (which
+affects the output filename prefix, the metadata's `label_definition` text and the default
+embargo width) differ. Each writes `models/atlas-ml[-recovery]-<version>.onnx` and a matching
+`.json` metadata sidecar (feature order, holdout AUC / PR AUC / accuracy, baselines, label
+distribution, label definition). Model files are gitignored — they're a locally/CI-generated
+artifact, not committed source.
+
+### Reading the printed metrics
+
+Three numbers matter, and **accuracy is not one of them**. Roughly 6% of bars precede a
+correction, so "always predict no correction" already scores ~0.94 accuracy; a model can look
+excellent on that figure while being useless. Each run therefore prints its own baselines
+alongside every metric:
+
+- **ROC AUC vs the symbol-base-rate baseline.** The baseline is a predictor using *no features
+  at all*, only each symbol's positive rate in the training data. It is the bar to clear: a
+  model at or below it has learned which symbols tend to fall, not what a fall looks like.
+  `train.py` prints a loud WARNING and records `beats_symbol_base_rate: false` in the sidecar
+  when this happens, and the Account page's model picker repeats it as "DOES NOT BEAT BASELINE".
+- **PR AUC vs the no-skill baseline** (the positive rate itself). More informative than ROC AUC
+  on a target this imbalanced.
+- **accuracy@0.5 vs the majority-class baseline**, reported only for continuity.
+- **Brier score, with the mean predicted probability next to the actual rate.** Atlas consumes
+  this output as a probability (the decision engine blends `1 - correction_probability`, and the
+  dashboard shows it to a human), so being *calibrated* matters as much as ranking well. This is
+  why training deliberately runs without `scale_pos_weight` despite the class imbalance — see
+  `train.py`'s comment on the `XGBClassifier` call for the measurement behind that choice.
+
+An embargo of `--embargo-bars` rows is dropped at each symbol's train/holdout boundary, because
+a label looks forward: without the gap, the last training rows' labels are computed from bars
+sitting in the holdout, and the holdout score comes out flattering. The default matches the
+label horizon for the target (10 correction, 30 recovery) — raise it to match if you export with
+`--horizon-bars`/`--recovery-horizon-bars` above those.
 
 If the printed label distribution is heavily one-sided, or the script exits early because a
-split ended up single-class, you don't have enough data yet — collect more history (step 1)
-before trusting the model it produces.
+split ended up single-class or the embargo consumed the holdout, you don't have enough data yet
+— collect more history (step 1) before trusting the model it produces.
 
 ## 4. Point Atlas at the model(s)
 
