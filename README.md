@@ -49,7 +49,7 @@ For every symbol on your watchlist, Atlas:
 5. **Produces a recommendation** — BUY, ACCUMULATE, HOLD, REDUCE, SELL, or WAIT, each with a
    confidence score and an explanation listing which signals drove the call. Every recommendation
    is persisted (append-only) for full traceability.
-6. **Notifies** — high-priority actions (BUY/SELL/REDUCE) push to Discord; everything is scraped
+6. **Notifies** — actionable calls (BUY/ACCUMULATE/REDUCE/SELL) push to Discord; everything is scraped
    by Prometheus and visualized in Grafana.
 
 Everything above is real and verified live end-to-end (real HTTP requests against a real Docker
@@ -149,7 +149,7 @@ integration is non-fatal when unset — Atlas degrades gracefully instead of ref
 | `MARKET_PROVIDER` | `yahoo` | Metrics/logging label only — Yahoo is the sole provider (see [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)'s Market Data Providers section for why Stooq was evaluated and dropped) |
 | `COLLECTOR_WINDOW_DAYS` | `30` | How much history to request per collection call |
 | `ALERT_POLL_INTERVAL_SECONDS` | `300` | Background watchlist-evaluation interval |
-| `DISCORD_WEBHOOK_URL` | *(empty → disabled)* | Business alerts: BUY/SELL/REDUCE notifications |
+| `DISCORD_WEBHOOK_URL` | *(empty → disabled)* | Business alerts: BUY/ACCUMULATE/REDUCE/SELL notifications, sent only when a symbol's action *changes* |
 | `ALERTMANAGER_DISCORD_WEBHOOK_URL` | *(empty → disabled)* | Infra alerts: pod down/flapping/high error rate — deliberately a **separate** webhook/channel from the one above |
 | `MODEL_PATH` | *(empty → deterministic stub)* | Path to a trained correction-probability ONNX model |
 | `RECOVERY_MODEL_PATH` | *(empty → recovery probability stays 0)* | Path to a trained recovery-probability ONNX model, fully independent of `MODEL_PATH` |

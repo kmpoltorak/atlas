@@ -39,7 +39,7 @@ Self-hosted, single Go binary plus TimescaleDB and Redis, run via Docker Compose
 Kubernetes manifests under `deploy/`) — no managed/cloud SaaS dependency. A background loop
 polls the watchlist on an interval and is the source of both live alerting and the price
 history ML training later consumes. Two independent Discord channels carry notifications: one
-for investment alerts (BUY/SELL/REDUCE), one for "is Atlas itself healthy" signals (infra
+for investment alerts (BUY/ACCUMULATE/REDUCE/SELL), one for "is Atlas itself healthy" signals (infra
 alerts, alert-poll failures, training run outcomes). Prometheus/Grafana provide observability.
 Login is optional (single admin account, password + TOTP 2FA); when configured, repeated failed
 attempts lock out further login attempts for a cooldown window. ML models can be retrained and

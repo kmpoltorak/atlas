@@ -118,12 +118,21 @@ func (a *Application) pollAlertsOnce(lastAction map[string]string) {
 }
 
 // isHighPriorityAction reports whether an action should push a Discord notification, per
-// docs/decision_engine.md's "Notifications" section: BUY, SELL, and REDUCE only — not
-// ACCUMULATE, HOLD, or WAIT. GET /alerts itself is unaffected by this (it surfaces every
-// non-HOLD action); this only gates the push notification.
+// docs/decision_engine.md's "Notifications" section: the four actions that ask you to actually
+// do something — BUY, ACCUMULATE, REDUCE, SELL — but not HOLD or WAIT.
+//
+// ACCUMULATE was originally excluded while REDUCE was included, which left the list asymmetric:
+// a partial sell notified, a partial buy didn't. There was no reason for that split, and if
+// anything ACCUMULATE is the more actionable of the pair, since by definition it concerns a
+// position you already hold. HOLD and WAIT stay out because neither asks for a decision — and
+// HOLD in particular is the steady state for most symbols most of the time, so pushing it would
+// bury the signals that matter.
+//
+// GET /alerts is unaffected by this (it surfaces every non-HOLD action, WAIT included); this
+// gates only the push notification.
 func isHighPriorityAction(action string) bool {
 	switch action {
-	case "BUY", "SELL", "REDUCE":
+	case "BUY", "ACCUMULATE", "REDUCE", "SELL":
 		return true
 	default:
 		return false

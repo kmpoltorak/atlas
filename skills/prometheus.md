@@ -16,7 +16,7 @@
   reads as permanently down while the `trainer` Compose profile isn't started; that's expected,
   not a broken scrape.
 - Two separate alerting concerns, don't conflate them:
-  - **Business alerts** (`internal/app/alerts_loop.go`) — BUY/SELL/REDUCE recommendation changes,
+  - **Business alerts** (`internal/app/alerts_loop.go`) — BUY/ACCUMULATE/REDUCE/SELL recommendation changes,
     pushed straight to Discord via `DISCORD_WEBHOOK_URL`. Nothing to do with Prometheus.
   - **Infrastructure alerts** (`prometheus/alerts.yml`) — `AtlasAPIDown`, `AtlasAPIFlapping`,
     `AtlasPodCrashLooping`, `AtlasHighErrorRate`, evaluated by Prometheus and routed through
