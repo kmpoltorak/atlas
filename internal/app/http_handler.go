@@ -98,37 +98,60 @@ func (a *Application) healthHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 
-	databaseStatus := "ok"
-	if err := a.Storage.Ping(ctx); err != nil {
-		databaseStatus = "error"
-	}
-	redisStatus := "ok"
-	if err := a.Cache.Ping(ctx); err != nil {
-		redisStatus = "error"
-	}
-	var trainerStatus string
-	if a.Trainer != nil {
-		trainerStatus = "ok"
-		if err := a.Trainer.Ping(ctx); err != nil {
-			trainerStatus = "error"
+	statuses := a.dependencyStatuses(ctx)
+	toStatus := func(key string) string {
+		up, checked := statuses[key]
+		switch {
+		case !checked:
+			return ""
+		case up:
+			return "ok"
+		default:
+			return "error"
 		}
 	}
 
 	overallStatus := "healthy"
 	httpStatus := http.StatusOK
-	if databaseStatus != "ok" || redisStatus != "ok" {
+	if !statuses["database"] || !statuses["redis"] {
 		overallStatus = "unhealthy"
 		httpStatus = http.StatusServiceUnavailable
 	}
 
 	status := domain.HealthStatus{
-		Status:   overallStatus,
-		Service:  "atlas-api",
-		Database: databaseStatus,
-		Redis:    redisStatus,
-		Trainer:  trainerStatus,
+		Status:       overallStatus,
+		Service:      "atlas-api",
+		Database:     toStatus("database"),
+		Redis:        toStatus("redis"),
+		Trainer:      toStatus("trainer"),
+		Prometheus:   toStatus("prometheus"),
+		Alertmanager: toStatus("alertmanager"),
+		Grafana:      toStatus("grafana"),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(httpStatus)
 	_ = json.NewEncoder(w).Encode(status)
+}
+
+// pingHTTPStatus GETs baseURL+path and reports "ok"/"error", or "" when baseURL is empty (that
+// check is disabled — see Config.PrometheusURL's doc comment). A plain http.Client is enough
+// here: unlike Storage/Cache/Trainer, there's no existing client type for these three, and a
+// one-line GET-and-check-200 is all /health needs from any of them.
+func pingHTTPStatus(ctx context.Context, baseURL, path string) string {
+	if baseURL == "" {
+		return ""
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+path, nil)
+	if err != nil {
+		return "error"
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "error"
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "error"
+	}
+	return "ok"
 }

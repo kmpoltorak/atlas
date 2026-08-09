@@ -21,6 +21,14 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       PROMETHEUS_ENABLED: "true"
+      # /health reports these three as purely informational (never affects its own status/HTTP
+      # code — see internal/app/http_handler.go's healthHandler) — hardcoded in-network Compose
+      # service names, same as DATABASE_HOST/REDIS_HOST above, not a `${VAR:-default}` override
+      # slot: unlike TRAINER_URL below, there's no real deployment where these three would live
+      # anywhere else within this same Compose stack.
+      PROMETHEUS_URL: http://prometheus:9090
+      ALERTMANAGER_URL: http://alertmanager:9093
+      GRAFANA_URL: http://grafana:3000
       MARKET_PROVIDER: yahoo
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
       ALERT_POLL_INTERVAL_SECONDS: "300"

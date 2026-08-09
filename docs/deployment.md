@@ -129,18 +129,30 @@ Example:
 ```
 GET /health
 ```
-Real response (`atlas-api`, `internal/app/handlers.go`):
+Real response (`atlas-api`, `internal/app/http_handler.go`'s `healthHandler`):
 ```json
 {
  "status":"healthy",
  "service":"atlas-api",
  "database":"ok",
  "redis":"ok",
- "trainer":"ok"
+ "trainer":"ok",
+ "prometheus":"ok",
+ "alertmanager":"ok",
+ "grafana":"ok"
 }
 ```
-`trainer` reflects `atlas-trainer`'s own reachability (`trainerInfra.Client.Ping`) — absent
-entirely when `TRAINER_URL` isn't configured (the trainer sidecar is optional, off by default).
+Only `database`/`redis` affect `status`/the HTTP status code (503 when either fails) — atlas-api
+genuinely can't function without them. `trainer`/`prometheus`/`alertmanager`/`grafana` are purely
+informational (`pingHTTPStatus`): reported when reachable, `"error"` when not, but never flip
+`status`, since atlas-api doesn't depend on any of them to serve a request — Kubernetes/Docker
+restarting atlas-api because Grafana is down would fix nothing and break something that was
+working. `trainer` is additionally omitted entirely (not even `"error"`) when `TRAINER_URL`
+isn't configured, since it's a genuinely optional sidecar (`profiles: ["trainer"]` in
+`docker-compose.yml`, off by default) — `prometheus`/`alertmanager`/`grafana` default to the
+in-network Compose service names instead (`PROMETHEUS_URL`/`ALERTMANAGER_URL`/`GRAFANA_URL`),
+since those three have no such profile and are always part of the default stack; set any of them
+to an empty string to disable that particular check.
 
 Docker healthcheck must verify:
 - application availability
@@ -167,8 +179,16 @@ atlas_provider_requests_total
 atlas_recommendations_total
 atlas_predictions_total
 atlas_alerts_sent_total
+atlas_alert_poll_errors_total
+atlas_dependency_up{dependency="database|redis|trainer|prometheus|alertmanager|grafana"}
 ```
-There is no database-error counter yet.
+`atlas_dependency_up` is a gauge (1 up / 0 down), kept fresh every 15s by
+`StartDependencyStatusPolling` — the same checks `/health` itself runs (see
+`Application.dependencyStatuses`), just graphable over time instead of only a point-in-time JSON
+response. `atlas-api`'s own liveness is Prometheus' built-in `up{job="atlas-api"}` instead — it
+can't self-report the way the others can (if atlas-api itself is down, no gauge push happens
+either). Both are visualized together on Grafana's "Atlas Overview" dashboard's "Service Status"
+panel (`grafana/dashboards/overview.json`).
 ---
 # Logging
 All logs must be:

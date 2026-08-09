@@ -28,6 +28,9 @@ type Config struct {
 	AdminUsername      string
 	AdminPasswordHash  string
 	CookieSecure       bool
+	PrometheusURL      string
+	AlertmanagerURL    string
+	GrafanaURL         string
 }
 
 func Load() Config {
@@ -86,6 +89,15 @@ func Load() Config {
 		// once Atlas is actually served over HTTPS (e.g. behind deploy/ingress.yaml) — a
 		// Secure cookie is simply never sent by the browser over an unencrypted connection.
 		CookieSecure: envOrDefault("COOKIE_SECURE", "false") == "true",
+		// Unlike TrainerURL, these default to the in-network Compose service names rather than
+		// "" — prometheus/alertmanager/grafana have no `profiles:` restriction in
+		// docker-compose.yml (trainer does: `profiles: ["trainer"]`), so they're always part of
+		// the default `docker compose up` stack, not an opt-in sidecar. /health reports each as
+		// purely informational (see healthHandler) — set to "" to disable a given check
+		// entirely, e.g. in a deployment topology that doesn't run one of these.
+		PrometheusURL:   envOrDefault("PROMETHEUS_URL", "http://prometheus:9090"),
+		AlertmanagerURL: envOrDefault("ALERTMANAGER_URL", "http://alertmanager:9093"),
+		GrafanaURL:      envOrDefault("GRAFANA_URL", "http://grafana:3000"),
 	}
 }
 

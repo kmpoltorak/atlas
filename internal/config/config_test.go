@@ -13,7 +13,8 @@ func clearEnv(t *testing.T) {
 		"MARKET_PROVIDER", "DISCORD_WEBHOOK_URL", "COLLECTOR_WINDOW_DAYS",
 		"ALERT_POLL_INTERVAL_SECONDS", "MODEL_PATH", "RECOVERY_MODEL_PATH",
 		"LIBONNXRUNTIME_PATH", "ML_MODELS_DIR", "TRAINER_URL", "ADMIN_USERNAME",
-		"ADMIN_PASSWORD_HASH", "COOKIE_SECURE",
+		"ADMIN_PASSWORD_HASH", "COOKIE_SECURE", "PROMETHEUS_URL", "ALERTMANAGER_URL",
+		"GRAFANA_URL",
 	} {
 		t.Setenv(key, "")
 	}
@@ -46,6 +47,9 @@ func TestLoadDefaults(t *testing.T) {
 		AdminUsername:      "",
 		AdminPasswordHash:  "",
 		CookieSecure:       false,
+		PrometheusURL:      "http://prometheus:9090",
+		AlertmanagerURL:    "http://alertmanager:9093",
+		GrafanaURL:         "http://grafana:3000",
 	}
 	if cfg != want {
 		t.Fatalf("Load() with no env set = %+v, want %+v", cfg, want)

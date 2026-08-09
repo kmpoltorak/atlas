@@ -18,6 +18,7 @@ func TestNewMetricsRegistersEveryCollector(t *testing.T) {
 	m.PredictionsTotal.WithLabelValues("v1").Inc()
 	m.AlertsSent.WithLabelValues("SELL").Inc()
 	m.AlertPollErrors.Inc()
+	m.DependencyUp.WithLabelValues("database").Set(1)
 
 	if got := testutil.ToFloat64(m.AlertPollErrors); got != 1 {
 		t.Errorf("AlertPollErrors after one Inc() = %v, want 1", got)
@@ -40,6 +41,7 @@ func TestNewMetricsRegistersEveryCollector(t *testing.T) {
 		"atlas_predictions_total",
 		"atlas_alerts_sent_total",
 		"atlas_alert_poll_errors_total",
+		"atlas_dependency_up",
 	} {
 		if !strings.Contains(body, name) {
 			t.Errorf("scraped output missing metric %q", name)

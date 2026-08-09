@@ -46,6 +46,9 @@ func main() {
 	stopAlerts := application.StartAlertPolling()
 	defer stopAlerts()
 
+	stopDependencyPolling := application.StartDependencyStatusPolling()
+	defer stopDependencyPolling()
+
 	handler := application.NewHandler()
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
