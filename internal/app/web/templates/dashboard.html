@@ -14,8 +14,9 @@
 
     <h2 class="h5">{{T .Lang "dashboard.positions"}}</h2>
     {{if .Positions}}
+    <input type="text" class="form-control form-control-sm mb-2" id="dashboardPositionsFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
     <div class="table-responsive">
-      <table class="table table-striped table-hover align-middle">
+      <table class="table table-striped table-hover align-middle" id="dashboardPositionsTable">
         <thead><tr>
           <th scope="col">{{T .Lang "table.symbol"}}</th>
           <th scope="col" class="text-end">{{T .Lang "table.quantity"}}</th>
@@ -83,6 +84,9 @@
     <p class="text-body-secondary border-top pt-3">{{T .Lang "common.disclaimer"}}</p>
   </main>
   {{template "scripts" .}}
+  {{if .Positions}}
+  <script>atlasSetupTableTools('dashboardPositionsTable', 'dashboardPositionsFilter', 15)</script>
+  {{end}}
 </body>
 </html>
 {{end}}

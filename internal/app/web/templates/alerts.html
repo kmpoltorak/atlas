@@ -22,8 +22,9 @@
     {{end}}
 
     {{if .Alerts}}
+    <input type="text" class="form-control form-control-sm mb-2" id="alertsFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
     <div class="table-responsive">
-      <table class="table table-striped table-hover align-middle">
+      <table class="table table-striped table-hover align-middle" id="alertsTable">
         <thead><tr><th scope="col">{{T .Lang "table.symbol"}}</th><th scope="col">{{T .Lang "table.action"}}</th><th scope="col" class="text-end">{{T .Lang "table.confidence"}}</th><th scope="col">{{T .Lang "table.triggered_at"}}</th><th scope="col">{{T .Lang "table.reason"}}</th></tr></thead>
         <tbody>
         {{range .Alerts}}
@@ -36,6 +37,12 @@
         </tr>
         {{end}}
         </tbody>
+        <tfoot>
+        <tr class="table-group-divider">
+          <th scope="row" colspan="4">{{T .Lang "table.total"}}</th>
+          <td class="tabular-nums">{{len .Alerts}}</td>
+        </tr>
+        </tfoot>
       </table>
     </div>
     {{else}}
@@ -43,6 +50,9 @@
     {{end}}
   </main>
   {{template "scripts" .}}
+  {{if .Alerts}}
+  <script>atlasSetupTableTools('alertsTable', 'alertsFilter', 15)</script>
+  {{end}}
 </body>
 </html>
 {{end}}
