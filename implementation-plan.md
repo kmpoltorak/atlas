@@ -62,7 +62,7 @@ column, so old daily history for real symbols (AAPL, MSFT, ALE.WA, SPCX, ETFBDIV
 truncated before the first hourly collection, rather than left to mix silently with new hourly
 rows in the same per-symbol series (this would have corrupted `cmd/export-training-data`'s
 read-back, the only consumer of stored bar history — nothing in the live recommendation path
-reads it back). Scoped with Kris first (truncate vs. leave as-is — truncate was chosen).
+reads it back). Scoped with the Author first (truncate vs. leave as-is — truncate was chosen).
 
 ## 5. Phase 3 — Analytics Layer
 
@@ -118,9 +118,9 @@ state and ML confidence, not cosmetic renaming — see docs/decision_engine.md. 
 0.10) — the engine's score is a real four-term Technical+ML+Portfolio+Risk blend, matching
 docs/decision_engine.md's "Scoring Model" (there's still no separate pipeline *stage* the way
 "Decision Flow" draws it — Risk is computed inline in the Orchestrator, not a standalone
-component). Scoped with Kris first (report-only vs. blended into scoring — blended was chosen,
+component). Scoped with the Author first (report-only vs. blended into scoring — blended was chosen,
 per the original docs/decision_engine.md design). Recovery-probability and market-condition —
-scoped with Kris as "build all three" alongside Risk Engine — turned out to need different
+scoped with the Author as "build all three" alongside Risk Engine — turned out to need different
 treatment on closer look: recovery probability first got its contract and a real, tested label
 definition (`ml.Prediction.RecoveryProbability`, `ml.ComputeRecoveryLabel`) with no trained model
 yet, since real accumulated history was far too thin to train one honestly at the time (1 symbol,
@@ -219,7 +219,7 @@ fixed), and model/strategy evaluation before promotion is real — every run sco
 model's predictions against realized outcomes (Accuracy/Precision/Recall/F1/ROC AUC) and
 persists to `backtest_runs` (migrations/005), queryable via `GET /backtests/history`.
 Walk-forward train/validate/test splitting and parameter optimization are now real too, scoped
-with Kris first (decision engine thresholds are the thing optimized; a fixed 60/20/20
+with the Author first (decision engine thresholds are the thing optimized; a fixed 60/20/20
 proportional chronological split, not caller-supplied date ranges; results are report-only,
 never auto-promoted to the live engine) — see `GET /backtests/walkforward`
 (internal/application/backtesting/walkforward.go) and docs/backtesting.md's Implementation
@@ -262,7 +262,7 @@ added to the Kubernetes manifests even though `docker-compose.yml` had them — 
 optional/non-fatal-when-unset, matching their behavior everywhere else.
 
 Prometheus alerting rules (Alertmanager) for infrastructure-level conditions now exist too,
-scoped with Kris first: `prometheus/alerts.yml` defines `AtlasAPIDown`, `AtlasAPIFlapping`
+scoped with the Author first: `prometheus/alerts.yml` defines `AtlasAPIDown`, `AtlasAPIFlapping`
 (a crash-loop proxy needing no extra scrape config), `AtlasPodCrashLooping` (the literal
 Kubernetes crash-loop signal, but inert until kube-state-metrics is scraped, which this repo
 doesn't configure — consistent with `deploy/README.md`'s Scope note that cluster-level
@@ -271,7 +271,7 @@ from the existing Discord business-logic alerts in `internal/app/alerts_loop.go`
 end in Docker Compose: `prometheus/prometheus.yml` loads the rule file and forwards firing
 alerts to a new `alertmanager` service, which now routes to a real Discord receiver — a
 deliberately *separate* channel/webhook from `DISCORD_WEBHOOK_URL`'s business alerts, so infra
-noise never mixes with investment notifications, scoped with Kris first. The webhook URL is
+noise never mixes with investment notifications, scoped with the Author first. The webhook URL is
 never committed: `docker-compose.yml`'s `alertmanager` service writes it to a file from the
 gitignored `.env` (see `.env.example`) at container start, and `alertmanager/alertmanager.yml`
 points `discord_configs`' `webhook_url_file` at that file. Getting this working live surfaced a
@@ -285,7 +285,7 @@ delivery without crashing Alertmanager — the same non-fatal-optional-dependenc
 every other external integration in this project. See `deploy/RUNBOOK.md`'s "Infrastructure
 alerting" section for the full rule list and verification steps.
 
-Scheduled database backups are now automated in Kubernetes too, scoped with Kris first (daily,
+Scheduled database backups are now automated in Kubernetes too, scoped with the Author first (daily,
 7-day retention): `deploy/backup-cronjob.yaml` adds a `CronJob` that runs `pg_dump` against
 TimescaleDB every day at 02:00 and keeps the last 7 days of dumps on a new `PersistentVolumeClaim`
 (`atlas-db-backups`), pruning older ones on each run. Docker Compose has no CronJob equivalent, so
@@ -302,7 +302,7 @@ TimescaleDB's internal chunk tables. The corrected procedure restores into a fre
 database instead, verified byte-for-byte against the original via row-order-independent MD5
 checksums across `transactions`/`positions`/`prices`.
 
-Real Kubernetes secret management was scoped with Kris and deliberately resolved as: manual
+Real Kubernetes secret management was scoped with the Author and deliberately resolved as: manual
 `kubectl create secret` (already documented in `deploy/README.md`'s Apply section) *is* the
 design, not a placeholder awaiting a real secret manager — Sealed Secrets/External Secrets
 Operator/a cloud secret manager were considered and rejected as more than this project's size
@@ -331,7 +331,7 @@ or explicitly out of scope, not open.
 
 ## 10. Phase 8 — Frontend / UI
 
-**Implementation status**: real, scoped with Kris before building (server-rendered Go templates,
+**Implementation status**: real, scoped with the Author before building (server-rendered Go templates,
 full dashboard scope, single account + password + TOTP). Every capability listed below as
 "tentative" is now reachable through a browser, not just raw HTTP: recording BUY/SELL
 transactions (`GET`/`POST /dashboard/portfolio`), viewing positions/risk, running recommendations
@@ -442,7 +442,7 @@ bulk-delete there would need a real list-UI redesign first, out of scope for thi
 live via Docker: recorded two positions and two watchlist symbols, bulk-deleted each pair in one
 request, confirmed both gone from their respective pages.
 
-**Display-language switcher, built in a later pass**: English/Polish, scoped with Kris first
+**Display-language switcher, built in a later pass**: English/Polish, scoped with the Author first
 (hand-rolled `map[string]map[Lang]string` dictionary + a `T`/`actionLabel` template func pair,
 not a third-party i18n library — consistent with this codebase's stance elsewhere of only
 reaching for a dependency when hand-rolling would be inappropriate, e.g. bcrypt/QR encoding but
@@ -461,7 +461,7 @@ Verified live via Docker: every nav label, the portfolio page's transaction hist
 (BUY/SELL rendered as KUPNO/SPRZEDAŻ), and a JS `confirm()` dialog with a real interpolated
 symbol name ("Usunąć AAPL całkowicie?...") all render correctly server-side in Polish.
 
-**Multi-currency portfolio (PLN/EUR/USD), built in a later pass**: scoped with Kris first
+**Multi-currency portfolio (PLN/EUR/USD), built in a later pass**: scoped with the Author first
 (NBP Table A over Table C — the average/mid reference rate is the standard choice for valuation,
 not NBP's own buy/sell cash-exchange spread; conversion shown on every page with a currency-
 denominated value, not just Portfolio; any currency allowed per transaction, not one currency
@@ -488,6 +488,64 @@ not a silent 1:1 PLN fallback, since that could misrepresent real money. Verifie
 Docker: a real $100 USD purchase converted to 373.24 PLN using the real live NBP rate, and both
 English and Polish renders of the Positions/Transaction History tables showing correct
 conversions and translated column headers ("Waluta"/"Równowartość w PLN").
+
+**Post-launch polish pass, built in a later pass**: a full visual/UX audit (the `impeccable`
+design skill's critique workflow — dual isolated review, manual + `detect.mjs`) against the
+already-shipped Phase 8 dashboard, followed by a self-directed P0-P4 punch list once the
+critique's own findings were exhausted. Grouped by theme rather than by PR:
+
+- **Honesty relabeling of computed-but-misleadingly-named fields** — two real findings, both
+  fixed by renaming/clarifying rather than by changing the underlying computation (the
+  computation was always real, just not what its label implied): `portfolio.RiskSnapshot`'s
+  `Volatility`/`Drawdown` are simple current-state heuristics, not the statistical measures of
+  the same name `backtesting.Result` genuinely computes — relabeled "Avg. Deviation from Cost"/
+  "Unrealized Loss / Exposure" on the dashboard. `Position.CurrentPrice` never refreshes from a
+  live market quote at all — it's frozen at whatever the most recent transaction's price was
+  (see `applyTransaction`) — relabeled "Last Transaction Price" with an "as of `<date>`" line
+  (`priceAsOf`, `web_handlers.go`).
+- **Dashboard information density**: a Total P&L `<tfoot>` row on the Positions tables
+  (`totalPnL`, `render.go`); an "Active Alerts" summary card (`alertCountsByAction`) so the
+  landing page shows whether anything is actionable without a separate visit to `/dashboard/
+  alerts`, deliberately not duplicating that page's own persistence side effects; and
+  `AlertPollStatus` (`alerts_loop.go`) surfacing the background alert-poll loop's last
+  success/failure on the Alerts page itself, not just via the pre-existing `AlertPollErrors`
+  Prometheus counter.
+- **i18n/timezone/ordering polish**: every `Recommendation.Reason` string (both
+  `decision.UseCase`'s and `Orchestrator.blend`'s independent sources) is now translated
+  (`reasonLabel`/`joinReasons`) instead of always rendering in English regardless of the
+  selected language; every persisted-as-UTC timestamp displays in Europe/Warsaw via a new
+  `localTime` template func (`time/tzdata` blank-imported so this doesn't depend on the
+  container image having system tzdata); the recommendations/backtests symbol picker and the
+  transaction-currency picker sort alphabetically.
+- **Correctness/hygiene**: `"/"` being a `net/http.ServeMux` subtree pattern meant every
+  unmatched path silently rendered the dashboard with a 200 instead of a 404 — fixed. Page-handler
+  failures now render inside Atlas' own chrome (`web.RenderError`/`templates/error.html`) instead
+  of net/http's plain-text default, except in `totpQRHandler`, which serves a PNG and correctly
+  kept plain-text. A dead `PortfolioPage.Risk` field (computed, passed to the template, never
+  once referenced by `portfolio.html`) was removed. A favicon was added — a plain glyph, not a
+  designed brand mark (see PRODUCT.md). `migrations/013` added a `schema_migrations` table,
+  backfilled through itself, with the convention that every future migration stamps its own
+  version — migrations 001-012 shipped with no way to tell what had actually been applied to a
+  given database. `internal/infrastructure/persistence`'s test suite writes real
+  `TEST...`-prefixed rows into `TEST_DATABASE_DSN` but never cleaned any of it up; `connectTestDB`
+  now registers a matching `t.Cleanup` — confirmed live against the real dev database, which had
+  23 stale rows accumulated from prior runs before this fix.
+- **Client-side table tooling**: every genuine list table (Positions, Transactions, Watchlist,
+  Alerts, Backtests Trades — not the key-value Recommendations/Backtests-summary tables) gained a
+  text filter, Previous/Next pagination, and a row-count `<tfoot>` where no meaningful numeric
+  total already existed, via a new `atlasSetupTableTools` (`atlas.js`). Chosen client-side,
+  scoped with the Author first: these tables run at most in the low hundreds of rows for a single-user
+  tool, so a real backend query-param/`LIMIT`/`OFFSET` implementation would add backend surface
+  area for no benefit at this scale. `atlasSetupBulkDelete` (the three tables that also have
+  bulk-delete) was extended to keep its "N selected" count and select-all state correct once rows
+  can be hidden by a filter/page change.
+
+Verified live via Docker throughout: isolated template-execution tests for every new render path
+(deleted after confirming, not left in the suite), the real dev database before/after states for
+both the migration-tracking and test-cleanup fixes, and both Discord webhooks (business +
+infra/training) confirmed delivering end-to-end — a direct webhook POST for each, plus a
+synthetically-fired Alertmanager alert confirmed via its own `alertmanager_notifications_total`
+metric, not just "the URL didn't error."
 
 Not done: multi-user accounts, OAuth2/OIDC, and a richer SPA frontend remain explicitly out of
 scope for this increment — revisit only if Atlas's use case actually changes from "personal tool"

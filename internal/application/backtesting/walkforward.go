@@ -13,7 +13,7 @@ import (
 // Walk-forward split ratios per docs/backtesting.md's "Walk Forward Testing"/"Data Splitting"
 // sections: proportional, chronological, never shuffled. The remaining ~20% after train+validate
 // becomes the test split. Fixed at 60/20/20 rather than caller-supplied date ranges — a
-// deliberate simplification agreed on with Kris to keep the API simple (no date-range
+// deliberate simplification agreed on with the Author to keep the API simple (no date-range
 // parameters); see implementation-plan.md's Phase 6 status note.
 const (
 	trainRatio    = 0.6

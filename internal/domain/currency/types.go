@@ -1,6 +1,6 @@
 // Package currency defines the currencies Atlas' portfolio recording understands and converts
-// between. Scoped to exactly the three Kris actually holds positions in — not a general
-// ISO-4217 catalog.
+// between. Scoped to exactly the three currencies the Author actually holds positions in — not a
+// general ISO-4217 catalog.
 package currency
 
 // Code is a supported transaction/display currency.

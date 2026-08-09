@@ -129,18 +129,29 @@ Example:
 ```
 GET /health
 ```
-Response:
+Real response (`atlas-api`, `internal/app/handlers.go`):
 ```json
 {
  "status":"healthy",
+ "service":"atlas-api",
  "database":"ok",
- "redis":"ok"
+ "redis":"ok",
+ "trainer":"ok"
 }
 ```
+`trainer` reflects `atlas-trainer`'s own reachability (`trainerInfra.Client.Ping`) — absent
+entirely when `TRAINER_URL` isn't configured (the trainer sidecar is optional, off by default).
+
 Docker healthcheck must verify:
 - application availability
 - database connectivity
 - required dependencies
+
+`atlas-api`'s own compose healthcheck (`docker-compose.yml`) is `curl -fsS http://localhost:8080/
+health`, not `wget` — its runtime base (`debian:bookworm-slim`) doesn't ship `wget`, a real bug
+once (`docker inspect` showed a nonstop "unhealthy" status despite `/health` genuinely returning
+200) fixed by adding `curl` to the Dockerfile. `atlas-trainer` still uses `wget`, which is fine
+there: its image is the full `golang:1.25-bookworm`, which does ship it. See `skills/docker.md`.
 ---
 # Monitoring
 Every deployment must expose:
