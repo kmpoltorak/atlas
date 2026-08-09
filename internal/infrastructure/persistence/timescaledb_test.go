@@ -12,7 +12,11 @@ import (
 
 // connectTestDB opens a real connection using TEST_DATABASE_DSN, skipping the test cleanly
 // when it isn't set (local dev without Docker, or an environment that hasn't wired up a
-// Postgres/TimescaleDB service container yet — see .github/workflows/ci.yml).
+// Postgres/TimescaleDB service container yet — see .github/workflows/ci.yml). Every persistence
+// test uses a "TEST..."-prefixed symbol/role (TESTAAPL, TESTWATCHDUP, "correction-test", ...) —
+// see cleanupTestFixtures — so this also registers the matching cleanup, run before the
+// connection itself closes (t.Cleanup runs LIFO), leaving TEST_DATABASE_DSN as this test found
+// it instead of permanently accumulating rows across every run.
 func connectTestDB(t *testing.T) *TimescaleDB {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_DSN")
@@ -26,7 +30,36 @@ func connectTestDB(t *testing.T) *TimescaleDB {
 		t.Fatalf("failed to connect to test database: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { cleanupTestFixtures(t, db) })
 	return db
+}
+
+// cleanupTestFixtures deletes every row a persistence test could have written, identified by the
+// project-wide "TEST..." naming convention (see e.g. timescaledb_test.go's own TESTAAPL/
+// TESTIDEMPOTENT) rather than tracking exactly which rows each individual test added — simpler,
+// and correct as long as the convention holds (enforced only by test-author discipline, same as
+// every other project-wide naming convention). symbol_id-scoped tables are deleted before
+// symbols itself to satisfy their foreign keys; ml_model_selection is separate (role-keyed, not
+// symbol-scoped) and uses the "...-test" role suffix that ml_model_selection_test.go writes.
+func cleanupTestFixtures(t *testing.T, db *TimescaleDB) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	const bySymbol = ` WHERE symbol_id IN (SELECT id FROM symbols WHERE ticker LIKE 'TEST%')`
+	for _, table := range []string{
+		"prices", "indicators", "predictions", "positions", "transactions",
+		"recommendations", "backtest_runs", "watchlist_items",
+	} {
+		if _, err := db.db.ExecContext(ctx, "DELETE FROM "+table+bySymbol); err != nil {
+			t.Logf("cleanupTestFixtures: delete from %s failed: %v", table, err)
+		}
+	}
+	if _, err := db.db.ExecContext(ctx, "DELETE FROM symbols WHERE ticker LIKE 'TEST%'"); err != nil {
+		t.Logf("cleanupTestFixtures: delete from symbols failed: %v", err)
+	}
+	if _, err := db.db.ExecContext(ctx, "DELETE FROM ml_model_selection WHERE role LIKE '%-test'"); err != nil {
+		t.Logf("cleanupTestFixtures: delete from ml_model_selection failed: %v", err)
+	}
 }
 
 func TestDSNIncludesConnectionParameters(t *testing.T) {
