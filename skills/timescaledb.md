@@ -7,11 +7,15 @@
 - No compression policy is configured anywhere. If you're about to add one, that's new scope, not
   restoring something that regressed.
 - Migrations are hand-written, numbered SQL files (`migrations/NNN_description.sql`) with **no
-  real migration tool and no version tracking table** — official Postgres/TimescaleDB images
-  auto-run everything in `docker-entrypoint-initdb.d` (mounted from `migrations/`), but only
-  against a *fresh, empty* data volume. Against an existing volume, a new migration must be
-  applied by hand (`psql -f migrations/0NN_....sql`) — there's nothing that tracks which
-  migrations an existing database has already had applied.
+  real migration tool** — official Postgres/TimescaleDB images auto-run everything in
+  `docker-entrypoint-initdb.d` (mounted from `migrations/`), but only against a *fresh, empty*
+  data volume. Against an existing volume, a new migration must still be applied by hand
+  (`psql -f migrations/0NN_....sql`) — nothing runs it for you. There *is* now a
+  `schema_migrations` table (migrations/013) recording which versions have actually been
+  applied to a given database — every migration from 013 onward ends with its own
+  `INSERT INTO schema_migrations (version) VALUES ('0NN') ON CONFLICT (version) DO NOTHING;`, so
+  `SELECT version FROM schema_migrations ORDER BY version;` always reflects reality regardless of
+  which path (fresh-volume bootstrap or by-hand) a migration went through.
 - Idempotent upserts rely on a real unique constraint, not application-level dedup:
   `prices_symbol_ts_unique UNIQUE (symbol_id, ts)` (migrations/002) is the `ON CONFLICT` target
   the collector's upsert logic depends on.

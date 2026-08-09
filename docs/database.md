@@ -27,6 +27,8 @@ migrations/001-012):
   flag) for the one admin account.
 - `ml_model_selection` (migrations/011) — which trained model file is active per role
   (correction/recovery), set from the Account dashboard page — see docs/ml.md.
+- `schema_migrations` (migrations/013) — which migration versions have actually been applied to
+  this database; see the "Migrations" note below.
 
 There is no `alerts` table — alerts are computed live from the watchlist on every request, not
 persisted (see `internal/application/alerts`).
@@ -51,7 +53,7 @@ Indexes: `symbols.ticker`, `prices(symbol_id, ts)` (a real unique constraint,
 `backtest_runs(symbol_id, created_at)` (migrations/005). Most other lookups go through a small
 number of tables at a scale where an explicit index hasn't been needed yet.
 
-Migrations are hand-written, numbered SQL files with no real migration tool and no version
-tracking table — see `skills/timescaledb.md` for how they actually get applied (fresh volume vs.
-existing one), and for the real `pg_restore -c` hypertable-constraint bug this project hit and
-fixed (see `deploy/RUNBOOK.md`'s recovery drill).
+Migrations are hand-written, numbered SQL files with no real migration tool — see
+`skills/timescaledb.md` for how they actually get applied (fresh volume vs. existing one), for
+the `schema_migrations` version-tracking table (migrations/013), and for the real `pg_restore -c`
+hypertable-constraint bug this project hit and fixed (see `deploy/RUNBOOK.md`'s recovery drill).
