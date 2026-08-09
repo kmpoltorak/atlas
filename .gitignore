@@ -25,6 +25,9 @@ chat.json
 # Claude
 .claude
 
+# Impeccable design-skill local state (critique snapshots) — tool-local, not project source
+.impeccable
+
 # ML training artifacts (locally/CI-generated, not committed source — see training/README.md)
 training/.venv/
 training/.venv-container/
