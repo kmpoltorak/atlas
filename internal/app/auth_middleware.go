@@ -17,6 +17,7 @@ var publicPaths = map[string]bool{
 	"/metrics":        true,
 	"/login":          true,
 	"/dashboard/lang": true, // a display-language preference, not sensitive — usable pre-login too
+	"/favicon.ico":    true, // every browser requests this on its own, including on the login page itself
 }
 
 // requireAuth gates every route except publicPaths behind a valid session — a no-op passthrough
