@@ -48,8 +48,11 @@ echo "==> Training candidate models"
 
 echo
 echo "==> Done. New candidate model files are listed above (wrote ...)."
-echo "    Nothing was activated — review each one's printed holdout AUC/accuracy, then pick it"
-echo "    from /dashboard/account if it looks good. Old candidates are never deleted or"
+echo "    Nothing was activated. Before picking one from /dashboard/account, read its printed"
+echo "    ROC AUC against the symbol-base-rate baseline on the line above it — a model that"
+echo "    doesn't beat that baseline is reproducing per-symbol correction frequencies, not"
+echo "    learning price dynamics, however good its accuracy looks (on this target, predicting"
+echo "    'no correction' every time already scores ~0.94). Old candidates are never deleted or"
 echo "    overwritten automatically; prune training/models/ by hand once you no longer need them."
 
 if [ -n "${TRAINING_DISCORD_WEBHOOK_URL:-}" ]; then

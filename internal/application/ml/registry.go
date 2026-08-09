@@ -33,13 +33,61 @@ type ModelInfo struct {
 	HoldoutAUC      float64
 	HoldoutAccuracy float64
 	LabelDefinition string
+
+	// HoldoutAveragePrecision (PR AUC) and SymbolBaseRateAveragePrecision are the pair the
+	// promotion decision actually turns on. Atlas alerts on the top of the ranking — a handful
+	// of "a correction may be coming" calls — whereas ROC AUC is dominated by how well the vast
+	// uneventful middle is ordered, which no alert ever touches. The two genuinely disagree
+	// here: the shipped model trails the baseline on ROC AUC while beating it on PR AUC, and at
+	// the 25 highest-scoring bars it was right 68% of the time against a 6.5% base rate.
+	HoldoutAveragePrecision        float64
+	SymbolBaseRateAveragePrecision *float64
+
+	// SymbolBaseRateAUC is the holdout ROC AUC of a predictor using no features at all, only
+	// each symbol's training-set positive rate. Nil for models trained before that baseline
+	// existed — unknown, which is not the same as passing, so Description says so rather than
+	// staying silent.
+	SymbolBaseRateAUC *float64
+
+	// BeatsSymbolBaseRate is train.py's verdict, judged on PR AUC. Nil for pre-baseline models.
+	BeatsSymbolBaseRate *bool
+
+	// UnseenSymbolAUC is holdout ROC AUC on instruments the model never trained on. The
+	// base-rate lookup scores exactly 0.5 here by construction, having no history for a symbol
+	// it has never met — so this is what a newly-watchlisted ticker actually gets.
+	UnseenSymbolAUC *float64
 }
 
 // Description renders a short, human-readable summary for a dropdown/list UI — every figure in
 // it comes straight from the metadata sidecar train.py wrote at training time.
+//
+// Accuracy is deliberately absent. On a target where roughly 6% of bars precede a correction,
+// "always predict no correction" scores ~94%, so a high accuracy says almost nothing and reads
+// as reassurance — it was the figure that made a model which had learned nothing look excellent.
+// This listing is the exact screen where a human decides to promote a model into live
+// recommendations, so it leads with PR AUC against the symbol-base-rate baseline: Atlas alerts on
+// the top of the ranking, and PR AUC is what measures that, while ROC AUC is dominated by the
+// uneventful middle no alert ever touches.
 func (m ModelInfo) Description() string {
-	return fmt.Sprintf("%s — trained %s — holdout AUC %.2f, accuracy %.2f (train n=%d, holdout n=%d)",
-		m.Version, m.TrainedAt.Format("2006-01-02 15:04"), m.HoldoutAUC, m.HoldoutAccuracy, m.RowCount, m.HoldoutRowCount)
+	verdict := "baseline unknown (trained before the baseline check existed)"
+	if m.SymbolBaseRateAveragePrecision != nil {
+		verdict = fmt.Sprintf("vs symbol-base-rate baseline %.2f", *m.SymbolBaseRateAveragePrecision)
+		if m.BeatsSymbolBaseRate != nil && !*m.BeatsSymbolBaseRate {
+			verdict += " — DOES NOT BEAT BASELINE"
+		}
+	} else if m.SymbolBaseRateAUC != nil {
+		verdict = fmt.Sprintf("vs symbol-base-rate ROC baseline %.2f", *m.SymbolBaseRateAUC)
+		if m.BeatsSymbolBaseRate != nil && !*m.BeatsSymbolBaseRate {
+			verdict += " — DOES NOT BEAT BASELINE"
+		}
+	}
+	unseen := ""
+	if m.UnseenSymbolAUC != nil {
+		unseen = fmt.Sprintf(", %.2f on unseen symbols", *m.UnseenSymbolAUC)
+	}
+	return fmt.Sprintf("%s — trained %s — PR AUC %.2f %s (ROC AUC %.2f%s; train n=%d, holdout n=%d)",
+		m.Version, m.TrainedAt.Format("2006-01-02 15:04"), m.HoldoutAveragePrecision, verdict,
+		m.HoldoutAUC, unseen, m.RowCount, m.HoldoutRowCount)
 }
 
 // trainingMetadata mirrors training/train.py's full metadata dict — a superset of the
@@ -53,6 +101,15 @@ type trainingMetadata struct {
 	HoldoutAUC      float64 `json:"holdout_auc"`
 	HoldoutAccuracy float64 `json:"holdout_accuracy"`
 	LabelDefinition string  `json:"label_definition"`
+
+	// Pointers, not values: these two are absent from sidecars written before the baseline
+	// check existed, and a zero-valued 0.0 AUC would read as "the baseline was hopeless, this
+	// model is great" — the exact opposite of the truth. Absent must stay distinguishable.
+	SymbolBaseRateAUC              *float64 `json:"symbol_base_rate_auc"`
+	SymbolBaseRateAveragePrecision *float64 `json:"symbol_base_rate_average_precision"`
+	BeatsSymbolBaseRate            *bool    `json:"beats_symbol_base_rate"`
+	UnseenSymbolAUC                *float64 `json:"unseen_symbol_auc"`
+	HoldoutAveragePrecision        float64  `json:"holdout_average_precision"`
 }
 
 // ListModels scans dir for metadata sidecars (training/train.py's atlas-ml[-recovery]-<version>
@@ -94,14 +151,19 @@ func ListModels(dir string, role Role) ([]ModelInfo, error) {
 		}
 
 		infos = append(infos, ModelInfo{
-			Filename:        strings.TrimSuffix(name, ".json") + ".onnx",
-			Version:         meta.Version,
-			TrainedAt:       time.Unix(int64(meta.TrainedAt), 0),
-			RowCount:        meta.RowCount,
-			HoldoutRowCount: meta.HoldoutRowCount,
-			HoldoutAUC:      meta.HoldoutAUC,
-			HoldoutAccuracy: meta.HoldoutAccuracy,
-			LabelDefinition: meta.LabelDefinition,
+			Filename:                       strings.TrimSuffix(name, ".json") + ".onnx",
+			Version:                        meta.Version,
+			TrainedAt:                      time.Unix(int64(meta.TrainedAt), 0),
+			RowCount:                       meta.RowCount,
+			HoldoutRowCount:                meta.HoldoutRowCount,
+			HoldoutAUC:                     meta.HoldoutAUC,
+			HoldoutAccuracy:                meta.HoldoutAccuracy,
+			LabelDefinition:                meta.LabelDefinition,
+			SymbolBaseRateAUC:              meta.SymbolBaseRateAUC,
+			SymbolBaseRateAveragePrecision: meta.SymbolBaseRateAveragePrecision,
+			BeatsSymbolBaseRate:            meta.BeatsSymbolBaseRate,
+			UnseenSymbolAUC:                meta.UnseenSymbolAUC,
+			HoldoutAveragePrecision:        meta.HoldoutAveragePrecision,
 		})
 	}
 

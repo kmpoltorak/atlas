@@ -31,7 +31,7 @@ func TestOnnxModelRealInference(t *testing.T) {
 		t.Fatalf("expected model version %q from metadata sidecar, got %q", "smoketest", model.Version)
 	}
 
-	prob, err := model.PredictCorrectionProbability(domainml.FeatureVector{RSI: 50, EMA: 100, MACD: 0, ATR: 1.5, Volume: 1})
+	prob, err := model.PredictCorrectionProbability(domainml.FeatureVector{RSI: 50, EMADist: 0.0, MACDPct: 0.0, TRPct: 0.015, Volume: 1})
 	if err != nil {
 		t.Fatalf("PredictCorrectionProbability failed: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestUseCasePredictWithRealModel(t *testing.T) {
 	defer model.Close()
 
 	uc := NewUseCaseWithModel(model)
-	prediction, err := uc.Predict(domainml.FeatureVector{RSI: 65, EMA: 101, MACD: 0.3, ATR: 1.2, Volume: 1.1})
+	prediction, err := uc.Predict(domainml.FeatureVector{RSI: 65, EMADist: 0.01, MACDPct: 0.003, TRPct: 0.012, Volume: 1.1})
 	if err != nil {
 		t.Fatalf("Predict failed: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestUseCasePredictWithRecoveryModelPopulatesRecoveryProbability(t *testing.
 	defer recoveryModel.Close()
 
 	uc := NewUseCaseWithModels(model, recoveryModel)
-	prediction, err := uc.Predict(domainml.FeatureVector{RSI: 65, EMA: 101, MACD: 0.3, ATR: 1.2, Volume: 1.1})
+	prediction, err := uc.Predict(domainml.FeatureVector{RSI: 65, EMADist: 0.01, MACDPct: 0.003, TRPct: 0.012, Volume: 1.1})
 	if err != nil {
 		t.Fatalf("Predict failed: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestUseCasePredictWithoutRecoveryModelLeavesRecoveryProbabilityZero(t *test
 	defer model.Close()
 
 	uc := NewUseCaseWithModel(model)
-	prediction, err := uc.Predict(domainml.FeatureVector{RSI: 65, EMA: 101, MACD: 0.3, ATR: 1.2, Volume: 1.1})
+	prediction, err := uc.Predict(domainml.FeatureVector{RSI: 65, EMADist: 0.01, MACDPct: 0.003, TRPct: 0.012, Volume: 1.1})
 	if err != nil {
 		t.Fatalf("Predict failed: %v", err)
 	}

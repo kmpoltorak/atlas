@@ -72,11 +72,50 @@ func TestListModelsSkipsMalformedSidecarsWithoutFailing(t *testing.T) {
 }
 
 func TestModelInfoDescriptionIncludesRealMetrics(t *testing.T) {
-	info := ModelInfo{Version: "v20260808120000", HoldoutAUC: 0.83, HoldoutAccuracy: 0.65, RowCount: 222, HoldoutRowCount: 46}
+	info := ModelInfo{Version: "v20260808120000", HoldoutAUC: 0.83, HoldoutAveragePrecision: 0.65, RowCount: 222, HoldoutRowCount: 46}
 	desc := info.Description()
 	for _, want := range []string{"v20260808120000", "0.83", "0.65", "222", "46"} {
 		if !strings.Contains(desc, want) {
 			t.Fatalf("expected description %q to contain %q", desc, want)
 		}
+	}
+}
+
+// A model that loses to the "just memorise each symbol's base rate" predictor must say so on the
+// very screen where a human promotes it — see ModelInfo.Description's doc comment for why
+// accuracy alone was actively reassuring on this target.
+func TestModelInfoDescriptionFlagsModelsThatLoseToTheBaseline(t *testing.T) {
+	baseline, beats := 0.76, false
+	info := ModelInfo{
+		Version: "v1", HoldoutAUC: 0.707, HoldoutAveragePrecision: 0.12,
+		SymbolBaseRateAveragePrecision: &baseline, BeatsSymbolBaseRate: &beats,
+	}
+	desc := info.Description()
+	if !strings.Contains(desc, "0.76") {
+		t.Errorf("expected description %q to report the baseline AUC", desc)
+	}
+	if !strings.Contains(desc, "DOES NOT BEAT BASELINE") {
+		t.Errorf("expected description %q to flag that the model loses to the baseline", desc)
+	}
+}
+
+func TestModelInfoDescriptionMarksPreBaselineModelsUnknown(t *testing.T) {
+	desc := ModelInfo{Version: "v1", HoldoutAUC: 0.71}.Description()
+	if !strings.Contains(desc, "baseline unknown") {
+		t.Errorf("expected description %q to say the baseline is unknown, not imply it passed", desc)
+	}
+	if strings.Contains(desc, "DOES NOT BEAT BASELINE") {
+		t.Errorf("description %q must not claim a verdict it doesn't have", desc)
+	}
+}
+
+func TestModelInfoDescriptionCreditsAModelThatBeatsTheBaseline(t *testing.T) {
+	baseline, beats := 0.55, true
+	desc := ModelInfo{Version: "v1", HoldoutAUC: 0.71, SymbolBaseRateAveragePrecision: &baseline, BeatsSymbolBaseRate: &beats}.Description()
+	if strings.Contains(desc, "DOES NOT BEAT BASELINE") {
+		t.Errorf("description %q wrongly flags a model that does beat the baseline", desc)
+	}
+	if !strings.Contains(desc, "0.55") {
+		t.Errorf("expected description %q to still report the baseline for comparison", desc)
 	}
 }

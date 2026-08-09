@@ -177,3 +177,60 @@ func TestComputeBollingerBandsWidensWithVolatility(t *testing.T) {
 		t.Fatalf("expected middle band (SMA) of 110 for closes alternating 100/120, got %v", bands.Middle[0])
 	}
 }
+
+// ComputeSmoothedATR must actually smooth, which is the whole reason it exists alongside
+// ComputeATR — a single spiking bar should move it far less than it moves the raw true range.
+func TestComputeSmoothedATRDampensASingleSpike(t *testing.T) {
+	u := NewUseCase()
+	bars := make([]market.Bar, 0, 40)
+	for i := 0; i < 40; i++ {
+		high, low := 101.0, 99.0
+		if i == 39 {
+			high, low = 140.0, 60.0 // one violent bar
+		}
+		bars = append(bars, market.Bar{Symbol: "X", Open: 100, High: high, Low: low, Close: 100, Volume: 1000})
+	}
+	raw, err := u.ComputeATR("X", bars)
+	if err != nil {
+		t.Fatalf("ComputeATR: %v", err)
+	}
+	smoothed, err := u.ComputeSmoothedATR("X", bars, 14)
+	if err != nil {
+		t.Fatalf("ComputeSmoothedATR: %v", err)
+	}
+	lastRaw, lastSmoothed := raw[len(raw)-1], smoothed[len(smoothed)-1]
+	if lastSmoothed >= lastRaw {
+		t.Fatalf("smoothed ATR (%v) should be well below the spiking bar's raw true range (%v)", lastSmoothed, lastRaw)
+	}
+	if lastSmoothed <= 0 {
+		t.Fatalf("smoothed ATR should stay positive, got %v", lastSmoothed)
+	}
+}
+
+func TestComputeRealizedVolatilityIsZeroOnAFlatSeriesAndPositiveOtherwise(t *testing.T) {
+	u := NewUseCase()
+	flat := make([]market.Bar, 0, 30)
+	choppy := make([]market.Bar, 0, 30)
+	for i := 0; i < 30; i++ {
+		flat = append(flat, market.Bar{Symbol: "X", Close: 100, High: 100, Low: 100, Volume: 1})
+		price := 100.0
+		if i%2 == 1 {
+			price = 105
+		}
+		choppy = append(choppy, market.Bar{Symbol: "X", Close: price, High: price, Low: price, Volume: 1})
+	}
+	flatVol, err := u.ComputeRealizedVolatility("X", flat, 20)
+	if err != nil {
+		t.Fatalf("ComputeRealizedVolatility(flat): %v", err)
+	}
+	if got := flatVol[len(flatVol)-1]; got != 0 {
+		t.Errorf("a perfectly flat series should have zero realized volatility, got %v", got)
+	}
+	choppyVol, err := u.ComputeRealizedVolatility("X", choppy, 20)
+	if err != nil {
+		t.Fatalf("ComputeRealizedVolatility(choppy): %v", err)
+	}
+	if got := choppyVol[len(choppyVol)-1]; got <= 0 {
+		t.Errorf("an alternating series should have positive realized volatility, got %v", got)
+	}
+}

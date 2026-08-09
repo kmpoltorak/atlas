@@ -75,9 +75,14 @@ all wired into the decision engine's scoring (Orchestrator.buildTechnicalScore b
 RSI, a Bollinger %B position signal, and an OBV accumulation/distribution signal as a weighted
 average — see docs/decision_engine.md); ADX is wired into market-condition classification
 (`ml.ClassifyMarketCondition`, ADX+EMA — see docs/ml.md) instead. `ml.FeatureVector` (the trained
-ONNX model's input contract) still only uses RSI/EMA/MACD/ATR/Volume — extending it would mean
-retraining on features the real, still-thin collected history can't yet support honestly, unlike
-`buildTechnicalScore`'s heuristic blend which needs no training data. Broader volatility/trend
+ONNX model's input contract) holds eight scale-free features rather than raw price-unit values:
+`rsi, ema_dist, macd_pct, tr_pct, atr_pct, rvol_20, rvol_50, volume`. Two analyzer methods exist
+solely for it — `ComputeSmoothedATR` (the genuine Wilder ATR; `ComputeATR` returns raw per-bar
+true range despite its name, and is left that way because `/prices`, the decision engine and the
+persisted indicators table all consume it) and `ComputeRealizedVolatility`. Adding that volatility
+family was the single largest model improvement the project has made — see docs/ml.md. Extending
+the feature set further remains the most promising lead for the correction model, which still
+trails the base-rate baseline on ROC AUC even while beating it on PR AUC. Broader volatility/trend
 *summary* metrics (e.g. a single consolidated risk/trend score) are still not implemented — only
 the individual indicator series are.
 
@@ -108,11 +113,26 @@ normal non-fatal state, not an error. Recovery probability is real now too — a
 independently-optional model (`RECOVERY_MODEL_PATH`, its own `OnnxModel`) trained on
 `ml.ComputeRecoveryLabel`'s real, tested label definition ("did a correction recover to its
 pre-drop price within N bars"), verified live end-to-end the same way (persisted
-`recovery_probability`/`recovery_model_version` — migrations/010). Its first real training pass
-is honestly thin, more so than the correction model's own: 222 rows across 7 symbols, 3 of which
-have zero recovered examples at all, holdout AUC 0.83 on n=46 — a real number, not fabricated,
-but one to treat with real caution, not as a settled signal (see docs/ml.md's Implementation
-status note for the full caveat). Retraining and promotion no longer require editing an env var
+`recovery_probability`/`recovery_model_version` — migrations/010).
+
+Where both models actually stand, measured rather than assumed: on the current dataset (10,002
+correction / 1,036 recovery rows across 47 symbols) **both beat the per-symbol base-rate baseline
+on PR AUC** — correction 0.264 vs 0.188, recovery 0.851 vs 0.651 — which is the metric promotion
+is judged on, since Atlas alerts on the top of the ranking rather than the uneventful middle. At
+its 25 highest-scoring bars the correction model was right 68% of the time against a 6.5% base
+rate (10.5x lift; the same alert budget on the baseline returned 16%). It reached that after
+gaining three volatility features (`atr_pct`, `rvol_20`, `rvol_50`) — volatility being exactly
+what the pre-fix model had been reaching for when it memorised symbol identity. Note it still
+trails the baseline on ROC AUC (0.710 vs 0.748); the two metrics genuinely disagree, and PR AUC
+is the one that matches what the product does. This all follows a real fix: the feature vector originally fed raw price-unit EMA/MACD/ATR to the model,
+which let it identify the symbol instead of reading its dynamics, and the reported accuracy of
+0.919 was worse than always predicting "no correction" (0.935). Features are now scale-free
+ratios, the train/holdout split has an embargo gap, and `train.py` computes the base-rate
+baseline on every run so a model that only memorises symbols can't look good again — it prints a
+warning, records it in the metadata sidecar, and the Account page's picker labels it "DOES NOT
+BEAT BASELINE". Full detail and the numbers behind each claim: docs/ml.md.
+
+Retraining and promotion no longer require editing an env var
 and restarting: `training/retrain.sh` generates new, uniquely-versioned candidates on demand or a
 schedule, and the Account dashboard page (`/dashboard/account`) lets an admin pick which trained
 model is active per role from real holdout metrics — a hot-swap (`ml.UseCase.SetModel`/
@@ -253,8 +273,13 @@ Metrics include:
 - decision metrics.
 
 Implementation status: `/metrics` (Prometheus format, see `internal/observability/metrics.go`)
-exposes HTTP request/duration, provider, decision, ML, and Discord-alert counters, scraped by
-Prometheus (`prometheus/prometheus.yml`) and visualized in Grafana (`grafana/dashboards/`).
+exposes HTTP request/duration, provider, decision, ML, Discord-alert and alert-poll-error
+counters plus an `atlas_dependency_up{dependency="…"}` gauge (refreshed every 15s from the same
+checks `/health` runs), scraped by Prometheus (`prometheus/prometheus.yml`) and visualized in
+Grafana (`grafana/dashboards/`). The optional `atlas-trainer` sidecar is a second scrape job with
+its own separate registry (`atlas_trainer_runs_total`/`_run_duration_seconds`/
+`_last_run_timestamp_seconds`), so a training run's outcome and staleness are graphable rather
+than only visible in a point-in-time `/status` response.
 Infrastructure-level alerting rules — distinct from the Discord alerts `internal/app/
 alerts_loop.go` sends for recommendation changes — now exist too (`prometheus/alerts.yml`:
 API-down, crash-loop/flapping, high error rate), routed through Alertmanager

@@ -153,7 +153,10 @@ integration is non-fatal when unset — Atlas degrades gracefully instead of ref
 | `ALERTMANAGER_DISCORD_WEBHOOK_URL` | *(empty → disabled)* | Infra alerts: pod down/flapping/high error rate — deliberately a **separate** webhook/channel from the one above |
 | `MODEL_PATH` | *(empty → deterministic stub)* | Path to a trained correction-probability ONNX model |
 | `RECOVERY_MODEL_PATH` | *(empty → recovery probability stays 0)* | Path to a trained recovery-probability ONNX model, fully independent of `MODEL_PATH` |
+| `ML_MODELS_DIR` | `/models` | Directory the Account page's model picker scans for trained models + metadata sidecars |
 | `LIBONNXRUNTIME_PATH` | Dockerfile default (`/usr/lib/libonnxruntime.so`) | Native ONNX Runtime library location |
+| `TRAINER_URL` | *(empty → training/delete buttons disabled)* | Internal URL of the optional `atlas-trainer` sidecar (`docker compose --profile trainer up -d`), which powers the Account page's "Train new candidate" and model-delete actions |
+| `PROMETHEUS_URL`/`ALERTMANAGER_URL`/`GRAFANA_URL` | `http://prometheus:9090`/`http://alertmanager:9093`/`http://grafana:3000` | Checked by `/health` and the `atlas_dependency_up` gauge. Non-empty by default because all three are always in the default Compose stack; set one to an empty string to disable that check |
 | `ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH` | *(empty → no login gate)* | Enables password+TOTP auth for the dashboard/API — generate a hash with `go run ./cmd/generate-admin-credentials`. Login is locked out globally (not per-IP — there's only ever one account) for 15 minutes after 5 failed attempts in a row. |
 | `COOKIE_SECURE` | `false` | Adds the `Secure` flag to the session cookie — set to `true` once Atlas is actually served over HTTPS (e.g. `deploy/ingress.yaml`'s TLS termination); leave `false` for the plain-HTTP local Compose stack. |
 
@@ -196,7 +199,7 @@ shapes: [docs/api.md](docs/api.md).
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/health` | GET | Liveness check |
+| `/health` | GET | Liveness check, plus a per-dependency status for database/redis/trainer/prometheus/alertmanager/grafana. Only database and redis affect the overall status (and the 503) — atlas-api can serve requests without the rest |
 | `/metrics` | GET | Prometheus exposition |
 | `/symbols` | GET | List known symbols |
 | `/prices` | GET | Fetch/collect OHLCV history for a symbol |
@@ -218,10 +221,25 @@ history — never synthetic data:
 - **Correction probability** (`MODEL_PATH`) — probability of a >5% close-price drop within the
   next 10 bars.
 - **Recovery probability** (`RECOVERY_MODEL_PATH`) — conditional on a correction having actually
-  happened, probability it recovers to its pre-drop price within N bars. Meaningfully thinner
-  training data than the correction model by construction (recovery is only a defined question
-  *after* a correction), so its current metrics deserve more skepticism, not less — see
-  [docs/ml.md](docs/ml.md) for the honest, current numbers.
+  happened, probability it recovers to its pre-drop price within N bars. Structurally thinner
+  training data than the correction model, since recovery is only a defined question *after* a
+  correction.
+
+Every feature is scale-free by construction (`rsi, ema_dist, macd_pct, tr_pct, atr_pct, rvol_20,
+rvol_50, volume` — ratios and bounded indices, never a raw price). That is enforced rather than
+assumed: feeding raw price-unit indicators let an earlier version of the model identify the
+symbol instead of reading its dynamics, and it scored *worse* than a table of per-symbol
+correction frequencies while reporting a reassuring 92% accuracy. Every training run now measures
+itself against that same baseline and says so plainly when it loses.
+
+Both models currently beat that baseline on **PR AUC** — correction 0.264 vs 0.188, recovery
+0.851 vs 0.651. PR AUC rather than ROC AUC is the deliberate yardstick here: Atlas alerts on the
+top of the ranking, not the uneventful middle. Restricted to its 25 highest-scoring bars the
+correction model was right **68% of the time against a 6.5% base rate** — a 10.5x lift, where the
+same alert budget spent on the baseline returned 16%. It also scores instruments it has never
+trained on (0.732 ROC AUC) where the baseline scores exactly 0.500, having no history for a
+newly-watchlisted ticker. See [docs/ml.md](docs/ml.md) for every number and the measurement
+behind it.
 
 Neither model is loaded by default — Atlas falls back to a deterministic RSI-derived stub
 prediction (correction) / leaves recovery probability at `0` (recovery), both logged clearly at
@@ -240,13 +258,14 @@ committed source.
 candidate for both models (never overwriting an existing file) — schedule it with cron/a systemd
 timer to regenerate candidates as more real history accumulates. It never changes what's live: a
 new candidate only starts influencing real recommendations once picked from the **Account**
-dashboard page (`/dashboard/account`), which lists every trained model with its real holdout
-AUC/accuracy/row count and swaps it in immediately — no restart needed — while durably recording
-the choice (`migrations/011`) so it survives one. This is deliberate, not just unfinished: given
-how thin and skewed the real training data still is (see the caveats in
-[docs/ml.md](docs/ml.md)), a human should look at each new model's metrics before it starts
-driving real recommendations — the same "never auto-promote" stance already applied to
-walk-forward threshold optimization above. Both training and deleting old candidates can also be
+dashboard page (`/dashboard/account`), which lists every trained model with its real holdout AUC
+against the per-symbol base-rate baseline, its accuracy and row count — and an explicit "DOES NOT
+BEAT BASELINE" marker when that applies — then swaps it in immediately (no restart needed) while
+durably recording the choice (`migrations/011`) so it survives one. This is deliberate, not just
+unfinished: a human should look at each new model's metrics before it starts driving real
+recommendations — the same "never auto-promote" stance already applied to walk-forward threshold
+optimization above. The baseline marker exists because that judgement call is only as good as the
+numbers it's shown, and accuracy alone made a model that had learned nothing look excellent. Both training and deleting old candidates can also be
 triggered straight from the Account page's buttons, via an internal-only sidecar container
 (`cmd/trainer`, off by default — see training/README.md's "Triggering training from the
 dashboard") — atlas-api's own model directory stays read-only either way.
@@ -264,7 +283,18 @@ never auto-applied to the live decision engine. Full detail: [docs/backtesting.m
 ## Observability
 
 - `/metrics` exposes HTTP, provider, decision, ML, and Discord-alert counters (Prometheus format),
-  scraped by `prometheus/prometheus.yml` and visualized via `grafana/dashboards/`.
+  scraped by `prometheus/prometheus.yml` and visualized via `grafana/dashboards/`. Alongside them
+  sits one gauge, `atlas_dependency_up{dependency="…"}`, refreshed every 15s from the same checks
+  `/health` runs — so a dependency outage is graphable over time, not just visible in a
+  point-in-time JSON response. atlas-api's own liveness is Prometheus' built-in
+  `up{job="atlas-api"}` instead (a process that's down can't push a gauge saying so); both render
+  together on the Grafana dashboard's "Service Status" panel.
+- The optional `atlas-trainer` sidecar exposes its **own** `/metrics` on port 8091, scraped as a
+  second Prometheus job — `atlas_trainer_runs_total{outcome}`,
+  `atlas_trainer_run_duration_seconds`, `atlas_trainer_last_run_timestamp_seconds`. The last of
+  those drives a "Time Since Last Training Run" panel, so retraining going stale is visible
+  without anyone remembering to check. Its scrape target reads as down whenever the `trainer`
+  profile isn't started, which is expected rather than broken.
 - Infrastructure alerting rules (`prometheus/alerts.yml`: API down, crash-loop/flapping, high
   error rate, background alert-poll failures) route through Alertmanager to a Discord channel —
   deliberately separate from the business-alert webhook above, so infra noise never mixes with
