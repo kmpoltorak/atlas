@@ -48,10 +48,9 @@ one-by-one (see internal/application/backtesting/usecase.go) since they're hypot
 decisions, not real ones — but each full backtest run's summary now is (see
 docs/backtesting.md), and its simulated RiskScore reflects the backtest's own simulated
 portfolio (`simPortfolio`), not the live one, for the same reason HasPosition does. Discord notifications
-(internal/app/alerts_loop.go) are now gated to BUY/SELL/REDUCE only
-(isHighPriorityAction), matching "Notifications" below — GET /alerts itself is unaffected and
-still surfaces every non-HOLD action, including ACCUMULATE/WAIT; only the push notification is
-restricted.
+(internal/app/alerts_loop.go) are gated to the four actionable calls — BUY/ACCUMULATE/REDUCE/SELL
+(isHighPriorityAction), matching "Notifications" below. GET /alerts itself is unaffected and
+still surfaces every non-HOLD action, WAIT included; only the push notification is restricted.
 
 ## Overview
 The Decision Engine is the core intelligence layer of Atlas.
@@ -291,10 +290,25 @@ model_version
 High priority recommendations:
 ```
 BUY
-SELL
+ACCUMULATE
 REDUCE
+SELL
 ```
 should trigger Discord notifications.
+
+These are exactly the actions that ask the reader to do something. HOLD and WAIT are excluded:
+neither calls for a decision, and HOLD in particular is the steady state for most symbols most of
+the time, so pushing it would bury the signals that matter.
+
+ACCUMULATE was originally left out of this list while REDUCE was kept in, which made it
+asymmetric — a partial sell notified, a partial buy stayed silent. There was no principle behind
+the split, and ACCUMULATE is arguably the more actionable of the two, since by definition it
+concerns a position already held.
+
+Note also that notifications fire on *change*: the background loop re-evaluates the watchlist
+every ALERT_POLL_INTERVAL_SECONDS (default 300), but only pushes when a symbol's action differs
+from the previous poll. A symbol sitting in BUY for three days produces one notification, not
+hundreds.
 Example:
 ```
 🚨 Atlas Recommendation

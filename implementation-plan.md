@@ -194,7 +194,8 @@ Deliverables:
 
 **Implementation status**: Prometheus metrics, Grafana dashboards, JSON structured logs, and
 `/health` are all real. Discord notifications for high-priority actions are now real too —
-`isHighPriorityAction` (internal/app/alerts_loop.go) gates the push to BUY/SELL/REDUCE only,
+`isHighPriorityAction` (internal/app/alerts_loop.go) gates the push to the actionable calls only
+(BUY/ACCUMULATE/REDUCE/SELL),
 matching docs/decision_engine.md's "Notifications" section; previously every non-HOLD action
 (including ACCUMULATE/WAIT) triggered a push.
 

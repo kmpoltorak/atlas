@@ -94,7 +94,11 @@ func TestPollAlertsOnceSkipsWhenDiscordNotConfigured(t *testing.T) {
 	app.pollAlertsOnce(map[string]string{})
 }
 
-func TestPollAlertsOnceDoesNotNotifyForNonHighPriorityAction(t *testing.T) {
+// ACCUMULATE is a partial buy against a position you already hold, and it notifies for the same
+// reason REDUCE (its partial-sell counterpart) does — it asks the reader to do something. The
+// two were split for a while, with REDUCE notifying and ACCUMULATE silent; this test pins the
+// symmetry so that asymmetry can't quietly return.
+func TestPollAlertsOnceNotifiesForAccumulate(t *testing.T) {
 	var sent int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&sent, 1)
@@ -105,7 +109,7 @@ func TestPollAlertsOnceDoesNotNotifyForNonHighPriorityAction(t *testing.T) {
 	app := newTestApplicationWithDiscord(server.URL)
 	// Same bullish bars as TestPollAlertsOnceSendsDiscordNotificationForNewAction (which
 	// produce BUY with no position), but with an existing AAPL position this time — the
-	// strong-bullish score becomes ACCUMULATE instead, which isHighPriorityAction excludes.
+	// strong-bullish score becomes ACCUMULATE instead.
 	app.Portfolio = portfolioUC.NewUseCase()
 	app.Portfolio.Positions = []portfolio.Position{{Symbol: "AAPL", Quantity: 5, AverageCost: 90, CurrentPrice: 100}}
 	app.Alerts = alertsUC.NewUseCase(app.Watchlist, app.Alerts.Collector,
@@ -115,9 +119,23 @@ func TestPollAlertsOnceDoesNotNotifyForNonHighPriorityAction(t *testing.T) {
 	app.pollAlertsOnce(lastAction)
 
 	if lastAction["AAPL"] != "ACCUMULATE" {
-		t.Fatalf("expected ACCUMULATE to still be tracked for change-detection, got %q", lastAction["AAPL"])
+		t.Fatalf("expected ACCUMULATE to be tracked for change-detection, got %q", lastAction["AAPL"])
 	}
-	if atomic.LoadInt32(&sent) != 0 {
-		t.Fatalf("expected no Discord notification for a non-high-priority action (ACCUMULATE), got %d", sent)
+	if atomic.LoadInt32(&sent) != 1 {
+		t.Fatalf("expected exactly one Discord notification for ACCUMULATE, got %d", sent)
+	}
+}
+
+func TestIsHighPriorityAction(t *testing.T) {
+	// The four actionable calls notify; the two "no decision needed" ones don't. HOLD never
+	// even reaches this function in practice (alerts.UseCase filters it out before the loop
+	// sees it), but it is covered here so the intent stays explicit.
+	for action, want := range map[string]bool{
+		"BUY": true, "ACCUMULATE": true, "REDUCE": true, "SELL": true,
+		"HOLD": false, "WAIT": false, "": false, "buy": false,
+	} {
+		if got := isHighPriorityAction(action); got != want {
+			t.Errorf("isHighPriorityAction(%q) = %v, want %v", action, got, want)
+		}
 	}
 }
