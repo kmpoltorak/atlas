@@ -18,8 +18,9 @@
     {{if .Items}}
     <form method="post" action="/dashboard/watchlist/bulk-delete" id="watchlistForm"
           data-confirm-bulk="{{T .Lang "confirm.remove_watchlist_bulk"}}">
+      <input type="text" class="form-control form-control-sm mb-2" id="watchlistFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
       <div class="table-responsive">
-        <table class="table table-striped table-hover align-middle">
+        <table class="table table-striped table-hover align-middle" id="watchlistTable">
           <thead><tr>
             <th scope="col"><input type="checkbox" class="form-check-input" id="selectAllWatchlist" aria-label="{{T .Lang "table.select_all"}}"></th>
             <th scope="col">{{T .Lang "table.symbol"}}</th><th scope="col">{{T .Lang "table.added"}}</th><th scope="col"></th>
@@ -38,6 +39,12 @@
           </tr>
           {{end}}
           </tbody>
+          <tfoot>
+          <tr class="table-group-divider">
+            <th scope="row" colspan="3">{{T .Lang "table.total"}}</th>
+            <td class="text-end tabular-nums">{{len .Items}}</td>
+          </tr>
+          </tfoot>
         </table>
       </div>
       <button type="submit" class="btn btn-outline-danger" id="bulkDeleteWatchlistBtn" disabled>
@@ -63,7 +70,10 @@
   </main>
   {{template "scripts" .}}
   {{if .Items}}
-  <script>atlasSetupBulkDelete('watchlistForm', 'selectAllWatchlist', 'watchlist-checkbox', 'bulkDeleteWatchlistBtn', 'selectedWatchlistCount')</script>
+  <script>
+    const watchlistRefresh = atlasSetupBulkDelete('watchlistForm', 'selectAllWatchlist', 'watchlist-checkbox', 'bulkDeleteWatchlistBtn', 'selectedWatchlistCount')
+    atlasSetupTableTools('watchlistTable', 'watchlistFilter', 15, watchlistRefresh)
+  </script>
   {{end}}
 </body>
 </html>

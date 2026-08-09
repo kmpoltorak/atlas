@@ -18,8 +18,9 @@
     {{if .Positions}}
     <form method="post" action="/dashboard/portfolio/bulk-delete" id="positionsForm"
           data-confirm-bulk="{{T .Lang "confirm.remove_positions_bulk"}}">
+      <input type="text" class="form-control form-control-sm mb-2" id="positionsFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
       <div class="table-responsive">
-        <table class="table table-striped table-hover align-middle">
+        <table class="table table-striped table-hover align-middle" id="positionsTable">
           <thead><tr>
             <th scope="col"><input type="checkbox" class="form-check-input" id="selectAllPositions" aria-label="{{T .Lang "table.select_all"}}"></th>
             <th scope="col">{{T .Lang "table.symbol"}}</th><th scope="col" class="text-end">{{T .Lang "table.quantity"}}</th><th scope="col" class="text-end">{{T .Lang "table.avg_cost"}}</th><th scope="col" class="text-end">{{T .Lang "table.current_price"}}</th><th scope="col" class="text-end">{{T .Lang "table.pnl"}}</th><th scope="col"></th>
@@ -65,8 +66,9 @@
     {{if .Transactions}}
     <form method="post" action="/dashboard/portfolio/transactions/bulk-delete" id="transactionsForm"
           data-confirm-bulk="{{T .Lang "confirm.remove_transactions_bulk"}}">
+      <input type="text" class="form-control form-control-sm mb-2" id="transactionsFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
       <div class="table-responsive">
-        <table class="table table-striped table-hover align-middle">
+        <table class="table table-striped table-hover align-middle" id="transactionsTable">
           <thead><tr>
             <th scope="col"><input type="checkbox" class="form-check-input" id="selectAllTransactions" aria-label="{{T .Lang "table.select_all"}}"></th>
             <th scope="col">{{T .Lang "table.symbol"}}</th><th scope="col">{{T .Lang "table.type"}}</th><th scope="col" class="text-end">{{T .Lang "table.quantity"}}</th><th scope="col" class="text-end">{{T .Lang "table.price"}}</th><th scope="col">{{T .Lang "table.currency"}}</th><th scope="col" class="text-end">{{T .Lang "table.pln_equivalent"}}</th><th scope="col">{{T .Lang "table.timestamp"}}</th><th scope="col"></th>
@@ -90,6 +92,12 @@
           </tr>
           {{end}}
           </tbody>
+          <tfoot>
+          <tr class="table-group-divider">
+            <th scope="row" colspan="8">{{T .Lang "table.total"}}</th>
+            <td class="text-end tabular-nums">{{len .Transactions}}</td>
+          </tr>
+          </tfoot>
         </table>
       </div>
       <button type="submit" class="btn btn-outline-danger" id="bulkDeleteTransactionsBtn" disabled>
@@ -141,10 +149,16 @@
   </main>
   {{template "scripts" .}}
   {{if .Positions}}
-  <script>atlasSetupBulkDelete('positionsForm', 'selectAllPositions', 'position-checkbox', 'bulkDeletePositionsBtn', 'selectedPositionCount')</script>
+  <script>
+    const positionsRefresh = atlasSetupBulkDelete('positionsForm', 'selectAllPositions', 'position-checkbox', 'bulkDeletePositionsBtn', 'selectedPositionCount')
+    atlasSetupTableTools('positionsTable', 'positionsFilter', 15, positionsRefresh)
+  </script>
   {{end}}
   {{if .Transactions}}
-  <script>atlasSetupBulkDelete('transactionsForm', 'selectAllTransactions', 'transaction-checkbox', 'bulkDeleteTransactionsBtn', 'selectedTransactionCount')</script>
+  <script>
+    const transactionsRefresh = atlasSetupBulkDelete('transactionsForm', 'selectAllTransactions', 'transaction-checkbox', 'bulkDeleteTransactionsBtn', 'selectedTransactionCount')
+    atlasSetupTableTools('transactionsTable', 'transactionsFilter', 15, transactionsRefresh)
+  </script>
   {{end}}
 </body>
 </html>

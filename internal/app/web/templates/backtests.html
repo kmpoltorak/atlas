@@ -75,8 +75,9 @@
 
     <h3 class="h6">{{T .Lang "table.trades"}}</h3>
     {{if .Result.Trades}}
+    <input type="text" class="form-control form-control-sm mb-2" id="tradesFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
     <div class="table-responsive">
-      <table class="table table-striped table-hover align-middle">
+      <table class="table table-striped table-hover align-middle" id="tradesTable">
         <thead><tr><th scope="col">{{T .Lang "table.timestamp"}}</th><th scope="col">{{T .Lang "table.action"}}</th><th scope="col" class="text-end">{{T .Lang "table.price"}}</th><th scope="col" class="text-end">{{T .Lang "table.quantity"}}</th><th scope="col" class="text-end">{{T .Lang "table.confidence"}}</th></tr></thead>
         <tbody>
         {{range .Result.Trades}}
@@ -89,6 +90,12 @@
         </tr>
         {{end}}
         </tbody>
+        <tfoot>
+        <tr class="table-group-divider">
+          <th scope="row" colspan="4">{{T .Lang "table.total"}}</th>
+          <td class="text-end tabular-nums">{{len .Result.Trades}}</td>
+        </tr>
+        </tfoot>
       </table>
     </div>
     {{else}}
@@ -97,6 +104,9 @@
     {{end}}
   </main>
   {{template "scripts" .}}
+  {{if and .Result .Result.Trades}}
+  <script>atlasSetupTableTools('tradesTable', 'tradesFilter', 15)</script>
+  {{end}}
 </body>
 </html>
 {{end}}
