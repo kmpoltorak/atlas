@@ -1,8 +1,13 @@
 package main
 
 import (
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func TestIsValidModelFilename(t *testing.T) {
@@ -69,4 +74,39 @@ func TestStateSnapshot(t *testing.T) {
 	if !got.Running || got.StartedAt != "2026-08-08T10:00:00Z" || got.Output != "training output" {
 		t.Errorf("state.snapshot() after setting fields = %+v", got)
 	}
+}
+
+func TestNewTrainerMetricsRegistersEveryCollector(t *testing.T) {
+	m := newTrainerMetrics()
+
+	m.runsTotal.WithLabelValues("success").Inc()
+	m.runDuration.Observe(42)
+	m.lastRunFinished.Set(1786261514)
+
+	if got := testutil.ToFloat64(m.runsTotal.WithLabelValues("success")); got != 1 {
+		t.Errorf("runsTotal{outcome=success} after one Inc() = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(m.lastRunFinished); got != 1786261514 {
+		t.Errorf("lastRunFinished = %v, want 1786261514", got)
+	}
+
+	rec := httptest.NewRecorder()
+	promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{}).ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	body := rec.Body.String()
+	for _, name := range []string{
+		"atlas_trainer_runs_total",
+		"atlas_trainer_run_duration_seconds",
+		"atlas_trainer_last_run_timestamp_seconds",
+	} {
+		if !strings.Contains(body, name) {
+			t.Errorf("scraped output missing metric %q", name)
+		}
+	}
+}
+
+func TestNewTrainerMetricsEachCallIsIndependent(t *testing.T) {
+	// Own fresh prometheus.Registry per call, same as observability.NewMetrics — calling it
+	// twice must not panic with "duplicate metrics collector registration attempted".
+	newTrainerMetrics()
+	newTrainerMetrics()
 }
