@@ -189,6 +189,26 @@ response. `atlas-api`'s own liveness is Prometheus' built-in `up{job="atlas-api"
 can't self-report the way the others can (if atlas-api itself is down, no gauge push happens
 either). Both are visualized together on Grafana's "Atlas Overview" dashboard's "Service Status"
 panel (`grafana/dashboards/overview.json`).
+
+`cmd/trainer` (the optional training sidecar — `docker-compose.yml`'s `trainer` profile, off by
+default) exposes its own separate `/metrics` on port 8091, scraped as a second Prometheus job
+(`atlas-trainer`, `prometheus/prometheus.yml`) — previously it had no metrics and wasn't scraped
+at all, only `/status` (point-in-time JSON, no history) and a best-effort Discord notification on
+failure:
+```
+atlas_trainer_runs_total{outcome="success|failure"}
+atlas_trainer_run_duration_seconds
+atlas_trainer_last_run_timestamp_seconds
+```
+`atlas_trainer_last_run_timestamp_seconds` is what the "Time Since Last Training Run" Grafana
+panel is built on (`time() - atlas_trainer_last_run_timestamp_seconds`, formatted with Grafana's
+`dtdhms` (days/hours/minutes/seconds) duration unit — plain days read badly for a run that just
+finished, e.g. `0.0003 d`) — a way to notice retraining has gone stale without anyone
+remembering to check.
+`up{job="atlas-trainer"}`
+shows as permanently down while the trainer profile isn't started, same as the
+`AtlasPodCrashLooping` alert rule staying dormant on a non-Kubernetes deployment — an inactive
+target/rule for an inapplicable environment, not a bug.
 ---
 # Logging
 All logs must be:

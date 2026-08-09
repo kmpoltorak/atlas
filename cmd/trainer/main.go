@@ -26,8 +26,51 @@ import (
 	"atlas/internal/infrastructure/notifications"
 	"atlas/internal/observability"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
+
+// trainerMetrics is this binary's own small Prometheus registry — deliberately not
+// internal/observability.Metrics, which is shaped around atlas-api's specific counters
+// (HTTP requests, recommendations, predictions...) that don't apply to a training sidecar.
+// Previously this process exposed no metrics at all and prometheus.yml didn't even scrape it —
+// the only visibility into a training run was /status (point-in-time JSON) and Discord
+// (failure-only, best-effort). These three fill that gap.
+type trainerMetrics struct {
+	registry        *prometheus.Registry
+	runsTotal       *prometheus.CounterVec
+	runDuration     prometheus.Histogram
+	lastRunFinished prometheus.Gauge
+}
+
+func newTrainerMetrics() *trainerMetrics {
+	registry := prometheus.NewRegistry()
+	runsTotal := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "atlas_trainer_runs_total",
+			Help: "Total number of training/retrain.sh runs, by outcome.",
+		},
+		[]string{"outcome"},
+	)
+	runDuration := prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name: "atlas_trainer_run_duration_seconds",
+			Help: "How long each training/retrain.sh run took, regardless of outcome.",
+			// retrain.sh does a venv bootstrap (first run only) + two Go exports + two XGBoost
+			// fits — real runs land in the tens of seconds to low minutes, not sub-second.
+			Buckets: []float64{10, 30, 60, 120, 300, 600, 1200},
+		},
+	)
+	lastRunFinished := prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "atlas_trainer_last_run_timestamp_seconds",
+			Help: "Unix timestamp of the last completed training run (any outcome) — lets Prometheus alert on retraining having gone stale.",
+		},
+	)
+	registry.MustRegister(runsTotal, runDuration, lastRunFinished)
+	return &trainerMetrics{registry: registry, runsTotal: runsTotal, runDuration: runDuration, lastRunFinished: lastRunFinished}
+}
 
 // state tracks the single most recent (or in-progress) training/retrain.sh run. Only one run is
 // ever tracked/allowed at a time — see trainHandler's Running check — since two concurrent
@@ -92,9 +135,11 @@ func main() {
 	// runRetrain — using the identical env var so there's still only one training-notification
 	// webhook concept, not two. Empty by default (non-fatal, like every optional dependency).
 	discordClient := notifications.NewDiscordClient(envOrDefault("TRAINING_DISCORD_WEBHOOK_URL", ""))
+	metrics := newTrainerMetrics()
 
 	s := &state{}
 	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.HandlerFor(metrics.registry, promhttp.HandlerOpts{}))
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -118,7 +163,7 @@ func main() {
 		s.mu.Unlock()
 
 		logger.Info("training run started")
-		go runRetrain(s, logger, discordClient)
+		go runRetrain(s, logger, discordClient, metrics)
 
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
 	})
@@ -165,7 +210,8 @@ func main() {
 // bugs: they're captured in state.failed/output for the Account page to display, not panicked
 // on. discord is notified of the outcome (best-effort, never blocks/fails this function) so a
 // run triggered from the Account page and then left unattended is still noticed.
-func runRetrain(s *state, logger *zap.Logger, discord *notifications.DiscordClient) {
+func runRetrain(s *state, logger *zap.Logger, discord *notifications.DiscordClient, metrics *trainerMetrics) {
+	started := time.Now()
 	cmd := exec.Command("training/retrain.sh")
 	cmd.Dir = envOrDefault("ATLAS_REPO_ROOT", "/app")
 	var buf bytes.Buffer
@@ -173,10 +219,13 @@ func runRetrain(s *state, logger *zap.Logger, discord *notifications.DiscordClie
 	cmd.Stderr = &buf
 
 	runErr := cmd.Run()
+	finished := time.Now()
+	metrics.runDuration.Observe(finished.Sub(started).Seconds())
+	metrics.lastRunFinished.Set(float64(finished.Unix()))
 
 	s.mu.Lock()
 	s.running = false
-	s.finishedAt = time.Now()
+	s.finishedAt = finished
 	output := buf.String()
 	if len(output) > outputLimit {
 		output = output[len(output)-outputLimit:]
@@ -197,10 +246,12 @@ func runRetrain(s *state, logger *zap.Logger, discord *notifications.DiscordClie
 	s.mu.Unlock()
 
 	if failed {
+		metrics.runsTotal.WithLabelValues("failure").Inc()
 		logger.Warn("training run failed", zap.Error(runErr))
 		notifyTrainingFailure(discord, logger, exitCode)
 		return
 	}
+	metrics.runsTotal.WithLabelValues("success").Inc()
 	// Success is intentionally not notified here — retrain.sh already did it (see discord's
 	// doc comment above) with better information (which model files were actually written)
 	// than this process has any visibility into.
