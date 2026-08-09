@@ -54,7 +54,7 @@
     <ul>
       {{range .Recommendation.Reason}}<li>{{reasonLabel $.Lang .}}</li>{{end}}
     </ul>
-    <p class="text-body-secondary border-top pt-3">{{T .Lang "common.disclaimer"}}</p>
+    <p class="text-body-secondary small border-top pt-3">{{T .Lang "common.disclaimer"}}</p>
     {{end}}
   </main>
   {{template "scripts" .}}

@@ -24,7 +24,7 @@
       </table>
     </div>
 
-    <div class="card mt-3" style="max-width: 28rem;">
+    <div class="card mt-3 card-md">
       <div class="card-body">
         {{if .TOTPEnabled}}
         <h2 class="h5 card-title">{{T .Lang "account.disable_2fa"}}</h2>
@@ -102,7 +102,7 @@
 
     <h2 class="h4 mt-5 mb-2">{{T .Lang "account.train_heading"}}</h2>
     <p class="text-body-secondary small">{{T .Lang "account.train_hint"}}</p>
-    <div class="card" style="max-width: 40rem;">
+    <div class="card card-lg">
       <div class="card-body">
         {{if not .TrainerConfigured}}
         <p class="text-body-secondary small mb-0">{{T .Lang "account.train_not_configured"}}</p>
@@ -119,7 +119,7 @@
           {{if .TrainerStatus.Output}}
           <details class="mb-2">
             <summary class="small text-body-secondary">{{T .Lang "account.train_output"}}</summary>
-            <pre class="small bg-body-tertiary p-2 rounded" style="max-height: 20rem; overflow: auto;">{{.TrainerStatus.Output}}</pre>
+            <pre class="small bg-body-tertiary p-2 rounded scroll-box">{{.TrainerStatus.Output}}</pre>
           </details>
           {{end}}
           {{end}}

@@ -1,8 +1,11 @@
 {{define "head"}}
 <link href="/static/css/bootstrap.min.css" rel="stylesheet">
 <link href="/static/css/atlas.css" rel="stylesheet">
+<meta name="theme-color" content="#0d6efd">
 <!-- No committed logo/palette (see PRODUCT.md) — a plain glyph in Bootstrap's own primary blue,
-     not a fabricated brand mark, just so the browser tab isn't a bare default icon. -->
+     not a fabricated brand mark, just so the browser tab isn't a bare default icon. The same
+     glyph is reused inline in the navbar brand and on the login page (see "nav" below and
+     login.html) so it isn't only ever seen in the tab. -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='16' fill='%230d6efd'/%3E%3Ctext x='50' y='68' font-size='58' font-family='system-ui,sans-serif' font-weight='700' fill='white' text-anchor='middle'%3EA%3C/text%3E%3C/svg%3E">
 <script>
   // Bootstrap 5.3's official color-mode pattern, applied before first paint (in <head>, not
@@ -50,11 +53,13 @@
 </script>
 {{end}}
 
+{{define "brandmark"}}<svg width="24" height="24" viewBox="0 0 100 100" class="text-primary" aria-hidden="true" focusable="false"><rect width="100" height="100" rx="16" fill="currentColor"/><text x="50" y="68" font-size="58" font-family="system-ui,sans-serif" font-weight="700" fill="#fff" text-anchor="middle">A</text></svg>{{end}}
+
 {{define "nav"}}
 <a class="visually-hidden-focusable" href="#main-content">{{T .Lang "nav.skip_to_content"}}</a>
 <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom mb-4">
   <div class="container">
-    <a class="navbar-brand fw-semibold" href="/">Atlas</a>
+    <a class="navbar-brand fw-semibold d-flex align-items-center gap-2" href="/">{{template "brandmark"}}Atlas</a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent" aria-controls="navbarContent" aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>
     </button>

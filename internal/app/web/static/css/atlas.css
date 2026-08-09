@@ -8,3 +8,116 @@
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
+
+/* Shadow tint, one per color mode, so card/table elevation reads as "lifted off this
+   background" instead of a generic black drop shadow. */
+:root {
+  --atlas-shadow: 217 40% 15%;
+}
+[data-bs-theme="dark"] {
+  --atlas-shadow: 217 70% 2%;
+}
+
+/* Heading weight/tracking: Bootstrap's h1-h6 classes carry no weight or tracking beyond the
+   browser default, which reads flat next to Bootstrap's otherwise considered spacing scale.
+   .h3 is used exclusively as the page title (every template's <h1 class="h3">); .h4/.h5/.h6
+   are section headers and card titles. */
+.h3 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.h4, .h5, .h6 {
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+/* Every content page follows the same shape: an <h2> section label directly above a table or
+   form. A hairline under it reads as a deliberate section break rather than the label just
+   floating above whatever comes next — and doubles as a title/content divider inside the
+   "record transaction" / "add symbol" / 2FA cards, since those card titles are <h2> too. */
+main h2 {
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--bs-border-color-translucent);
+}
+
+/* Reusable max-width steps for the small forms-in-cards pattern (record transaction, add to
+   watchlist, 2FA setup, login) — replaces one-off inline max-width styles with something
+   consistent and greppable. */
+.card-sm { max-width: 24rem; }
+.card-md { max-width: 28rem; }
+.card-lg { max-width: 40rem; }
+
+/* Scrollable output block (ML training log). */
+.scroll-box {
+  max-height: 20rem;
+  overflow: auto;
+}
+
+/* iOS Safari's address bar changes the visible viewport height mid-scroll; 100vh causes the
+   login card to jump as it shows/hides. dvh tracks the actual visible viewport instead. */
+.min-vh-dynamic {
+  min-height: 100dvh;
+}
+
+/* Cards: a shadow tinted to the page background instead of Bootstrap's flat 1px-border-only
+   default, so cards read as slightly lifted rather than just outlined. */
+.card {
+  box-shadow: 0 1px 2px hsl(var(--atlas-shadow) / 0.06), 0 6px 16px hsl(var(--atlas-shadow) / 0.08);
+}
+
+/* Nav: the active link gets an underline in the same accent used for primary buttons and the
+   brand mark, instead of relying on color alone to show which page you're on. */
+.navbar .nav-link {
+  font-weight: 500;
+  position: relative;
+}
+.navbar .nav-link.active {
+  color: var(--bs-emphasis-color);
+}
+.navbar .nav-link.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--bs-primary);
+}
+
+/* Tables: every data table sits in a .table-responsive wrapper. Framing it and tinting the
+   header row (matching the navbar's bg-body-tertiary) turns a bare striped table into a
+   distinct panel, and makes the header row read as a header at a glance. */
+.table-responsive {
+  margin-bottom: 1rem;
+  border: 1px solid var(--bs-border-color-translucent);
+  border-radius: var(--bs-border-radius);
+}
+.table-responsive .table {
+  margin-bottom: 0;
+}
+.table-responsive thead th {
+  background-color: var(--bs-tertiary-bg);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* Buttons: a small press-down on :active makes clicks feel acknowledged. Extends Bootstrap's
+   own .btn transition list (color/background/border/box-shadow) rather than replacing it, and
+   is fully disabled under reduced motion, same guarantee Bootstrap's own .btn transition
+   makes. */
+.btn {
+  transition: color .15s ease-in-out, background-color .15s ease-in-out,
+    border-color .15s ease-in-out, box-shadow .15s ease-in-out, transform .1s ease-in-out;
+}
+.btn:active {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn {
+    transition: none;
+  }
+  .btn:active {
+    transform: none;
+  }
+}
