@@ -51,6 +51,21 @@ func (a *Application) NewHandler() http.Handler {
 	mux.HandleFunc("/dashboard/account/ml/delete", a.mlModelDeleteHandler)
 	mux.HandleFunc("/dashboard/account/ml/train", a.mlTrainHandler)
 
+	// Bare "/dashboard" (no trailing path) isn't a real route — every actual page lives under
+	// "/dashboard/..." — but it's a natural URL to type or bookmark expecting the dashboard
+	// itself, and used to silently work as an alias for "/" before "/" got a real 404 for
+	// anything unmatched (see dashboardPageHandler's own comment below). A redirect is cheap and
+	// avoids turning a plausible bookmark into a dead link.
+	mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/", http.StatusFound)
+	})
+	// Every browser requests this on its own, independent of the <link rel="icon"> partials.html
+	// already sets in <head> — 204 here is cheap and keeps it from showing up as a real 404 in
+	// metrics/logs for a path that was never meant to be a route.
+	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
 	// "/" is the dashboard itself (not a separate "/dashboard" route — a subtree pattern in
 	// net/http.ServeMux, so this is also the catch-all for anything else unmatched above).
 	mux.HandleFunc("/", a.dashboardPageHandler)
