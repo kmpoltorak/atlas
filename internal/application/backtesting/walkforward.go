@@ -51,15 +51,15 @@ func (u *UseCase) RunWalkForward(symbol string, bars []market.Bar, initialCapita
 		return backtesting.WalkForwardResult{}, fmt.Errorf("optimize thresholds on train split: %w", err)
 	}
 
-	trainResult, err := u.simulate(symbol, trainBars, initialCapital, strategyName, strategyVersion, bestThresholds)
+	trainResult, err := u.simulate(symbol, trainBars, initialCapital, strategyName, strategyVersion, bestThresholds, u.Orchestrator.ML)
 	if err != nil {
 		return backtesting.WalkForwardResult{}, fmt.Errorf("simulate train split: %w", err)
 	}
-	validateResult, err := u.simulate(symbol, validateBars, initialCapital, strategyName, strategyVersion, bestThresholds)
+	validateResult, err := u.simulate(symbol, validateBars, initialCapital, strategyName, strategyVersion, bestThresholds, u.Orchestrator.ML)
 	if err != nil {
 		return backtesting.WalkForwardResult{}, fmt.Errorf("simulate validate split: %w", err)
 	}
-	testResult, err := u.simulate(symbol, testBars, initialCapital, strategyName, strategyVersion, bestThresholds)
+	testResult, err := u.simulate(symbol, testBars, initialCapital, strategyName, strategyVersion, bestThresholds, u.Orchestrator.ML)
 	if err != nil {
 		return backtesting.WalkForwardResult{}, fmt.Errorf("simulate test split: %w", err)
 	}
@@ -133,7 +133,7 @@ func (u *UseCase) optimizeThresholds(symbol string, bars []market.Bar, initialCa
 							continue
 						}
 
-						result, err := u.simulate(symbol, bars, initialCapital, strategyName, strategyVersion, candidate)
+						result, err := u.simulate(symbol, bars, initialCapital, strategyName, strategyVersion, candidate, u.Orchestrator.ML)
 						if err != nil {
 							return domainDecision.Thresholds{}, evaluated, err
 						}

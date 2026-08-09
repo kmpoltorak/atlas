@@ -67,3 +67,18 @@
   a normal, logged, non-fatal startup state, not an error. Persistence follows a
   NULL-means-not-computed convention: a stub's correction probability is never written as a
   literal value, since `0`/`0.5` would misrepresent "not computed" as a real prediction.
+- **The correction label is volatility-scaled, not a fixed percentage** — the barrier is 4x the
+  instrument's own trailing 20-bar realised volatility, floored at 2% (`CorrectionLabelParams`).
+  A fixed 5% asked a different question of every instrument (GLD never qualified, SOXL qualified
+  in 58% of windows), which is what made the per-symbol base-rate baseline so hard to beat. The
+  threshold is computed strictly from bars at or before the feature bar — don't "optimise" it
+  into a per-symbol precomputation, that leaks forward information into the label.
+- **Judge a model economically, not only statistically.** `StrategyResult.MLContribution` runs
+  the backtest twice, with and without the ML term, and reports the return/Sharpe/drawdown delta.
+  AUC cannot tell you whether acting on a model beats ignoring it. On the first run this revealed
+  that the model improves aggregate returns while *worsening* Sharpe and drawdown — see
+  docs/backtesting.md.
+- Recovery probability now reaches the decision: the ML blend term is
+  `1 - P(correction) * (1 - P(recovery))`, i.e. one minus the probability of an unrecovered drop
+  (`decision.mlScoreFromPrediction`). It degrades to the old `1 - P(correction)` when no recovery
+  model is loaded.

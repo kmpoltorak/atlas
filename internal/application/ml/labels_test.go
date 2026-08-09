@@ -118,3 +118,91 @@ func TestComputeRecoveryLabelInsufficientForwardHistoryIsNotOk(t *testing.T) {
 		t.Fatal("expected ok=false when there isn't enough forward history past the breach to know")
 	}
 }
+
+// The point of a volatility-scaled barrier is that the same *shape* of move counts as a
+// correction regardless of how volatile the instrument is. Under the old fixed 5% rule a calm
+// instrument could never produce a positive example at all, which is how the label ended up
+// encoding "is this a volatile ticker" instead of "is a correction coming".
+func TestVolatilityScaledLabelIsComparableAcrossVolatilityRegimes(t *testing.T) {
+	// Two series with identical shape, differing only in amplitude: one drifts by 0.2% a bar
+	// and then drops 3%, the other by 2% a bar and then drops 30%.
+	build := func(step, drop float64) []market.Bar {
+		bars := make([]market.Bar, 0, 40)
+		price := 100.0
+		for i := 0; i < 30; i++ {
+			if i%2 == 0 {
+				price *= 1 + step
+			} else {
+				price *= 1 - step
+			}
+			bars = append(bars, market.Bar{Symbol: "X", Close: price, High: price, Low: price})
+		}
+		for i := 0; i < 10; i++ {
+			price *= 1 - drop/10
+			bars = append(bars, market.Bar{Symbol: "X", Close: price, High: price, Low: price})
+		}
+		return bars
+	}
+	params := DefaultCorrectionLabelParams()
+	calm, wild := build(0.002, 0.03), build(0.02, 0.30)
+
+	calmLabel, calmOK := ComputeCorrectionLabel(calm, 29, params)
+	wildLabel, wildOK := ComputeCorrectionLabel(wild, 29, params)
+	if !calmOK || !wildOK {
+		t.Fatalf("expected both labels to resolve, got calmOK=%v wildOK=%v", calmOK, wildOK)
+	}
+	if calmLabel != wildLabel {
+		t.Errorf("identically-shaped moves must label alike under a volatility-scaled barrier, "+
+			"got calm=%d wild=%d", calmLabel, wildLabel)
+	}
+
+	// The fixed-threshold rule is exactly what fails this: 3% never reaches a flat 5% barrier.
+	fixed := FixedThresholdCorrectionLabelParams()
+	calmFixed, _ := ComputeCorrectionLabel(calm, 29, fixed)
+	wildFixed, _ := ComputeCorrectionLabel(wild, 29, fixed)
+	if calmFixed == wildFixed {
+		t.Skip("fixed-threshold rule happened to agree here; the regression it guards is elsewhere")
+	}
+}
+
+// The barrier must never be derived from bars after the one being labelled — otherwise the
+// label encodes information unavailable at prediction time and the model looks better than it is.
+func TestVolatilityThresholdUsesOnlyTrailingBars(t *testing.T) {
+	bars := make([]market.Bar, 0, 60)
+	price := 100.0
+	for i := 0; i < 60; i++ {
+		price *= 1.001
+		bars = append(bars, market.Bar{Symbol: "X", Close: price, High: price, Low: price})
+	}
+	params := DefaultCorrectionLabelParams()
+	before := params.thresholdFraction(bars, 30)
+
+	// Violent moves strictly after bar 30 must not change bar 30's threshold.
+	for i := 40; i < 60; i++ {
+		bars[i].Close *= 3
+	}
+	if after := params.thresholdFraction(bars, 30); after != before {
+		t.Errorf("threshold at bar 30 changed from %v to %v after mutating later bars — the "+
+			"volatility window is leaking forward information", before, after)
+	}
+}
+
+func TestVolatilityThresholdRespectsItsFloor(t *testing.T) {
+	// A perfectly flat series has zero realised volatility; without the floor the barrier would
+	// collapse to 0 and label every bar a correction.
+	bars := make([]market.Bar, 0, 40)
+	for i := 0; i < 40; i++ {
+		bars = append(bars, market.Bar{Symbol: "X", Close: 100, High: 100, Low: 100})
+	}
+	params := DefaultCorrectionLabelParams()
+	if got := params.thresholdFraction(bars, 30); got != params.MinThresholdPct {
+		t.Errorf("flat series should fall back to the floor %v, got %v", params.MinThresholdPct, got)
+	}
+}
+
+func TestFixedThresholdParamsStillBehaveAsBefore(t *testing.T) {
+	params := FixedThresholdCorrectionLabelParams()
+	if got := params.thresholdFraction(nil, 0); got != 0.05 {
+		t.Errorf("fixed params must ignore volatility entirely, got %v", got)
+	}
+}

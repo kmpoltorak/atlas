@@ -134,8 +134,9 @@ def main() -> int:
 
     model_prefix = "atlas-ml" if args.target == "correction" else "atlas-ml-recovery"
     label_definition = (
-        "close drops >threshold_pct below the feature bar's close within horizon_bars forward "
-        "bars (see internal/application/ml.CorrectionLabelParams)"
+        "close drops below the feature bar's close by more than the barrier within horizon_bars "
+        "forward bars, where the barrier is volatility-scaled per instrument "
+        "(see internal/application/ml.CorrectionLabelParams)"
         if args.target == "correction" else
         "given a correction occurred at the feature bar (see CorrectionLabelParams), whether "
         "close recovered back to the pre-drop price within recovery_horizon_bars bars after the "

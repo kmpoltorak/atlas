@@ -10,6 +10,7 @@ import (
 	portfolioUC "atlas/internal/application/portfolio"
 	domainDecision "atlas/internal/domain/decision"
 	"atlas/internal/domain/market"
+	domainML "atlas/internal/domain/ml"
 	"atlas/internal/domain/portfolio"
 )
 
@@ -235,5 +236,46 @@ func TestPortfolioRiskSignal(t *testing.T) {
 	}
 	if got := portfolioRiskSignal("NONE", positions); got != 0.5 {
 		t.Fatalf("expected 0.5 (neutral) when no position exists, got %v", got)
+	}
+}
+
+// mlScoreFromPrediction is where recovery probability finally reaches a decision. Before this,
+// recovery was computed, persisted and displayed while every recommendation ignored it.
+func TestMLScoreFoldsInRecoveryProbability(t *testing.T) {
+	const modelVersion = "v-test"
+
+	// Same 60% chance of a drop, but one is expected to bounce back and the other isn't. The
+	// recoverable one must score as the safer of the two.
+	recoverable := domainML.Prediction{
+		ModelVersion: modelVersion, CorrectionProbability: 0.6, RecoveryProbability: 0.9,
+	}
+	permanent := domainML.Prediction{
+		ModelVersion: modelVersion, CorrectionProbability: 0.6, RecoveryProbability: 0.0,
+	}
+	if got, want := mlScoreFromPrediction(recoverable), mlScoreFromPrediction(permanent); got <= want {
+		t.Errorf("a drop expected to recover must score higher than one that isn't: %v vs %v", got, want)
+	}
+
+	// P(unrecovered drop) = 0.6 * (1-0.9) = 0.06, so the term is 0.94.
+	if got := mlScoreFromPrediction(recoverable); math.Abs(got-0.94) > 1e-9 {
+		t.Errorf("expected 1 - 0.6*(1-0.9) = 0.94, got %v", got)
+	}
+
+	// With no recovery model loaded RecoveryProbability is 0, which must reproduce the previous
+	// 1 - P(correction) behaviour exactly rather than silently shifting every recommendation.
+	noRecovery := domainML.Prediction{
+		ModelVersion: modelVersion, CorrectionProbability: 0.25, RecoveryProbability: 0,
+	}
+	if got := mlScoreFromPrediction(noRecovery); math.Abs(got-0.75) > 1e-9 {
+		t.Errorf("without a recovery model the term must stay 1 - P(correction) = 0.75, got %v", got)
+	}
+}
+
+// The stub has no correction-probability concept, so running its RSI-derived placeholder through
+// a risk formula would be inventing meaning it doesn't carry.
+func TestMLScoreLeavesTheStubUntouched(t *testing.T) {
+	stub := domainML.Prediction{ModelVersion: domainML.StubModelVersion, Score: 0.62}
+	if got := mlScoreFromPrediction(stub); got != 0.62 {
+		t.Errorf("stub Score must pass through unchanged, got %v", got)
 	}
 }

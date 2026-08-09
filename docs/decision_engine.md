@@ -47,7 +47,21 @@ Backtesting's individual simulated recommendations are still deliberately NOT pe
 one-by-one (see internal/application/backtesting/usecase.go) since they're hypothetical past
 decisions, not real ones — but each full backtest run's summary now is (see
 docs/backtesting.md), and its simulated RiskScore reflects the backtest's own simulated
-portfolio (`simPortfolio`), not the live one, for the same reason HasPosition does. Discord notifications
+portfolio (`simPortfolio`), not the live one, for the same reason HasPosition does. The ML term in the blend is no longer `1 - P(correction)`. It is now
+`1 - P(correction) * (1 - P(recovery))` — one minus the probability of a drop that does *not*
+recover (application/decision.mlScoreFromPrediction). Recovery probability had been computed,
+persisted and displayed on the dashboard while every recommendation ignored it, even though it is
+the better-validated of the two models. The risk worth pricing is not "will it dip" but "will it
+dip and stay down"; a dip that recovers inside the recovery horizon is not a reason to avoid a
+position. With no recovery model loaded RecoveryProbability is 0 and this degrades exactly to the
+previous behaviour, so the recovery model stays optional here as everywhere else.
+
+Known and deliberately not fixed here: a low correction probability still reads as mildly
+bullish, so a calm instrument scores well on this term with no upside signal behind it. Splitting
+the blend into separate risk and opportunity terms would change how every recommendation is
+produced and is recorded as a known limitation rather than slipped in alongside other work.
+
+Discord notifications
 (internal/app/alerts_loop.go) are gated to the four actionable calls — BUY/ACCUMULATE/REDUCE/SELL
 (isHighPriorityAction), matching "Notifications" below. GET /alerts itself is unaffected and
 still surfaces every non-HOLD action, WAIT included; only the push notification is restricted.

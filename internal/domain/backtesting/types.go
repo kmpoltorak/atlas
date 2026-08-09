@@ -38,6 +38,53 @@ type StrategyResult struct {
 	WinRate         float64       `json:"win_rate"`
 	Trades          []Trade       `json:"trades"`
 	MLEvaluation    *MLEvaluation `json:"ml_evaluation,omitempty"`
+
+	// MLContribution answers the question MLEvaluation cannot: does the model make money?
+	// Nil when no real trained model is loaded, same guard as MLEvaluation.
+	MLContribution *MLContribution `json:"ml_contribution,omitempty"`
+}
+
+// MLContribution reports what the ML signal is actually worth to the strategy, by running the
+// identical simulation twice over the same bars — once with the model wired into the decision
+// blend, once with it removed (the blend degrades to technical-only, exactly as it does when no
+// model is configured) — and reporting the difference.
+//
+// This exists because statistical scores can't answer the only question that matters for a
+// trading signal. MLEvaluation reports ROC AUC, precision and recall; none of them say whether
+// acting on the model beats not acting on it. A model can rank well and still lose money (if it
+// is right about moves too small to trade, or right too late), and it can score modestly and
+// still help (if it is right about the few moves that are large). Judging a trading model by
+// classification metrics alone is the standard mistake this struct is here to prevent, and it
+// was previously the position this project was in: the backtester already computed Sharpe, and
+// the ML evaluation already computed AUC, and nothing ever compared the two.
+//
+// Both runs share thresholds, capital, bars and simulated portfolio logic, so the delta is
+// attributable to the ML term and nothing else.
+type MLContribution struct {
+	// WithML mirrors the parent StrategyResult's own numbers (the run that was actually
+	// reported), repeated here so the comparison reads as a pair without cross-referencing.
+	WithMLTotalReturn    float64 `json:"with_ml_total_return"`
+	WithMLSharpeRatio    float64 `json:"with_ml_sharpe_ratio"`
+	WithMLMaxDrawdown    float64 `json:"with_ml_max_drawdown"`
+	WithMLTradeCount     int     `json:"with_ml_trade_count"`
+	WithMLWinRate        float64 `json:"with_ml_win_rate"`
+	WithoutMLTotalReturn float64 `json:"without_ml_total_return"`
+	WithoutMLSharpeRatio float64 `json:"without_ml_sharpe_ratio"`
+	WithoutMLMaxDrawdown float64 `json:"without_ml_max_drawdown"`
+	WithoutMLTradeCount  int     `json:"without_ml_trade_count"`
+	WithoutMLWinRate     float64 `json:"without_ml_win_rate"`
+
+	// ReturnDelta and SharpeDelta are with-minus-without. Positive means the model earned its
+	// place in the blend over this window; negative means the strategy would have done better
+	// ignoring it, which is a real and reportable outcome, not a bug to be hidden.
+	ReturnDelta float64 `json:"return_delta"`
+	SharpeDelta float64 `json:"sharpe_delta"`
+
+	// DrawdownDelta is with-minus-without, so **negative is good** here (the model reduced the
+	// worst peak-to-trough loss). Signed consistently with the others rather than flipped for
+	// convenience, since a silently inverted sign is exactly the kind of thing that gets
+	// misread months later.
+	DrawdownDelta float64 `json:"drawdown_delta"`
 }
 
 // MLEvaluation reports how well the ML model's correction-probability predictions matched

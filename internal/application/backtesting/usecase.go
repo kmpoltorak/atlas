@@ -45,7 +45,47 @@ func (u *UseCase) Run(symbol string, bars []market.Bar, initialCapital float64, 
 	if len(bars) <= minLookback {
 		return backtesting.StrategyResult{}, errors.New("not enough historical bars to backtest")
 	}
-	return u.simulate(symbol, bars, initialCapital, strategyName, strategyVersion, u.Orchestrator.Decision.Thresholds)
+	result, err := u.simulate(symbol, bars, initialCapital, strategyName, strategyVersion, u.Orchestrator.Decision.Thresholds, u.Orchestrator.ML)
+	if err != nil {
+		return backtesting.StrategyResult{}, err
+	}
+	result.MLContribution, err = u.measureMLContribution(symbol, bars, initialCapital, strategyName, strategyVersion, result)
+	if err != nil {
+		return backtesting.StrategyResult{}, err
+	}
+	return result, nil
+}
+
+// measureMLContribution re-runs the identical simulation with the ML term removed and reports
+// the difference, answering "does this model make money" rather than only "does it rank well" —
+// see backtesting.MLContribution for why that distinction is the point.
+//
+// Returns nil (not a zero-valued struct) whenever there is no real trained model to attribute a
+// difference to, matching evaluateML's guard: with only the deterministic stub loaded, both runs
+// would be scoring the same made-up signal and the delta would be a fabricated number.
+func (u *UseCase) measureMLContribution(symbol string, bars []market.Bar, initialCapital float64, strategyName, strategyVersion string, withML backtesting.StrategyResult) (*backtesting.MLContribution, error) {
+	if u.Orchestrator.ML == nil || u.Orchestrator.ML.CurrentModel() == nil {
+		return nil, nil
+	}
+	withoutML, err := u.simulate(symbol, bars, initialCapital, strategyName, strategyVersion, u.Orchestrator.Decision.Thresholds, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &backtesting.MLContribution{
+		WithMLTotalReturn:    withML.TotalReturn,
+		WithMLSharpeRatio:    withML.SharpeRatio,
+		WithMLMaxDrawdown:    withML.MaxDrawdown,
+		WithMLTradeCount:     withML.TradeCount,
+		WithMLWinRate:        withML.WinRate,
+		WithoutMLTotalReturn: withoutML.TotalReturn,
+		WithoutMLSharpeRatio: withoutML.SharpeRatio,
+		WithoutMLMaxDrawdown: withoutML.MaxDrawdown,
+		WithoutMLTradeCount:  withoutML.TradeCount,
+		WithoutMLWinRate:     withoutML.WinRate,
+		ReturnDelta:          withML.TotalReturn - withoutML.TotalReturn,
+		SharpeDelta:          withML.SharpeRatio - withoutML.SharpeRatio,
+		DrawdownDelta:        withML.MaxDrawdown - withoutML.MaxDrawdown,
+	}, nil
 }
 
 // validateInputs checks the arguments every entry point (Run, RunWalkForward) shares, before
@@ -68,7 +108,7 @@ func (u *UseCase) validateInputs(strategyName string, initialCapital float64) er
 // whatever the live decision engine currently holds, so the optimizer (see optimizeThresholds)
 // can evaluate many candidates without ever touching u.Orchestrator.Decision itself. Caller must
 // have already validated inputs and confirmed len(bars) > minLookback.
-func (u *UseCase) simulate(symbol string, bars []market.Bar, initialCapital float64, strategyName, strategyVersion string, thresholds domainDecision.Thresholds) (backtesting.StrategyResult, error) {
+func (u *UseCase) simulate(symbol string, bars []market.Bar, initialCapital float64, strategyName, strategyVersion string, thresholds domainDecision.Thresholds, ml *mlUC.UseCase) (backtesting.StrategyResult, error) {
 	cash := initialCapital
 	quantity := 0.0
 	entryPrice := 0.0
@@ -88,7 +128,10 @@ func (u *UseCase) simulate(symbol string, bars []market.Bar, initialCapital floa
 	// varying them here never mutates the live decision engine's own instance.
 	simPortfolio := portfolioUC.NewUseCase()
 	simDecision := decisionUC.NewUseCaseWithThresholds(thresholds)
-	simOrchestrator := decisionUC.NewOrchestratorWithML(u.Orchestrator.Analyzer, simPortfolio, simDecision, u.Orchestrator.ML)
+	// ml is passed in rather than read off u.Orchestrator so Run can simulate the identical
+	// strategy with the model removed — see MLContribution. A nil ml leaves the blend
+	// technical-only, the same degradation path as running with no model configured at all.
+	simOrchestrator := decisionUC.NewOrchestratorWithML(u.Orchestrator.Analyzer, simPortfolio, simDecision, ml)
 
 	for i := minLookback; i < len(bars); i++ {
 		window := bars[:i+1] // only data available at this bar's timestamp

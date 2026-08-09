@@ -8,6 +8,7 @@ import (
 	portfolioUC "atlas/internal/application/portfolio"
 	domainDecision "atlas/internal/domain/decision"
 	"atlas/internal/domain/market"
+	domainML "atlas/internal/domain/ml"
 	"atlas/internal/domain/portfolio"
 )
 
@@ -213,6 +214,37 @@ type blendResult struct {
 	Reasons        []string
 }
 
+// mlScoreFromPrediction turns the ML models' raw outputs into the bullish-lean term the blend
+// consumes, folding in recovery probability — which was previously computed, persisted, shown on
+// the dashboard, and then ignored by every decision.
+//
+// The risk being scored is not "will it drop" but "will it drop *and stay down*". A dip that
+// recovers inside the recovery model's horizon is not a reason to avoid a position; treating it
+// as one throws away the distinction the recovery model exists to draw. So the penalty applied
+// here is the joint probability of an unrecovered drop:
+//
+//	P(unrecovered drop) = P(correction) * (1 - P(recovery))
+//
+// which is subtracted from 1 to keep the term oriented the way the blend and its >=0.6/<=0.4
+// reason thresholds already expect. When no recovery model is loaded RecoveryProbability is 0
+// (see ml.UseCase.Predict), so this degrades exactly to the previous 1 - P(correction) — the
+// recovery model is optional here in the same way it is everywhere else.
+//
+// This deliberately does not attempt to fix the deeper asymmetry that a low correction
+// probability still reads as mildly bullish, so a becalmed instrument scores well on this term
+// without any upside signal behind it. Restructuring the blend into separate risk and
+// opportunity terms is a larger change to how every recommendation is produced, and is recorded
+// as such in docs/decision_engine.md rather than smuggled in here.
+func mlScoreFromPrediction(prediction domainML.Prediction) float64 {
+	if prediction.ModelVersion == domainML.StubModelVersion {
+		// The stub has no correction-probability concept at all — its Score is an RSI-derived
+		// placeholder, and reinterpreting it through a risk formula would be inventing meaning.
+		return prediction.Score
+	}
+	unrecoveredDrop := prediction.CorrectionProbability * (1 - prediction.RecoveryProbability)
+	return clamp01(1 - unrecoveredDrop)
+}
+
 // blendWeights are the first-pass, documented weights for Technical+ML+Portfolio+Risk (see
 // docs/decision_engine.md's "Scoring Model"), same honesty stance as every other threshold in
 // this engine — picked by hand, pending real tuning, not derived from data. Sums to 1.
@@ -236,7 +268,7 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 	if o.ML != nil {
 		feature := mlUC.BuildFeatureVector(o.Analyzer, symbol, bars)
 		if prediction, err := o.ML.Predict(feature); err == nil {
-			result.MLScore = prediction.Score
+			result.MLScore = mlScoreFromPrediction(prediction)
 			result.MLConfidence = prediction.Confidence
 			result.MLModelVersion = prediction.ModelVersion
 		}
