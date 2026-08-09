@@ -14,7 +14,7 @@
 
     {{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
 
-    <div class="card" style="max-width: 28rem;">
+    <div class="card card-md">
       <div class="card-body">
         <p>{{T .Lang "totp.scan_hint"}}</p>
         <img src="/dashboard/account/totp/qr.png" alt="TOTP QR code" width="220" height="220" class="border rounded mb-3">

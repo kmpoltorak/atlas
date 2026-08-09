@@ -8,10 +8,10 @@
   {{template "head" .}}
 </head>
 <body>
-  <div class="container d-flex align-items-center justify-content-center" style="min-height: 100vh;">
-    <div class="card shadow-sm" style="width: 100%; max-width: 24rem;">
+  <div class="container d-flex align-items-center justify-content-center min-vh-dynamic">
+    <div class="card w-100 card-sm">
       <div class="card-body p-4">
-        <h1 class="h4 mb-1">Atlas</h1>
+        <h1 class="h4 mb-1 d-flex align-items-center gap-2">{{template "brandmark"}}Atlas</h1>
         <p class="text-body-secondary small mb-3">{{T .Lang "login.subtitle"}}</p>
         {{if .Error}}<div class="alert alert-danger py-2">{{.Error}}</div>{{end}}
         <form method="post" action="/login">
