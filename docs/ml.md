@@ -70,10 +70,13 @@ Measured on the current real dataset (10,002 correction rows / 1,036 recovery ro
 symbols, real Yahoo 1h bars out of TimescaleDB), with scale-free features, the volatility
 features and the embargo in place:
 
-| | PR AUC | base-rate baseline | no-skill | ROC AUC | unseen symbols |
-|---|---|---|---|---|---|
-| Correction | **0.264** | 0.188 | 0.065 | 0.710 | 0.732 |
-| Recovery | **0.851** | 0.651 | 0.637 | 0.758 | 0.673 |
+| | PR AUC | base-rate baseline | no-skill | ROC AUC | unseen symbols | Brier |
+|---|---|---|---|---|---|---|
+| Correction | **0.297** | 0.226 | 0.070 | 0.785 | 0.766 | 0.059 |
+| Recovery | **0.758** | 0.528 | 0.427 | 0.782 | 0.566 | 0.183 |
+
+These are measured on the volatility-scaled label (see below); the fixed-5% label the project
+started with gave correction PR AUC 0.264 against a 0.188 baseline and ROC AUC 0.710.
 
 **Both models now beat the symbol-base-rate baseline on PR AUC**, which is the metric this
 project judges promotion on. That choice is deliberate and the two metrics genuinely disagree
@@ -116,6 +119,32 @@ generalises to symbols it has never seen, something memorisation can never do.
 
 Longer volatility windows were tried and rejected on evidence: most symbols hold only ~125 bars,
 so a 100-bar rolling window discarded a third of the dataset and made every metric worse.
+
+### The label itself was the deeper problem
+
+Scaling the *features* by volatility helped; the label was still asking a different question of
+every instrument. A fixed 5% barrier meant GLD never once qualified in ten bars while SOXL did in
+58% of windows, so "will this correct" was substantially "is this a volatile ticker" — which is
+precisely why a per-symbol frequency lookup was so hard to beat. Volatility-scaled barriers are
+the standard remedy (the triple-barrier method's), and `CorrectionLabelParams` now defaults to a
+drop of 4x the instrument's own trailing 20-bar volatility, floored at 2%.
+
+The multiple was measured across the collected universe, not guessed:
+
+| rule | overall positive rate | spread across symbols | symbols never triggering | symbols over 40% |
+|---|---|---|---|---|
+| fixed 5% | 0.110 | 0.168 | 12 | 6 |
+| vol x3.0 | 0.185 | 0.102 | 1 | 1 |
+| **vol x4.0** | **0.132** | **0.081** | **1** | **0** |
+
+4x keeps the overall rate close to the rule it replaces while halving the between-symbol spread,
+and takes the count of instruments that could never produce a positive example from 12 to 1. It
+also made ~6,500 more rows usable, since calm instruments now contribute examples at all. Every
+downstream metric improved: correction ROC AUC 0.710 to 0.785, PR AUC 0.264 to 0.297, unseen-
+symbol AUC 0.732 to 0.766, Brier 0.071 to 0.059.
+
+`FixedThresholdCorrectionLabelParams` keeps the old definition available for comparison and so
+models trained against it stay describable.
 
 Accuracy is reported but never used as a verdict. On a 6.5%-positive target it is close to
 meaningless, and it was the number that made the broken model look strong. Training also runs

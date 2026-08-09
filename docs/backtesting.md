@@ -306,3 +306,40 @@ Possible additions:
 - Factor analysis
 - Reinforcement learning
 - Paper trading integration
+
+## ML Contribution — does the model actually make money?
+
+`StrategyResult.MLContribution` (application/backtesting.measureMLContribution) runs theidentical simulation twice over the same bars — once with the ML term in the decision blend, once
+with it removed — and reports the difference in return, Sharpe and max drawdown. Nil when only
+the deterministic stub is loaded, same guard as `MLEvaluation`.
+
+This closes a real gap. `MLEvaluation` reports ROC AUC, precision and recall; none of them say
+whether *acting* on the model beats ignoring it. A model can rank well and still lose money, or
+score modestly and still help. Judging a trading signal by classification metrics alone is the
+standard mistake, and this project was making it: the backtester already computed Sharpe, the ML
+evaluation already computed AUC, and nothing ever compared them.
+
+It earned its place on the first run. Across all 47 collected symbols:
+
+| | better with ML | worse | no difference |
+|---|---|---|---|
+| Total return | 21 | 7 | 19 |
+| Sharpe ratio | 16 | 12 | — |
+| Max drawdown | 0 | 11 | — |
+
+Returns improve on aggregate (sum +199pp, mean +4.2%) but the **median is 0** — the mean is
+carried by a few large wins (XTB.WA +71%, ALE.WA +42%). Meanwhile mean Sharpe delta is
+**-0.097** and drawdown got worse for 11 symbols and better for none.
+
+Read plainly: the ML term buys extra raw return by entering positions the technical signal alone
+would not, and pays for it in volatility and deeper drawdowns. For a tool whose stated purpose is
+flagging corrections worth avoiding, a uniformly worse drawdown is pointed in the wrong
+direction. That is a live finding, not a settled conclusion — see the caveats below — but it is
+exactly the kind of thing no AUC would ever have surfaced.
+
+**Caveats, which are substantial.** The simulated strategy is all-in/all-out and averages
+**1.0 trades per symbol** over the available history, so each delta reflects the timing of a
+single entry rather than a strategy's behaviour over many decisions. The sample is one window of
+one dataset. Treat this as a diagnostic that is now measurable and worth watching every run, not
+as a verdict on the model.
+
