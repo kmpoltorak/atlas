@@ -204,3 +204,54 @@ func TestBuildAlertEmbedOmitsUnknownMarketCondition(t *testing.T) {
 		t.Errorf("SELL must be visually distinct from BUY, got %d", embed.Color)
 	}
 }
+
+// A failed Discord send must not be recorded as delivered. The loop used to mark the action seen
+// before attempting the send, which turned a transient webhook failure into an alert the Author
+// never saw and never would — every later poll considered it already handled.
+func TestPollAlertsOnceRetriesAfterAFailedSend(t *testing.T) {
+	var attempts int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Fail the first attempt, accept the second.
+		if atomic.AddInt32(&attempts, 1) == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	app := newTestApplicationWithDiscord(server.URL)
+	lastAction := map[string]string{}
+
+	app.pollAlertsOnce(lastAction)
+	if lastAction["AAPL"] != "" {
+		t.Fatalf("a failed send must leave the action unrecorded so it retries, got %q", lastAction["AAPL"])
+	}
+
+	app.pollAlertsOnce(lastAction)
+	if atomic.LoadInt32(&attempts) != 2 {
+		t.Fatalf("expected the next poll to retry the failed alert, got %d attempts", attempts)
+	}
+	if lastAction["AAPL"] != "BUY" {
+		t.Fatalf("a delivered alert must be recorded, got %q", lastAction["AAPL"])
+	}
+
+	// And once delivered, it stays quiet.
+	app.pollAlertsOnce(lastAction)
+	if atomic.LoadInt32(&attempts) != 2 {
+		t.Fatalf("expected no further sends for an unchanged action, got %d attempts", attempts)
+	}
+}
+
+// Actions that never reach Discord still have to be tracked, or a later change would be measured
+// against a stale baseline and go unannounced.
+func TestPollAlertsOnceTracksNonNotifyingActionsWithoutSending(t *testing.T) {
+	app := newTestApplicationWithDiscord("")
+	lastAction := map[string]string{}
+
+	app.pollAlertsOnce(lastAction)
+
+	if lastAction["AAPL"] != "BUY" {
+		t.Fatalf("expected the action to be tracked even with no webhook configured, got %q", lastAction["AAPL"])
+	}
+}
