@@ -200,3 +200,50 @@ func TestFetchBarsSendsBrowserUserAgent(t *testing.T) {
 		t.Fatal("expected a non-empty User-Agent header; Yahoo's endpoint returns 429 without one")
 	}
 }
+
+// Yahoo emits a timestamp for every slot in the interval grid, including exchange holidays, and
+// fills the OHLC arrays with null there. null unmarshals to 0, so without a guard those arrive
+// as bars priced at zero — which the backtester reads as a total wipeout and the indicators read
+// as a crash to zero and back. See hasUsablePrices.
+func TestFetchBarsDropsHolidayBarsWithNullPrices(t *testing.T) {
+	const barStart int64 = 1704067200
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(fmt.Sprintf(`{
+			"chart": {"result": [{
+				"timestamp": [%d, %d, %d],
+				"indicators": {"quote": [{
+					"open":   [100, null, 106],
+					"high":   [105, null, 108],
+					"low":    [99,  null, 105],
+					"close":  [104, null, 107],
+					"volume": [1000, null, 1200]
+				}]}
+			}]}
+		}`, barStart, barStart+3600, barStart+7200)))
+	}))
+	defer server.Close()
+
+	provider := NewYahooFinanceProvider()
+	provider.BaseURL = server.URL + "/v8/finance/chart"
+	provider.Client = server.Client()
+	provider.Now = func() time.Time { return time.Unix(barStart+7200, 0).Add(2 * time.Hour) }
+
+	bars, err := provider.FetchBars("PKN.WA", 2)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(bars) != 2 {
+		t.Fatalf("expected the null-priced holiday bar to be dropped, got %d bars", len(bars))
+	}
+	for _, bar := range bars {
+		if bar.Close <= 0 {
+			t.Fatalf("a zero-priced bar survived: %+v", bar)
+		}
+	}
+	// The bars either side of the hole must be untouched — this drops holidays, not history.
+	if bars[0].Close != 104 || bars[1].Close != 107 {
+		t.Fatalf("expected the real bars to pass through unchanged, got %v and %v", bars[0].Close, bars[1].Close)
+	}
+}

@@ -113,6 +113,9 @@ func (p *YahooFinanceProvider) FetchBars(symbol string, window int) ([]market.Ba
 			Volume:    safeValue(quote.Volume, i),
 			Timestamp: time.Unix(result.Timestamp[i], 0),
 		}
+		if !hasUsablePrices(bar) {
+			continue
+		}
 		bars = append(bars, bar)
 	}
 
@@ -150,6 +153,28 @@ func dropUnclosedBars(bars []market.Bar, now time.Time) []market.Bar {
 		bars = bars[:len(bars)-1]
 	}
 	return bars
+}
+
+// hasUsablePrices rejects bars whose OHLC did not survive parsing as real prices.
+//
+// Yahoo emits a timestamp for every slot in the interval grid, including ones the exchange was
+// closed for — market holidays, halts, half-days — and fills the OHLC arrays with JSON null
+// there. null unmarshals into float64 as 0, so those slots arrive here as bars priced at zero,
+// indistinguishable from data by anything downstream.
+//
+// Nothing downstream survived that. The backtester's final equity is cash + quantity*close, so a
+// zero-priced last bar reported exactly -100% return and 100% drawdown: on 2026-08-10 four WSE
+// large caps (ALE.WA, KGH.WA, LPP.WA, PZU.WA) showed a total wipeout on a long-only strategy,
+// which was Easter Monday's empty bar, not a trading result. Indicators fared no better — RSI,
+// EMA, ATR and realized volatility all saw a crash to zero and an instant recovery — and the
+// same rows went into ML training as genuine observations. 35 of them had accumulated, 30 on
+// WSE symbols where the Polish holiday calendar diverges from the US one.
+//
+// A traded instrument is never worth zero, so a non-positive price is always missing data rather
+// than a real quote. The bar is dropped instead of interpolated: a closed exchange has no
+// hourly candle, and inventing one would be inventing data.
+func hasUsablePrices(bar market.Bar) bool {
+	return bar.Open > 0 && bar.High > 0 && bar.Low > 0 && bar.Close > 0
 }
 
 func safeValue(values []float64, idx int) float64 {
