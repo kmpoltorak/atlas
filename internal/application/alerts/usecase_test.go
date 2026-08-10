@@ -20,14 +20,25 @@ func (s stubProvider) FetchBars(symbol string, window int) ([]market.Bar, error)
 	return s.bars[symbol], nil
 }
 
+// uptrendBars is a rising series long enough for the decision engine's momentum term to have a
+// reading: it needs more than that term's lookback window, and the per-bar returns must vary,
+// since a perfectly uniform climb has zero realized volatility to normalize against and reads as
+// no signal at all. Volume is flat at the series average so volume confirmation stays at full
+// weight. The previous three-bar version scored strongly only because the term it fed used to be
+// a step function on one bar's open-to-close move.
 func uptrendBars(symbol string) []market.Bar {
-	bars := make([]market.Bar, 0, 3)
-	base := time.Now()
-	prices := []float64{100, 104, 109}
-	for i, price := range prices {
+	bars := make([]market.Bar, 0, 30)
+	base := time.Now().Add(-30 * time.Hour)
+	price := 100.0
+	for i := 0; i < 30; i++ {
+		if i%2 == 0 {
+			price *= 1.015
+		} else {
+			price *= 1.005
+		}
 		bars = append(bars, market.Bar{
-			Symbol: symbol, Open: price - 4, High: price + 2, Low: price - 5, Close: price,
-			Volume: 1200, Timestamp: base.Add(time.Duration(i) * time.Minute),
+			Symbol: symbol, Open: price / 1.004, High: price * 1.002, Low: price / 1.008,
+			Close: price, Volume: 1200, Timestamp: base.Add(time.Duration(i) * time.Hour),
 		})
 	}
 	return bars

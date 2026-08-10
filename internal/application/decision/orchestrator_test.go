@@ -14,6 +14,31 @@ import (
 	"atlas/internal/domain/portfolio"
 )
 
+// sustainedUptrendBars is a rising series long enough for the momentum term to have a reading:
+// more than momentumWindow bars of history, and per-bar returns that vary. The variation is not
+// decoration — a perfectly uniform climb has zero realized volatility to normalize against, so
+// momentumVolumeScore correctly reports no signal for it. Volume is held at the series average
+// so the volume-confirmation factor stays at full weight and does not muddy what is being
+// asserted. This replaces three-bar fixtures that only ever produced a strong score because the
+// old step function read a single bar's open-to-close move.
+func sustainedUptrendBars(symbol string) []market.Bar {
+	bars := make([]market.Bar, 0, 30)
+	base := time.Now().Add(-30 * time.Hour)
+	price := 100.0
+	for i := 0; i < 30; i++ {
+		if i%2 == 0 {
+			price *= 1.015
+		} else {
+			price *= 1.005
+		}
+		bars = append(bars, market.Bar{
+			Symbol: symbol, Open: price / 1.004, High: price * 1.002, Low: price / 1.008,
+			Close: price, Volume: 1200, Timestamp: base.Add(time.Duration(i) * time.Hour),
+		})
+	}
+	return bars
+}
+
 func TestOrchestratorBuildsRecommendationFromLatestSignal(t *testing.T) {
 	analyzerUC := analyzerUC.NewUseCase()
 	portfolioUC := portfolioUC.NewUseCase()
@@ -21,13 +46,7 @@ func TestOrchestratorBuildsRecommendationFromLatestSignal(t *testing.T) {
 	decisionUC := NewUseCase()
 	orchestrator := NewOrchestrator(analyzerUC, portfolioUC, decisionUC)
 
-	bars := []market.Bar{
-		{Symbol: "AAPL", Open: 100, High: 105, Low: 99, Close: 102, Volume: 1000, Timestamp: time.Now().Add(-2 * time.Minute)},
-		{Symbol: "AAPL", Open: 102, High: 106, Low: 101, Close: 104, Volume: 1100, Timestamp: time.Now().Add(-1 * time.Minute)},
-		{Symbol: "AAPL", Open: 104, High: 108, Low: 103, Close: 107, Volume: 1200, Timestamp: time.Now()},
-	}
-
-	rec, err := orchestrator.BuildRecommendationFromBars("AAPL", bars)
+	rec, err := orchestrator.BuildRecommendationFromBars("AAPL", sustainedUptrendBars("AAPL"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -277,5 +296,79 @@ func TestMLScoreLeavesTheStubUntouched(t *testing.T) {
 	stub := domainML.Prediction{ModelVersion: domainML.StubModelVersion, Score: 0.62}
 	if got := mlScoreFromPrediction(stub); got != 0.62 {
 		t.Errorf("stub Score must pass through unchanged, got %v", got)
+	}
+}
+
+// momentumVolumeScore reports "no information" as a neutral 0.5 rather than a fabricated lean
+// whenever its inputs cannot support a reading. Each of these cases was previously served by a
+// step function that returned a confident-looking 0.48 regardless.
+func TestMomentumVolumeScoreIsNeutralWithoutUsableInput(t *testing.T) {
+	analyzer := analyzerUC.NewUseCase()
+	bars := sustainedUptrendBars("AAPL")
+
+	if got := momentumVolumeScore(nil, "AAPL", bars); got != 0.5 {
+		t.Errorf("without an analyzer the term must stay neutral, got %v", got)
+	}
+	if got := momentumVolumeScore(analyzer, "AAPL", bars[:momentumWindow]); got != 0.5 {
+		t.Errorf("with only %d bars there is no window to measure over, got %v", momentumWindow, got)
+	}
+
+	// A perfectly flat series has no realized volatility to normalize the move against, so the
+	// ratio is undefined rather than infinitely significant.
+	flat := make([]market.Bar, 0, 30)
+	for i := 0; i < 30; i++ {
+		flat = append(flat, market.Bar{
+			Symbol: "AAPL", Open: 100, High: 100, Low: 100, Close: 100, Volume: 1000,
+			Timestamp: time.Now().Add(time.Duration(i) * time.Hour),
+		})
+	}
+	if got := momentumVolumeScore(analyzer, "AAPL", flat); got != 0.5 {
+		t.Errorf("a flat series has no measurable volatility, so the term must stay neutral, got %v", got)
+	}
+}
+
+// The term must be directional and stay inside [0,1] at both extremes — the old step function
+// was neither, quantizing every reading to 0.82 or 0.48.
+func TestMomentumVolumeScoreIsDirectionalAndBounded(t *testing.T) {
+	analyzer := analyzerUC.NewUseCase()
+
+	up := momentumVolumeScore(analyzer, "AAPL", sustainedUptrendBars("AAPL"))
+	if up <= 0.5 || up > 1 {
+		t.Fatalf("a sustained uptrend must read bullish within [0,1], got %v", up)
+	}
+
+	// The same series reversed in price: an equally sustained decline, which must read bearish.
+	rising := sustainedUptrendBars("AAPL")
+	falling := make([]market.Bar, len(rising))
+	for i, bar := range rising {
+		mirror := rising[len(rising)-1-i]
+		falling[i] = market.Bar{
+			Symbol: bar.Symbol, Open: mirror.Open, High: mirror.High, Low: mirror.Low,
+			Close: mirror.Close, Volume: bar.Volume, Timestamp: bar.Timestamp,
+		}
+	}
+	down := momentumVolumeScore(analyzer, "AAPL", falling)
+	if down >= 0.5 || down < 0 {
+		t.Fatalf("a sustained decline must read bearish within [0,1], got %v", down)
+	}
+}
+
+// Thin volume damps the reading toward neutral rather than reversing it: a move nobody traded is
+// weak evidence, not counter-evidence.
+func TestMomentumVolumeScoreDampsUnconfirmedMoves(t *testing.T) {
+	analyzer := analyzerUC.NewUseCase()
+
+	confirmed := sustainedUptrendBars("AAPL")
+	thin := sustainedUptrendBars("AAPL")
+	thin[len(thin)-1].Volume = 0
+
+	confirmedScore := momentumVolumeScore(analyzer, "AAPL", confirmed)
+	thinScore := momentumVolumeScore(analyzer, "AAPL", thin)
+
+	if thinScore >= confirmedScore {
+		t.Fatalf("an unconfirmed move must score lower than a confirmed one, got %v vs %v", thinScore, confirmedScore)
+	}
+	if thinScore <= 0.5 {
+		t.Fatalf("damping must pull toward neutral, not past it, got %v", thinScore)
 	}
 }

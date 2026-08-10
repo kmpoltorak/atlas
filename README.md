@@ -179,7 +179,11 @@ build — one Go binary serves everything via `go:embed`):
   positions/transactions or bulk-delete either via checkboxes (position cost basis is
   recomputed from the remaining transaction history, not patched in place).
 - **Recommendations** — run the decision engine against any watchlist symbol.
-- **Alerts** — view current non-HOLD signals across the watchlist.
+- **Alerts** — view current non-HOLD signals across the watchlist, each with how long it has held
+  that action. That span comes from walking the symbol's recommendation history back to where the
+  action last changed, not from the alert row's own timestamp — every row is stamped with the
+  moment it was computed, so the newest one always reads as "just now" however long the signal has
+  actually stood.
 - **Backtests** — run a historical simulation and view past results.
 - **Watchlist** — add tracked symbols, remove them individually or in bulk via checkboxes, and
   export/import the whole list as a JSON file to move it between environments without
@@ -187,6 +191,14 @@ build — one Go binary serves everything via `go:embed`):
 - **Account** — change password, enroll/disable TOTP two-factor auth via a real in-app QR code,
   and pick which trained ML model (correction/recovery, independently) is active — see
   [Machine learning](#machine-learning) below.
+
+Every table filters, paginates, and sorts client-side (click a column header; the caret shows the
+current order), and every symbol links to its Yahoo Finance quote page — the same source Atlas
+collects its bars from, so a ticker Atlas tracks is by construction one that page resolves.
+
+Discord alerts arrive as embeds rather than a single line: colour-coded by action, titled with the
+symbol and linked to its quote page, with confidence/score/market condition as a field row and the
+rationale as a list.
 
 Authentication is opt-in: leave `ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH` unset and there's no login
 gate at all (matches every curl-based workflow above). Set both and every route except

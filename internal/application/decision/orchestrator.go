@@ -106,7 +106,7 @@ func (o *Orchestrator) BuildRecommendationForSymbol(symbol string, signals []dom
 // compute Wilder's RSI; every other field reflects the actual indicator series.
 func (o *Orchestrator) buildTechnicalScore(symbol string, bars []market.Bar) domainDecision.TechnicalScore {
 	latest := bars[len(bars)-1]
-	momentumVolume := overallScore(latest.Close, latest.Open, latest.Volume)
+	momentumVolume := momentumVolumeScore(o.Analyzer, symbol, bars)
 
 	technical := domainDecision.TechnicalScore{RSI: 50, EMA: latest.Close, Overall: momentumVolume}
 	if o.Analyzer == nil {
@@ -381,16 +381,86 @@ func portfolioRiskSignal(symbol string, positions []portfolio.Position) float64 
 	return 0.5
 }
 
-// overallScore is a placeholder momentum/volume heuristic pending real threshold tuning.
-// volume/1000 assumes typical daily-bar equity share-volume scale; feeding differently-scaled
-// volume data (e.g. dollar volume, or a thin instrument) would silently skew this.
-func overallScore(close, open, volume float64) float64 {
-	momentum := (close - open) / math.Max(1, open)
-	volumeScore := volume / 1000
-	if momentum > 0.02 && volumeScore > 1 {
-		return 0.82
+// Momentum-term parameters, chosen by measuring the candidates against the 41807 real closed
+// hourly bars behind the live watchlist (47 symbols, 274-1014 bars each) rather than by taste:
+//
+//   - momentumWindow 12 bars, roughly two trading sessions. The normalized distribution is flat
+//     across 3/6/12/24 (median ~0, p95 ~1.8 volatility units), so this is not a knife-edge
+//     choice; 12 sits where the interquartile spread is widest without reaching back so far that
+//     the shorter-history symbols lose readings.
+//   - momentumVolWindow 20, reusing analyzer.ComputeRealizedVolatility's short window so the
+//     denominator here means the same thing it means in the ML feature vector.
+//   - momentumScale 1.5 volatility units for a saturated signal. Measured over the same bars,
+//     1.0 saturates (p05 0.040, p95 0.971 — the tails pile up at the ends) and 2.0 compresses
+//     (p95 0.853, so a genuinely strong move never reads as strong). 1.5 spends the whole range:
+//     p05 0.139, p25 0.330, p50 0.509, p75 0.695, p95 0.880.
+const (
+	momentumWindow    = 12
+	momentumVolWindow = 20
+	momentumScale     = 1.5
+)
+
+// momentumVolumeScore is the heaviest term in buildTechnicalScore (weight 0.45), and it reports
+// whether price has moved meaningfully over the recent window, confirmed by volume.
+//
+// It replaces a two-valued step function that read a single bar: momentum > 2% on that one bar
+// AND raw volume/1000 > 1 returned 0.82, everything else returned 0.48. That had three defects,
+// each measured against production rather than argued:
+//
+//   - It read only the newest bar, which Yahoo serves as an unclosed live quote with open ==
+//     close and volume 0 (see providers.dropUnclosedBars). Momentum was therefore identically 0
+//     and the bullish branch could never fire on live traffic — the largest term in the score
+//     was frozen at 0.48 permanently. Every BUY recorded in the week to 2026-08-10 landed in
+//     0.750-0.754 against a 0.75 threshold, i.e. grazing the line, and flickered back to HOLD on
+//     the next poll. No SELL or REDUCE was reachable at all.
+//   - Even on correct closed bars the rule fires on 3.21% of them, so it was near-constant with
+//     occasional 0.34-wide jumps — a quantization artifact driving the recommendation, not a
+//     signal. The replacement moves 0.053 per bar at the median (0.012 in the blended score).
+//   - volume/1000 hard-codes the share-volume scale of a liquid US equity. The gate passes on
+//     92% of bars, so it barely gated anything, while meaning something entirely different for a
+//     thinly traded WSE listing. ComputeVolume already produces the scale-free measure (volume
+//     over the symbol's own average) and was being ignored.
+//
+// The replacement normalizes the window return by the instrument's own realized volatility, so
+// one threshold means the same thing for ORCL and for ETFBDIVPL.WA — the same scale-free stance
+// the ML feature vector settled on. tanh keeps it smooth and bounded without a clamp. Thin
+// volume damps the reading toward neutral rather than reversing it, which is the ordinary
+// reading of an unconfirmed move: a move nobody traded is weak evidence, not counter-evidence.
+//
+// Returns a neutral 0.5 whenever the inputs cannot support a reading (no analyzer, too little
+// history, a non-positive past close, or an instrument with no measured volatility) — "no
+// information" rather than a fabricated lean.
+func momentumVolumeScore(analyzer *analyzerUC.UseCase, symbol string, bars []market.Bar) float64 {
+	if analyzer == nil || len(bars) <= momentumWindow {
+		return 0.5
 	}
-	return 0.48
+	latest := len(bars) - 1
+
+	past := bars[latest-momentumWindow].Close
+	if past <= 0 {
+		return 0.5
+	}
+	momentum := bars[latest].Close/past - 1
+
+	volatility, err := analyzer.ComputeRealizedVolatility(symbol, bars, momentumVolWindow)
+	if err != nil || len(volatility) <= latest || volatility[latest] <= 0 {
+		return 0.5
+	}
+	// Volatility is per-bar, so scaling it to the window's length is what makes the ratio a
+	// count of standard deviations for a move of this duration.
+	normalized := momentum / (volatility[latest] * math.Sqrt(momentumWindow))
+	score := 0.5 + 0.5*math.Tanh(normalized/momentumScale)
+
+	// Confirmation spans [0.5, 1.0]: at or above the symbol's average volume the reading stands
+	// as measured, and below it the deviation from neutral is scaled down, reaching half weight
+	// only at zero volume. Capped at 1 so an extraordinary volume spike cannot amplify the term
+	// past its own bounds.
+	confirmation := 0.5
+	if series, err := analyzer.ComputeVolume(symbol, bars); err == nil && len(series) > latest {
+		confirmation = 0.5 + 0.5*math.Min(1, series[latest])
+	}
+
+	return clamp01(0.5 + (score-0.5)*confirmation)
 }
 
 func clamp01(value float64) float64 {

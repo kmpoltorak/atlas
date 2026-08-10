@@ -302,3 +302,123 @@ func TestRenderReportsTemplateErrorsAsHTTP500(t *testing.T) {
 		t.Fatalf("expected 500 for an unknown template name, got %d", rec.Code)
 	}
 }
+
+func TestFormatActiveDuration(t *testing.T) {
+	now := time.Date(2026, 8, 10, 18, 0, 0, 0, time.UTC)
+
+	cases := []struct {
+		name  string
+		since time.Time
+		want  string
+	}{
+		{"days drop the minutes", now.Add(-50 * time.Hour), "2d 2h"},
+		{"hours keep the minutes", now.Add(-(3*time.Hour + 20*time.Minute)), "3h 20m"},
+		{"under an hour is minutes only", now.Add(-45 * time.Minute), "45m"},
+		// Sub-minute reads as "<1m" rather than "0m": the poll interval is five minutes, so
+		// claiming to-the-second freshness would overstate what the data can support.
+		{"under a minute", now.Add(-20 * time.Second), "<1m"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := FormatActiveDuration(LangEN, tc.since, now).Label; got != tc.want {
+				t.Fatalf("FormatActiveDuration = %q, want %q", got, tc.want)
+			}
+		})
+	}
+
+	// Seconds back the column's numeric sort, so it must be the real elapsed span rather than a
+	// re-parse of the rounded label.
+	if got := FormatActiveDuration(LangEN, now.Add(-90*time.Minute), now).Seconds; got != 5400 {
+		t.Fatalf("Seconds = %d, want 5400", got)
+	}
+
+	// No recorded history and a clock-skewed future timestamp both render as blank rather than
+	// as an invented duration.
+	if got := FormatActiveDuration(LangEN, time.Time{}, now); got.Label != "" || got.Seconds != 0 {
+		t.Fatalf("a zero timestamp must render blank, got %+v", got)
+	}
+	if got := FormatActiveDuration(LangEN, now.Add(time.Hour), now); got.Label != "" {
+		t.Fatalf("a future timestamp must render blank, got %+v", got)
+	}
+
+	if got := FormatActiveDuration(LangPL, now.Add(-(3*time.Hour + 20*time.Minute)), now).Label; got != "3godz 20min" {
+		t.Fatalf("Polish units: got %q", got)
+	}
+}
+
+// Every symbol Atlas shows links to its quote page, and every table column worth ordering by is
+// marked sortable. Both are easy to add to one template and forget in the next, so assert them
+// against a page that renders both a positions and a transactions table.
+func TestRenderPortfolioPageLinksSymbolsAndMarksSortableColumns(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Render(rec, "portfolio", PortfolioPage{
+		Positions: []portfolio.Position{
+			{Symbol: "PKN.WA", Quantity: 10, AverageCost: 60, CurrentPrice: 72},
+		},
+		Transactions: []portfolio.Transaction{
+			{ID: "tx-1", Symbol: "PKN.WA", Type: "BUY", Quantity: 10, Price: 60, Timestamp: "2026-01-01T00:00:00Z"},
+		},
+	})
+	if rec.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+
+	// The exchange suffix has to survive into the URL — a bare "PKN" is a different instrument.
+	if !strings.Contains(body, `href="https://finance.yahoo.com/quote/PKN.WA/"`) {
+		t.Errorf("expected the symbol to link to its Yahoo Finance quote page, got %s", body)
+	}
+	if strings.Count(body, `class="atlas-symbol"`) != 2 {
+		t.Errorf("expected both the position and the transaction symbol to be linked")
+	}
+	// Opening a new tab without rel=noopener hands the destination a handle on this window.
+	if !strings.Contains(body, `rel="noopener noreferrer"`) {
+		t.Errorf("expected external symbol links to carry rel=noopener noreferrer")
+	}
+	for _, want := range []string{`data-sort="text"`, `data-sort="number"`, `data-sort="date"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("expected %s among the sortable column headers", want)
+		}
+	}
+}
+
+// The Alerts page carries the duration column, which needs both renderings present: the label a
+// person reads and the seconds the column sorts on.
+func TestRenderAlertsPageShowsActiveDuration(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Render(rec, "alerts", AlertsPage{
+		Alerts: []alerts.Alert{{
+			Recommendation: decision.Recommendation{Symbol: "ORCL", Action: "BUY", Confidence: 0.67},
+			TriggeredAt:    time.Now().Format(time.RFC3339),
+		}},
+		ActiveFor: map[string]ActiveDuration{"ORCL": {Label: "3h 20m", Seconds: 12000}},
+	})
+	if rec.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "3h 20m") {
+		t.Errorf("expected the duration label in the rendered alerts page, got %s", body)
+	}
+	if !strings.Contains(body, `data-sort-value="12000"`) {
+		t.Errorf("expected the sortable seconds value alongside the label, got %s", body)
+	}
+}
+
+// A symbol with no recorded streak yet must render an empty cell rather than a zero duration,
+// which would claim the alert had just appeared.
+func TestRenderAlertsPageLeavesUnknownDurationBlank(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Render(rec, "alerts", AlertsPage{
+		Alerts: []alerts.Alert{{
+			Recommendation: decision.Recommendation{Symbol: "ORCL", Action: "BUY"},
+			TriggeredAt:    time.Now().Format(time.RFC3339),
+		}},
+	})
+	if rec.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `data-sort-value="0"></td>`) {
+		t.Errorf("expected a blank duration cell for a symbol with no streak, got %s", rec.Body.String())
+	}
+}

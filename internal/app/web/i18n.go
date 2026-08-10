@@ -45,9 +45,12 @@ var translations = map[string]map[Lang]string{
 	"nav.skip_to_content": {LangEN: "Skip to content", LangPL: "Przejdź do treści"},
 
 	// Shared table headers/labels, reused across multiple pages
-	"table.symbol":   {LangEN: "Symbol", LangPL: "Symbol"},
-	"table.quantity": {LangEN: "Quantity", LangPL: "Ilość"},
-	"table.avg_cost": {LangEN: "Avg. Cost", LangPL: "Śr. koszt"},
+	"table.symbol": {LangEN: "Symbol", LangPL: "Symbol"},
+	// Announced on every symbol link. It names the destination and the new tab, because a link
+	// that opens elsewhere without saying so is disorienting for anyone not watching the viewport.
+	"table.open_in_yahoo": {LangEN: "Open on Yahoo Finance in a new tab", LangPL: "Otwórz w Yahoo Finance w nowej karcie"},
+	"table.quantity":      {LangEN: "Quantity", LangPL: "Ilość"},
+	"table.avg_cost":      {LangEN: "Avg. Cost", LangPL: "Śr. koszt"},
 	// Named for what it actually is, not a live market quote: Position.CurrentPrice is set once,
 	// from the most recent transaction recorded for that symbol (see portfolio.applyTransaction)
 	// — Atlas has no live price-refresh path. table.as_of is the small "as of <date>" line shown
@@ -62,17 +65,20 @@ var translations = map[string]map[Lang]string{
 	// what they actually compute rather than reusing "Drawdown"/"Volatility", which
 	// table.max_drawdown/table.volatility below already mean something different and real
 	// (backtesting.Result — peak-to-trough drawdown, annualized return stddev).
-	"table.drawdown":           {LangEN: "Unrealized Loss / Exposure", LangPL: "Strata niezrealizowana / ekspozycja"},
-	"table.avg_deviation":      {LangEN: "Avg. Deviation from Cost", LangPL: "Śr. odchylenie od kosztu"},
-	"table.volatility":         {LangEN: "Volatility", LangPL: "Zmienność"},
-	"table.type":               {LangEN: "Type", LangPL: "Typ"},
-	"table.price":              {LangEN: "Price", LangPL: "Cena"},
-	"table.timestamp":          {LangEN: "Timestamp", LangPL: "Znacznik czasu"},
-	"table.currency":           {LangEN: "Currency", LangPL: "Waluta"},
-	"table.pln_equivalent":     {LangEN: "PLN Equivalent", LangPL: "Równowartość w PLN"},
-	"table.action":             {LangEN: "Action", LangPL: "Akcja"},
-	"table.confidence":         {LangEN: "Confidence", LangPL: "Pewność"},
-	"table.triggered_at":       {LangEN: "Triggered At", LangPL: "Wyzwolono o"},
+	"table.drawdown":       {LangEN: "Unrealized Loss / Exposure", LangPL: "Strata niezrealizowana / ekspozycja"},
+	"table.avg_deviation":  {LangEN: "Avg. Deviation from Cost", LangPL: "Śr. odchylenie od kosztu"},
+	"table.volatility":     {LangEN: "Volatility", LangPL: "Zmienność"},
+	"table.type":           {LangEN: "Type", LangPL: "Typ"},
+	"table.price":          {LangEN: "Price", LangPL: "Cena"},
+	"table.timestamp":      {LangEN: "Timestamp", LangPL: "Znacznik czasu"},
+	"table.currency":       {LangEN: "Currency", LangPL: "Waluta"},
+	"table.pln_equivalent": {LangEN: "PLN Equivalent", LangPL: "Równowartość w PLN"},
+	"table.action":         {LangEN: "Action", LangPL: "Akcja"},
+	"table.confidence":     {LangEN: "Confidence", LangPL: "Pewność"},
+	"table.triggered_at":   {LangEN: "Triggered At", LangPL: "Wyzwolono o"},
+	// How long the symbol has held its current action, not how long the alert row has existed —
+	// see AlertsPage.ActiveFor.
+	"table.active_for":         {LangEN: "Active For", LangPL: "Aktywny od"},
 	"table.reason":             {LangEN: "Reason", LangPL: "Powód"},
 	"table.score":              {LangEN: "Score", LangPL: "Wynik"},
 	"table.technical":          {LangEN: "Technical", LangPL: "Techniczny"},

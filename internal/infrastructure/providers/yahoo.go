@@ -14,6 +14,10 @@ import (
 type YahooFinanceProvider struct {
 	BaseURL string
 	Client  *http.Client
+	// Now supplies the current time for dropUnclosedBars' "has this candle finished forming"
+	// test. A field rather than a direct time.Now call so tests can fix the clock relative to
+	// their fixture timestamps; nil means time.Now.
+	Now func() time.Time
 }
 
 func NewYahooFinanceProvider() *YahooFinanceProvider {
@@ -21,6 +25,13 @@ func NewYahooFinanceProvider() *YahooFinanceProvider {
 		BaseURL: "https://query2.finance.yahoo.com/v8/finance/chart",
 		Client:  &http.Client{Timeout: 10 * time.Second},
 	}
+}
+
+func (p *YahooFinanceProvider) now() time.Time {
+	if p.Now == nil {
+		return time.Now()
+	}
+	return p.Now()
 }
 
 // yahooUserAgent is required: Yahoo's unofficial chart endpoint returns HTTP 429 for
@@ -105,7 +116,40 @@ func (p *YahooFinanceProvider) FetchBars(symbol string, window int) ([]market.Ba
 		bars = append(bars, bar)
 	}
 
-	return bars, nil
+	return dropUnclosedBars(bars, p.now()), nil
+}
+
+// yahooIntervalDuration is yahooInterval expressed as a Duration. Kept next to it so the two
+// cannot drift: dropUnclosedBars needs to know when a candle closes, which the query string's
+// "1h" only states as text.
+const yahooIntervalDuration = time.Hour
+
+// dropUnclosedBars removes trailing bars that have not finished forming yet.
+//
+// Yahoo's chart endpoint appends the live quote to an intraday series as an extra data point:
+// its timestamp is the moment of the request rather than a candle boundary, and its OHLC are all
+// the current price with volume 0. Measured against production on 2026-08-10, all 47 watchlist
+// symbols carried exactly such a row as their newest bar, and 5.4% of the stored price history
+// (2391 of 44198 rows) had accumulated from earlier polls.
+//
+// That row is silently wrong for every consumer downstream. The decision engine's momentum term
+// reads (close-open)/open on the newest bar, which is identically 0 there, so its threshold
+// could never fire on live traffic; the ML feature vector reads that bar's volume, so inference
+// always saw 0 while the model had been trained on real volumes. Nothing errors in either case —
+// the numbers are just wrong. Acting only on closed candles is also the ordinary discipline for
+// bar-based signals: anything computed on a forming candle keeps changing until it closes, so a
+// recommendation derived from one repaints rather than holds.
+//
+// Yahoo's timestamps are candle *start* times, so a candle is closed once start+interval has
+// passed. The test is deliberately time-based rather than "drop rows that look degenerate": an
+// illiquid instrument can genuinely print a flat, zero-volume hour, and that candle is real
+// history worth keeping. The loop handles more than one trailing unclosed bar, which a single
+// check would miss if the provider ever returned several.
+func dropUnclosedBars(bars []market.Bar, now time.Time) []market.Bar {
+	for len(bars) > 0 && bars[len(bars)-1].Timestamp.Add(yahooIntervalDuration).After(now) {
+		bars = bars[:len(bars)-1]
+	}
+	return bars
 }
 
 func safeValue(values []float64, idx int) float64 {

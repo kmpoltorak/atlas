@@ -62,6 +62,12 @@ function atlasSetupBulkDelete(formId, selectAllId, checkboxClass, bulkBtnId, cou
 // given, re-runs after every render() (see atlasSetupBulkDelete's return value) so a table with
 // both bulk-delete and filter/pagination wired up keeps its selection count and select-all state
 // in sync with what's currently visible.
+// Column sorting lives here rather than in its own function because sort, filter, and pagination
+// all act on the same row list: sorting has to reorder the rows the filter matched and then
+// return to the first page, or the user sorts a table and keeps staring at page three of the old
+// order. Mark a column sortable by putting data-sort="text|number|date" on its <th>; a cell whose
+// rendered text doesn't sort correctly (a formatted amount, a relative date) can carry the real
+// value in data-sort-value on the <td>.
 function atlasSetupTableTools(tableId, filterInputId, pageSize, onChange) {
   const table = document.getElementById(tableId)
   if (!table) return
@@ -107,6 +113,78 @@ function atlasSetupTableTools(tableId, filterInputId, pageSize, onChange) {
 
     if (onChange) onChange()
   }
+
+  const headerCells = table.tHead && table.tHead.rows[0] ? Array.from(table.tHead.rows[0].cells) : []
+  let sortIndex = -1
+  let sortAscending = true
+
+  // Numbers are parsed out of the rendered text so a column formatted as "68%" or "-1234.50 PLN"
+  // still sorts numerically; anything unparseable sinks to 0 rather than throwing NaN into the
+  // comparator, where it would silently scramble the order.
+  const cellValue = (row, index, type) => {
+    const cell = row.cells[index]
+    if (!cell) return type === 'text' ? '' : 0
+    const raw = cell.dataset.sortValue !== undefined ? cell.dataset.sortValue : cell.textContent.trim()
+    if (type === 'number') {
+      const numeric = parseFloat(raw.replace(/[^0-9.-]/g, ''))
+      return Number.isNaN(numeric) ? 0 : numeric
+    }
+    if (type === 'date') {
+      // Timestamps render as "2006-01-02 15:04". The space makes that non-ISO, which Safari
+      // refuses to parse while Chrome accepts it, so normalize it before handing it over rather
+      // than shipping a sort that silently collapses to 0 on one browser.
+      const parsed = Date.parse(raw.replace(' ', 'T'))
+      return Number.isNaN(parsed) ? 0 : parsed
+    }
+    return raw.toLowerCase()
+  }
+
+  const applySort = () => {
+    if (sortIndex < 0) return
+    const type = headerCells[sortIndex].dataset.sort
+    const direction = sortAscending ? 1 : -1
+    // Array.prototype.sort is stable, so rows that tie on this column keep the order the server
+    // sent them in — which is the meaningful secondary order (newest first, by and large).
+    allRows.sort((a, b) => {
+      const left = cellValue(a, sortIndex, type)
+      const right = cellValue(b, sortIndex, type)
+      if (left < right) return -direction
+      if (left > right) return direction
+      return 0
+    })
+    allRows.forEach(row => tbody.appendChild(row))
+  }
+
+  headerCells.forEach((cell, index) => {
+    if (!cell.dataset.sort) return
+    cell.classList.add('atlas-sortable')
+    // A <th> is not natively interactive, so it needs the role, the tab stop, and the key
+    // handler to be usable without a mouse. aria-sort is what tells a screen reader which column
+    // the table is ordered by, and it doubles as the CSS hook for the caret.
+    cell.setAttribute('role', 'button')
+    cell.setAttribute('tabindex', '0')
+    cell.setAttribute('aria-sort', 'none')
+
+    const activate = () => {
+      sortAscending = sortIndex === index ? !sortAscending : true
+      sortIndex = index
+      headerCells.forEach(other => {
+        if (other.dataset.sort) other.setAttribute('aria-sort', 'none')
+      })
+      cell.setAttribute('aria-sort', sortAscending ? 'ascending' : 'descending')
+      applySort()
+      currentPage = 0
+      render()
+    }
+
+    cell.addEventListener('click', activate)
+    cell.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        activate()
+      }
+    })
+  })
 
   prevBtn.addEventListener('click', () => { currentPage -= 1; render() })
   nextBtn.addEventListener('click', () => { currentPage += 1; render() })

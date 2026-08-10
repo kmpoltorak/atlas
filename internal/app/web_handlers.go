@@ -14,6 +14,7 @@ import (
 	authUC "atlas/internal/application/auth"
 	mlUC "atlas/internal/application/ml"
 	watchlistUC "atlas/internal/application/watchlist"
+	"atlas/internal/domain/alerts"
 	"atlas/internal/domain/currency"
 	"atlas/internal/domain/portfolio"
 
@@ -401,12 +402,47 @@ func (a *Application) alertsPageHandler(w http.ResponseWriter, r *http.Request) 
 	for _, alert := range result {
 		a.persistRecommendation(alert.Recommendation)
 	}
-	data := web.AlertsPage{Lang: a.resolveLang(r), Alerts: result}
+	lang := a.resolveLang(r)
+	data := web.AlertsPage{Lang: lang, Alerts: result, ActiveFor: a.activeAlertDurations(lang, result)}
 	if err != nil {
 		data.Warning = err.Error()
 	}
 	data.PollAt, data.PollError = a.AlertPoll.Snapshot()
 	web.Render(w, "alerts", data)
+}
+
+// activeAlertDurations reports, per alerted symbol, how long it has held its current recommended
+// action — the one thing the alerts themselves cannot say, since every recommendation is stamped
+// with the moment it was computed rather than the moment the signal appeared.
+//
+// The streak is only reported when the stored action still matches the action just evaluated. The
+// two can disagree by one poll: this page evaluates live and persists as it renders, so a symbol
+// that flipped moments ago has a streak row describing the action it held until now. Showing that
+// span next to the new action would state the opposite of the truth, so the cell stays blank
+// until the next write establishes the new streak.
+//
+// Best-effort by design: no storage, or a failed query, costs the duration column and nothing
+// else. Alerts are the point of the page and must still render.
+func (a *Application) activeAlertDurations(lang web.Lang, result []alerts.Alert) map[string]web.ActiveDuration {
+	if a.Storage == nil || len(result) == 0 {
+		return nil
+	}
+	streaks, err := a.Storage.CurrentActionStreaks()
+	if err != nil {
+		a.Logger.Warn("failed to load recommendation streaks for the alerts page", zap.Error(err))
+		return nil
+	}
+
+	now := time.Now().UTC()
+	durations := make(map[string]web.ActiveDuration, len(result))
+	for _, alert := range result {
+		streak, found := streaks[alert.Recommendation.Symbol]
+		if !found || streak.Action != alert.Recommendation.Action {
+			continue
+		}
+		durations[alert.Recommendation.Symbol] = web.FormatActiveDuration(lang, streak.Since.UTC(), now)
+	}
+	return durations
 }
 
 // backtestsPageHandler mirrors backtestsHandler (GET /backtests) — same simulation, same

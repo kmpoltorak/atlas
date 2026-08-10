@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -15,6 +16,8 @@ import (
 	portfolioUC "atlas/internal/application/portfolio"
 	watchlistUC "atlas/internal/application/watchlist"
 	"atlas/internal/config"
+	"atlas/internal/domain/alerts"
+	"atlas/internal/domain/decision"
 	"atlas/internal/domain/market"
 	"atlas/internal/domain/portfolio"
 	infraNotifications "atlas/internal/infrastructure/notifications"
@@ -25,14 +28,23 @@ import (
 
 type loopStubProvider struct{}
 
+// A rising series long enough for the decision engine's momentum term to have a reading: it
+// needs more than that term's lookback window, and the per-bar returns must vary, since a
+// perfectly uniform climb has zero realized volatility to normalize against and reads as no
+// signal. Volume is flat at the series average so volume confirmation stays at full weight.
 func (loopStubProvider) FetchBars(symbol string, window int) ([]market.Bar, error) {
-	base := time.Now()
-	prices := []float64{100, 104, 109}
-	bars := make([]market.Bar, 0, len(prices))
-	for i, price := range prices {
+	base := time.Now().Add(-30 * time.Hour)
+	bars := make([]market.Bar, 0, 30)
+	price := 100.0
+	for i := 0; i < 30; i++ {
+		if i%2 == 0 {
+			price *= 1.015
+		} else {
+			price *= 1.005
+		}
 		bars = append(bars, market.Bar{
-			Symbol: symbol, Open: price - 4, High: price + 2, Low: price - 5, Close: price,
-			Volume: 1200, Timestamp: base.Add(time.Duration(i) * time.Minute),
+			Symbol: symbol, Open: price / 1.004, High: price * 1.002, Low: price / 1.008,
+			Close: price, Volume: 1200, Timestamp: base.Add(time.Duration(i) * time.Hour),
 		})
 	}
 	return bars, nil
@@ -137,5 +149,58 @@ func TestIsHighPriorityAction(t *testing.T) {
 		if got := isHighPriorityAction(action); got != want {
 			t.Errorf("isHighPriorityAction(%q) = %v, want %v", action, got, want)
 		}
+	}
+}
+
+// buildAlertEmbed is what a Discord alert actually looks like, so pin its shape: the colour that
+// distinguishes an add from a trim at a glance, the linked title, the reasons as separate lines
+// rather than a semicolon-joined run-on, and the numbers as an inline field row.
+func TestBuildAlertEmbedRendersAReadableCard(t *testing.T) {
+	embed := buildAlertEmbed(alerts.Alert{
+		Recommendation: decision.Recommendation{
+			Symbol: "ORCL", Action: "BUY", Confidence: 0.6686, Score: 0.8343,
+			MarketCondition: "BULL",
+			Reason:          []string{"Momentum signal is favorable", "ML signal supportive"},
+		},
+		TriggeredAt: "2026-08-10T16:05:00Z",
+	})
+
+	if embed.Title != "ORCL — BUY" {
+		t.Errorf("title = %q", embed.Title)
+	}
+	if embed.URL != "https://finance.yahoo.com/quote/ORCL/" {
+		t.Errorf("url = %q, want the symbol's quote page so an alert is one tap from the chart", embed.URL)
+	}
+	if embed.Color != actionColors["BUY"] {
+		t.Errorf("color = %d, want BUY's %d", embed.Color, actionColors["BUY"])
+	}
+	if embed.Description != "• Momentum signal is favorable\n• ML signal supportive" {
+		t.Errorf("description = %q, want one bullet per line", embed.Description)
+	}
+	if len(embed.Fields) != 3 {
+		t.Fatalf("expected confidence, score and market fields, got %+v", embed.Fields)
+	}
+	if embed.Fields[0].Value != "67%" || embed.Fields[1].Value != "0.834" {
+		t.Errorf("fields = %+v", embed.Fields)
+	}
+	if embed.Timestamp != "2026-08-10T16:05:00Z" {
+		t.Errorf("timestamp = %q", embed.Timestamp)
+	}
+
+	rendered, _ := json.MarshalIndent(embed, "", "  ")
+	t.Logf("embed payload:\n%s", rendered)
+}
+
+// Market condition is only populated when the classifier had enough history. An empty field
+// renders as a blank column in Discord rather than being skipped, so it must not be added.
+func TestBuildAlertEmbedOmitsUnknownMarketCondition(t *testing.T) {
+	embed := buildAlertEmbed(alerts.Alert{
+		Recommendation: decision.Recommendation{Symbol: "ORCL", Action: "SELL", Reason: []string{"Momentum signal is weak"}},
+	})
+	if len(embed.Fields) != 2 {
+		t.Fatalf("expected market condition to be omitted when unknown, got %+v", embed.Fields)
+	}
+	if embed.Color != actionColors["SELL"] {
+		t.Errorf("SELL must be visually distinct from BUY, got %d", embed.Color)
 	}
 }

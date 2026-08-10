@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"atlas/internal/domain/alerts"
+	"atlas/internal/domain/market"
+	"atlas/internal/infrastructure/notifications"
 
 	"go.uber.org/zap"
 )
@@ -108,7 +110,7 @@ func (a *Application) pollAlertsOnce(lastAction map[string]string) {
 		if a.Config.DiscordWebhookURL == "" || !isHighPriorityAction(action) {
 			continue
 		}
-		if err := a.Notifications.Send(formatAlertMessage(alert)); err != nil {
+		if err := a.Notifications.SendEmbed(buildAlertEmbed(alert)); err != nil {
 			a.Logger.Error("failed to send discord alert", zap.String("symbol", symbol), zap.Error(err))
 			continue
 		}
@@ -139,8 +141,53 @@ func isHighPriorityAction(action string) bool {
 	}
 }
 
-func formatAlertMessage(alert alerts.Alert) string {
+// actionColors are the embed's left-edge colour per action, the fastest thing to read in a
+// Discord feed: green means the alert wants you to add, red means it wants you to trim or exit.
+// Any action without an entry falls through to Discord's default rather than being forced into
+// a colour that would imply a direction it doesn't have.
+var actionColors = map[string]int{
+	"BUY":        0x2ECC71,
+	"ACCUMULATE": 0x27AE60,
+	"REDUCE":     0xE67E22,
+	"SELL":       0xE74C3C,
+}
+
+// buildAlertEmbed renders a recommendation as a Discord embed.
+//
+// This replaces a single flat line that packed symbol, action, confidence, and every rationale
+// string into one run-on sentence — readable in isolation, unscannable once a poll fires several
+// at once. The embed splits that into the parts you actually read in different orders: colour and
+// title for what and how urgent, an inline field row for the numbers, and the rationale as a list
+// underneath rather than semicolon-joined prose.
+//
+// The title links to the symbol's quote page (market.QuoteURL, the same link the dashboard tables
+// use), so acting on an alert from a phone is one tap rather than retyping a ticker.
+func buildAlertEmbed(alert alerts.Alert) notifications.Embed {
 	rec := alert.Recommendation
-	reasons := strings.Join(rec.Reason, "; ")
-	return fmt.Sprintf("[Atlas] %s: %s (confidence %.0f%%) — %s", rec.Symbol, rec.Action, rec.Confidence*100, reasons)
+
+	reasons := make([]string, 0, len(rec.Reason))
+	for _, reason := range rec.Reason {
+		reasons = append(reasons, "• "+reason)
+	}
+
+	fields := []notifications.EmbedField{
+		{Name: "Confidence", Value: fmt.Sprintf("%.0f%%", rec.Confidence*100), Inline: true},
+		{Name: "Score", Value: fmt.Sprintf("%.3f", rec.Score), Inline: true},
+	}
+	// Market condition is only populated when the classifier had enough history to run, and an
+	// empty field renders as a blank column rather than being skipped, so it is added only when
+	// it actually says something.
+	if rec.MarketCondition != "" {
+		fields = append(fields, notifications.EmbedField{Name: "Market", Value: rec.MarketCondition, Inline: true})
+	}
+
+	return notifications.Embed{
+		Title:       fmt.Sprintf("%s — %s", rec.Symbol, rec.Action),
+		URL:         market.QuoteURL(rec.Symbol),
+		Description: strings.Join(reasons, "\n"),
+		Color:       actionColors[rec.Action],
+		Fields:      fields,
+		Footer:      &notifications.EmbedFooter{Text: "Atlas · decision support only, no trades are executed"},
+		Timestamp:   alert.TriggeredAt,
+	}
 }
