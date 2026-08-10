@@ -319,27 +319,46 @@ score modestly and still help. Judging a trading signal by classification metric
 standard mistake, and this project was making it: the backtester already computed Sharpe, the ML
 evaluation already computed AUC, and nothing ever compared them.
 
-It earned its place on the first run. Across all 47 collected symbols:
+Across all 47 collected symbols, 180-day window, 1215 simulated trades (25.9 per symbol):
 
-| | better with ML | worse | no difference |
-|---|---|---|---|
-| Total return | 21 | 7 | 19 |
-| Sharpe ratio | 16 | 12 | — |
-| Max drawdown | 0 | 11 | — |
+| | better with ML | worse | no difference | mean delta | median delta |
+|---|---|---|---|---|---|
+| Total return | 23 | 24 | 0 | +0.008 | −0.000 |
+| Sharpe ratio | 23 | 24 | 0 | +0.053 | −0.000 |
+| Max drawdown | 30 | 16 | 1 | −0.025 | −0.014 |
 
-Returns improve on aggregate (sum +199pp, mean +4.2%) but the **median is 0** — the mean is
-carried by a few large wins (XTB.WA +71%, ALE.WA +42%). Meanwhile mean Sharpe delta is
-**-0.097** and drawdown got worse for 11 symbols and better for none.
+(Drawdown delta is with-minus-without, so negative is the model helping.) In aggregate: mean
+return +0.202 with ML against +0.194 without, mean max drawdown 0.217 against 0.243, win rate
+0.343 against 0.334.
 
-Read plainly: the ML term buys extra raw return by entering positions the technical signal alone
-would not, and pays for it in volatility and deeper drawdowns. For a tool whose stated purpose is
-flagging corrections worth avoiding, a uniformly worse drawdown is pointed in the wrong
-direction. That is a live finding, not a settled conclusion — see the caveats below — but it is
-exactly the kind of thing no AUC would ever have surfaced.
+Read plainly: the ML term earns a modest place. Return and Sharpe are close to a coin flip
+symbol by symbol, with medians at zero — for the typical symbol the model changes almost nothing.
+Where it consistently helps is drawdown, improving it for 30 symbols against 16, which is exactly
+the axis a correction model should move. It buys a little less depth in the bad stretches without
+costing return.
 
-**Caveats, which are substantial.** The simulated strategy is all-in/all-out and averages
-**1.0 trades per symbol** over the available history, so each delta reflects the timing of a
-single entry rather than a strategy's behaviour over many decisions. The sample is one window of
-one dataset. Treat this as a diagnostic that is now measurable and worth watching every run, not
-as a verdict on the model.
+**This replaced an earlier, much more damning reading** of the same measurement: mean Sharpe delta
+−0.097, drawdown worse for 11 symbols and better for *none*. That reading was an artifact of two
+bugs since fixed, and is worth recording because both were invisible in every statistical metric
+the project computed:
+
+1. The momentum term was frozen (see docs/decision_engine.md), so scores clustered and rarely
+   crossed a threshold. The simulation averaged **1.0 trades per symbol** — each "delta" was the
+   timing of a single entry. It is 25.9 now, from the same 180 days of history. The sample was
+   never a data-availability problem; it was a symptom.
+2. Yahoo emits a timestamp for exchange holidays and half-days with null OHLC, which unmarshalled
+   to zero (see `providers.hasUsablePrices`). Final equity is `cash + quantity*close`, so a
+   zero-priced last bar reported exactly −100% return and 100% drawdown. Four WSE large caps
+   showed a total wipeout on a long-only strategy — Easter Monday, not a trading result — which
+   alone dragged the mean return delta to −0.102 and made the model look like it was destroying
+   Polish positions. WSE now reads +0.025 mean return delta, in line with US at +0.003.
+
+The lesson is the one this struct exists for, sharpened: an economic measurement is only as
+trustworthy as the bars underneath it, and a number that looks like a finding (−0.097 Sharpe,
+drawdown worse for 11 and better for 0) can be a data bug wearing a conclusion's clothes.
+
+**Remaining caveats.** The simulated strategy is all-in/all-out, and this is still one window of
+one dataset. 1215 trades is enough to see a moderate effect and not a subtle one. Yahoo retains
+roughly 730 days of hourly history against the 180 used here, so the sample can be deepened
+about fourfold without waiting for time to pass.
 
