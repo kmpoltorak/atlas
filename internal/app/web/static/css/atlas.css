@@ -122,13 +122,3 @@ main h2 {
   }
 }
 
-/* Bootstrap 5 ships no responsive border utilities, so .border-md-end would silently do
-   nothing. This adds the one variant the watchlist's export/import pair needs: a hairline
-   between two columns that exists only while they actually sit side by side, and disappears
-   once they stack below 768px, where a trailing right-hand border would dangle. Uses
-   Bootstrap's own --bs-border-* custom properties so it follows the active theme. */
-@media (min-width: 768px) {
-  .border-md-end {
-    border-right: var(--bs-border-width) var(--bs-border-style) var(--bs-border-color);
-  }
-}

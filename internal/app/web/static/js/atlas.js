@@ -115,3 +115,41 @@ function atlasSetupTableTools(tableId, filterInputId, pageSize, onChange) {
   }
   render()
 }
+
+// atlasSetupBusySubmit guards a form whose submission is slow enough to be double-fired.
+// Importing a watchlist writes one row per symbol, so a second click while the first POST is in
+// flight applies the whole file twice; merge mode makes that harmless, replace mode does not.
+//
+// Reads its labels and confirm gate from data attributes so the markup stays declarative, the
+// same shape as data-confirm-bulk on the bulk-delete forms:
+//
+//   data-busy-label       text shown on the button while the request is in flight
+//   data-confirm-message  optional; shown before submitting
+//   data-confirm-field    optional; only confirm when this field holds data-confirm-value
+//   data-confirm-value    the value that arms the confirm
+//
+// The confirm runs first and cancelling it leaves the button completely untouched, so a user
+// who backs out of a destructive import can immediately try again.
+function atlasSetupBusySubmit(formId) {
+  const form = document.getElementById(formId)
+  if (!form) return
+  const button = form.querySelector('button[type="submit"]')
+  if (!button) return
+
+  form.addEventListener('submit', event => {
+    const message = form.dataset.confirmMessage
+    if (message) {
+      const field = form.dataset.confirmField
+      const armed = !field || (form.elements[field] && form.elements[field].value === form.dataset.confirmValue)
+      if (armed && !confirm(message)) {
+        event.preventDefault()
+        return
+      }
+    }
+    // Width is pinned before the label changes so the button doesn't resize mid-request, which
+    // reads as a layout glitch rather than as progress.
+    button.style.minWidth = `${button.offsetWidth}px`
+    button.disabled = true
+    if (form.dataset.busyLabel) button.textContent = form.dataset.busyLabel
+  })
+}

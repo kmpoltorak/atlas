@@ -55,24 +55,54 @@
     <p class="text-body-secondary">{{T .Lang "watchlist.empty"}}</p>
     {{end}}
 
-    <div class="card mt-4 card-sm">
-      <div class="card-body">
-        <h2 class="h5 card-title">{{T .Lang "watchlist.transfer"}}</h2>
+    {{/* Section heading outside the cards, then one card per action in a row: the same shape
+         the Account page uses for its side-by-side model pickers. h-100 keeps the three cards
+         the same height even though the import form is the tallest. */}}
+    <h2 class="h4 mt-5 mb-2">{{T .Lang "watchlist.manage"}}</h2>
+    <p class="text-body-secondary small">{{T .Lang "watchlist.manage_hint"}}</p>
 
-        {{/* Export and import are two halves of one operation, so they sit side by side rather
-             than stacked. col-md-6 collapses to a single column below 768px; the divider is a
-             border on the left column at md+ only, so nothing dangles once they stack. */}}
-        <div class="row g-4">
-          <div class="col-md-6 border-md-end">
-            <h3 class="h6 text-body-secondary">{{T .Lang "watchlist.export"}}</h3>
+    <div class="row g-3">
+      <div class="col-lg-4">
+        <div class="card h-100">
+          <div class="card-body">
+            <h3 class="h6 card-title">{{T .Lang "watchlist.add_symbol"}}</h3>
+            <form method="post" action="/dashboard/watchlist">
+              <div class="mb-3">
+                <label class="form-label small" for="watchlistAddSymbol">{{T .Lang "table.symbol"}}</label>
+                <input type="text" class="form-control form-control-sm text-uppercase" id="watchlistAddSymbol" name="symbol" required>
+              </div>
+              <button type="submit" class="btn btn-primary">{{T .Lang "watchlist.add_submit"}}</button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-4">
+        <div class="card h-100">
+          <div class="card-body">
+            <h3 class="h6 card-title">{{T .Lang "watchlist.export"}}</h3>
+            {{if .Items}}
             <p class="text-body-secondary small">{{T .Lang "watchlist.export_hint"}}</p>
             <a class="btn btn-outline-secondary" href="/watchlist/export" download>{{T .Lang "watchlist.export_submit"}}</a>
+            {{else}}
+            {{/* An anchor cannot be truly disabled, so it also leaves the tab order and reports
+                 its state to assistive tech rather than only looking dimmed. */}}
+            <p class="text-body-secondary small">{{T .Lang "watchlist.export_empty"}}</p>
+            <a class="btn btn-outline-secondary disabled" href="/watchlist/export" aria-disabled="true" tabindex="-1">{{T .Lang "watchlist.export_submit"}}</a>
+            {{end}}
           </div>
+        </div>
+      </div>
 
-          <div class="col-md-6">
-            <h3 class="h6 text-body-secondary">{{T .Lang "watchlist.import"}}</h3>
+      <div class="col-lg-4">
+        <div class="card h-100">
+          <div class="card-body">
+            <h3 class="h6 card-title">{{T .Lang "watchlist.import"}}</h3>
             <form method="post" action="/dashboard/watchlist/import" enctype="multipart/form-data"
-                  onsubmit="return this.mode.value !== 'replace' || confirm('{{T .Lang "confirm.import_replace"}}');">
+                  id="watchlistImportForm"
+                  data-busy-label="{{T .Lang "watchlist.import_busy"}}"
+                  data-confirm-message="{{T .Lang "confirm.import_replace"}}"
+                  data-confirm-field="mode" data-confirm-value="replace">
               <div class="mb-3">
                 <label class="form-label small" for="watchlistImportFile">{{T .Lang "watchlist.import_file"}}</label>
                 <input type="file" class="form-control form-control-sm" id="watchlistImportFile" name="file" accept=".json,application/json" required>
@@ -94,20 +124,14 @@
       </div>
     </div>
 
-    <div class="card mt-4 card-sm">
-      <div class="card-body">
-        <h2 class="h5 card-title">{{T .Lang "watchlist.add_symbol"}}</h2>
-        <form method="post" action="/dashboard/watchlist">
-          <div class="mb-3">
-            <label class="form-label">{{T .Lang "table.symbol"}}</label>
-            <input type="text" class="form-control text-uppercase" name="symbol" required>
-          </div>
-          <button type="submit" class="btn btn-primary">{{T .Lang "watchlist.add_submit"}}</button>
-        </form>
-      </div>
-    </div>
   </main>
   {{template "scripts" .}}
+  {{/* The import form renders whether or not the watchlist has rows (an empty list is exactly
+       when importing matters), so its setup sits outside the Items guard that gates the table
+       tooling. */}}
+  <script>
+    atlasSetupBusySubmit('watchlistImportForm')
+  </script>
   {{if .Items}}
   <script>
     const watchlistRefresh = atlasSetupBulkDelete('watchlistForm', 'selectAllWatchlist', 'watchlist-checkbox', 'bulkDeleteWatchlistBtn', 'selectedWatchlistCount')

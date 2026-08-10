@@ -208,7 +208,8 @@ var translations = map[string]map[Lang]string{
 	"watchlist.empty":         {LangEN: "Watchlist is empty.", LangPL: "Lista obserwowanych jest pusta."},
 	"watchlist.add_symbol":    {LangEN: "Add a symbol", LangPL: "Dodaj symbol"},
 	"watchlist.add_submit":    {LangEN: "Add", LangPL: "Dodaj"},
-	"watchlist.transfer":      {LangEN: "Move between environments", LangPL: "Przenoszenie między środowiskami"},
+	"watchlist.manage":        {LangEN: "Manage watchlist", LangPL: "Zarządzanie listą"},
+	"watchlist.manage_hint":   {LangEN: "Add one symbol, or move the whole list between environments.", LangPL: "Dodaj pojedynczy symbol albo przenieś całą listę między środowiskami."},
 	"watchlist.export":        {LangEN: "Export", LangPL: "Eksport"},
 	"watchlist.export_submit": {LangEN: "Download JSON", LangPL: "Pobierz JSON"},
 	"watchlist.export_hint": {
@@ -217,17 +218,16 @@ var translations = map[string]map[Lang]string{
 	},
 	"watchlist.import":      {LangEN: "Import", LangPL: "Import"},
 	"watchlist.import_file": {LangEN: "Exported JSON file", LangPL: "Wyeksportowany plik JSON"},
-	"watchlist.import_mode_merge": {
-		LangEN: "Merge: add missing symbols, keep what is already tracked",
-		LangPL: "Scal: dodaj brakujące symbole, zachowaj już obserwowane",
-	},
-	"watchlist.import_mode_replace": {
-		LangEN: "Replace: mirror the file exactly, dropping anything it omits",
-		LangPL: "Zastąp: odwzoruj plik dokładnie, usuwając to, czego w nim nie ma",
-	},
-	"watchlist.import_submit":  {LangEN: "Import", LangPL: "Importuj"},
-	"watchlist.import_no_file": {LangEN: "Choose a file to import.", LangPL: "Wybierz plik do zaimportowania."},
-	"watchlist.import_invalid": {LangEN: "Invalid upload.", LangPL: "Nieprawidłowy plik."},
+	// Short labels because these sit in a third-width column, where the full sentence wrapped to
+	// three lines. Each still names its consequence, and the destructive one repeats the full
+	// warning in confirm.import_replace at the moment it actually matters.
+	"watchlist.import_mode_merge":   {LangEN: "Merge (keep existing)", LangPL: "Scal (zachowaj obecne)"},
+	"watchlist.import_mode_replace": {LangEN: "Replace (drop the rest)", LangPL: "Zastąp (usuń resztę)"},
+	"watchlist.import_submit":       {LangEN: "Import", LangPL: "Importuj"},
+	"watchlist.import_busy":         {LangEN: "Importing…", LangPL: "Importowanie…"},
+	"watchlist.export_empty":        {LangEN: "Nothing to export yet.", LangPL: "Nie ma jeszcze czego eksportować."},
+	"watchlist.import_no_file":      {LangEN: "Choose a file to import.", LangPL: "Wybierz plik do zaimportowania."},
+	"watchlist.import_invalid":      {LangEN: "Invalid upload.", LangPL: "Nieprawidłowy plik."},
 	"watchlist.import_done": {
 		LangEN: "Imported: %d added, %d already tracked, %d removed.",
 		LangPL: "Zaimportowano: %d dodanych, %d już obserwowanych, %d usuniętych.",
