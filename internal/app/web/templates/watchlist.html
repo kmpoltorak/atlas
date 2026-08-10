@@ -59,27 +59,38 @@
       <div class="card-body">
         <h2 class="h5 card-title">{{T .Lang "watchlist.transfer"}}</h2>
 
-        <p class="text-body-secondary small mb-2">{{T .Lang "watchlist.export_hint"}}</p>
-        <a class="btn btn-outline-secondary mb-4" href="/watchlist/export" download>{{T .Lang "watchlist.export"}}</a>
-
-        <form method="post" action="/dashboard/watchlist/import" enctype="multipart/form-data"
-              onsubmit="return this.mode.value !== 'replace' || confirm('{{T .Lang "confirm.import_replace"}}');">
-          <div class="mb-3">
-            <label class="form-label" for="watchlistImportFile">{{T .Lang "watchlist.import_file"}}</label>
-            <input type="file" class="form-control" id="watchlistImportFile" name="file" accept=".json,application/json" required>
+        {{/* Export and import are two halves of one operation, so they sit side by side rather
+             than stacked. col-md-6 collapses to a single column below 768px; the divider is a
+             border on the left column at md+ only, so nothing dangles once they stack. */}}
+        <div class="row g-4">
+          <div class="col-md-6 border-md-end">
+            <h3 class="h6 text-body-secondary">{{T .Lang "watchlist.export"}}</h3>
+            <p class="text-body-secondary small">{{T .Lang "watchlist.export_hint"}}</p>
+            <a class="btn btn-outline-secondary" href="/watchlist/export" download>{{T .Lang "watchlist.export_submit"}}</a>
           </div>
-          <fieldset class="mb-3">
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="mode" id="watchlistModeMerge" value="merge" checked>
-              <label class="form-check-label" for="watchlistModeMerge">{{T .Lang "watchlist.import_mode_merge"}}</label>
-            </div>
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="mode" id="watchlistModeReplace" value="replace">
-              <label class="form-check-label" for="watchlistModeReplace">{{T .Lang "watchlist.import_mode_replace"}}</label>
-            </div>
-          </fieldset>
-          <button type="submit" class="btn btn-outline-primary">{{T .Lang "watchlist.import_submit"}}</button>
-        </form>
+
+          <div class="col-md-6">
+            <h3 class="h6 text-body-secondary">{{T .Lang "watchlist.import"}}</h3>
+            <form method="post" action="/dashboard/watchlist/import" enctype="multipart/form-data"
+                  onsubmit="return this.mode.value !== 'replace' || confirm('{{T .Lang "confirm.import_replace"}}');">
+              <div class="mb-3">
+                <label class="form-label small" for="watchlistImportFile">{{T .Lang "watchlist.import_file"}}</label>
+                <input type="file" class="form-control form-control-sm" id="watchlistImportFile" name="file" accept=".json,application/json" required>
+              </div>
+              <fieldset class="mb-3">
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="mode" id="watchlistModeMerge" value="merge" checked>
+                  <label class="form-check-label small" for="watchlistModeMerge">{{T .Lang "watchlist.import_mode_merge"}}</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="mode" id="watchlistModeReplace" value="replace">
+                  <label class="form-check-label small" for="watchlistModeReplace">{{T .Lang "watchlist.import_mode_replace"}}</label>
+                </div>
+              </fieldset>
+              <button type="submit" class="btn btn-outline-primary">{{T .Lang "watchlist.import_submit"}}</button>
+            </form>
+          </div>
+        </div>
       </div>
     </div>
 
