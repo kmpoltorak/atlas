@@ -315,7 +315,11 @@ Implementation status: the web dashboard (`internal/app/web`) is real — server
 not a CDN or npm build step) with light/dark/auto theming — see implementation-plan.md's Phase 8
 status note for the full scope (portfolio/recommendations/alerts/backtests/watchlist pages,
 single-account login with password + TOTP 2FA enrolled via a real in-app QR code, opt-in — no
-auth gate at all when unconfigured).
+auth gate at all when unconfigured). The watchlist page also exports and imports the whole list
+as a JSON file (`GET /watchlist/export`, `POST /watchlist/import`, plus a file-upload form), so a
+list built up in one environment moves to another without re-entering several dozen symbols by
+hand. Import defaults to merging; `mode=replace` mirrors the file exactly and is the only way to
+remove anything, so the destructive behaviour always has to be asked for by name.
 
 ---
 

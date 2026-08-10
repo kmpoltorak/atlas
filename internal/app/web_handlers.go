@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"atlas/internal/app/web"
 	authUC "atlas/internal/application/auth"
 	mlUC "atlas/internal/application/ml"
+	watchlistUC "atlas/internal/application/watchlist"
 	"atlas/internal/domain/currency"
 	"atlas/internal/domain/portfolio"
 
@@ -850,4 +852,51 @@ func (a *Application) totpDisableHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	a.renderAccountPage(w, r, "", "Two-factor authentication has been disabled.")
+}
+
+// watchlistImportPageHandler applies an uploaded watchlist export — the dashboard counterpart of
+// POST /watchlist/import, and the path that actually matters for the feature's purpose: moving a
+// real watchlist between environments without re-entering several dozen symbols by hand.
+//
+// The file is read through a bounded reader rather than trusting the multipart form's own limit,
+// and the destructive mode has to arrive explicitly as "replace" — a missing or unrecognised
+// value merges, so a mangled form can never silently clear the watchlist.
+func (a *Application) watchlistImportPageHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if err := r.ParseMultipartForm(maxWatchlistImportBytes); err != nil {
+		a.renderWatchlistPage(w, r, web.T(a.resolveLang(r), "watchlist.import_invalid"), "")
+		return
+	}
+	mode, err := watchlistUC.ParseImportMode(r.FormValue("mode"))
+	if err != nil {
+		a.renderWatchlistPage(w, r, err.Error(), "")
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		a.renderWatchlistPage(w, r, web.T(a.resolveLang(r), "watchlist.import_no_file"), "")
+		return
+	}
+	defer file.Close()
+
+	body, err := io.ReadAll(io.LimitReader(file, maxWatchlistImportBytes))
+	if err != nil {
+		a.renderWatchlistPage(w, r, err.Error(), "")
+		return
+	}
+	items, err := decodeWatchlistImport(body)
+	if err != nil {
+		a.renderWatchlistPage(w, r, err.Error(), "")
+		return
+	}
+	result, err := a.Watchlist.Import(items, mode, time.Now().UTC().Format(time.RFC3339))
+	if err != nil {
+		a.renderWatchlistPage(w, r, err.Error(), "")
+		return
+	}
+	a.renderWatchlistPage(w, r, "", fmt.Sprintf(
+		web.T(a.resolveLang(r), "watchlist.import_done"), result.Added, result.Skipped, result.Removed))
 }

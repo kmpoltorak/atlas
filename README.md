@@ -181,7 +181,9 @@ build — one Go binary serves everything via `go:embed`):
 - **Recommendations** — run the decision engine against any watchlist symbol.
 - **Alerts** — view current non-HOLD signals across the watchlist.
 - **Backtests** — run a historical simulation and view past results.
-- **Watchlist** — add tracked symbols, remove them individually or in bulk via checkboxes.
+- **Watchlist** — add tracked symbols, remove them individually or in bulk via checkboxes, and
+  export/import the whole list as a JSON file to move it between environments without
+  re-entering several dozen symbols by hand.
 - **Account** — change password, enroll/disable TOTP two-factor auth via a real in-app QR code,
   and pick which trained ML model (correction/recovery, independently) is active — see
   [Machine learning](#machine-learning) below.
@@ -206,6 +208,8 @@ shapes: [docs/api.md](docs/api.md).
 | `/portfolio` | GET/POST | View positions + risk / record a transaction |
 | `/transactions` | GET | List recorded transactions |
 | `/watchlist` | GET/POST | View / add tracked symbols |
+| `/watchlist/export` | GET | Download the watchlist as a JSON file |
+| `/watchlist/import` | POST | Apply an exported watchlist — `?mode=replace` mirrors the file exactly, default merges |
 | `/alerts` | GET | Evaluate the watchlist for non-HOLD signals |
 | `/recommendations` | GET | Run the decision engine for a symbol |
 | `/predictions` | GET | Raw ML model output for a symbol |
