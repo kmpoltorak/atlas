@@ -9,6 +9,8 @@ DELETE /transactions
 GET /watchlist
 POST /watchlist
 DELETE /watchlist
+GET /watchlist/export
+POST /watchlist/import
 GET /alerts
 GET /recommendations
 GET /predictions
@@ -23,3 +25,12 @@ equivalent. `DELETE /portfolio` clears a symbol's current position aggregate (`?
 `DELETE /transactions` removes one historical transaction by id and recomputes the affected
 position (`?id=`) — these are two different operations, not duplicates, matching
 docs/decision_engine.md's Portfolio Engine distinction. `DELETE /watchlist` takes `?symbol=`.
+
+`GET /watchlist/export` returns the same `{"items":[...]}` body as `GET /watchlist`, with a
+`Content-Disposition` header so a browser saves it as a file. `POST /watchlist/import` accepts
+that exact shape back — so an export from one Atlas instance imports into another with no
+conversion — and also accepts a bare array of tickers (`["AAPL","MSFT"]`) for a hand-written
+list. `?mode=replace` mirrors the file exactly, untracking symbols it omits; any other value,
+including an absent one, merges. Merge is the default deliberately: the destructive mode always
+has to be asked for by name. The response reports what actually happened
+(`{"added":N,"skipped":N,"removed":N}`), not just a status.

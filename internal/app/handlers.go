@@ -1,18 +1,23 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
 
 	mlUC "atlas/internal/application/ml"
+	watchlistUC "atlas/internal/application/watchlist"
 	backtestingDomain "atlas/internal/domain/backtesting"
 	"atlas/internal/domain/decision"
 	"atlas/internal/domain/market"
 	mlDomain "atlas/internal/domain/ml"
 	"atlas/internal/domain/portfolio"
+	"atlas/internal/domain/watchlist"
 	"atlas/internal/infrastructure/persistence"
 
 	"go.uber.org/zap"
@@ -514,4 +519,100 @@ func (a *Application) backtestHistoryHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"runs": runs})
+}
+
+// maxWatchlistImportBytes caps an import request body. A watchlist of a few dozen symbols is a
+// couple of kilobytes; this leaves several orders of magnitude of headroom while stopping a
+// malformed or hostile upload from being read into memory unbounded.
+const maxWatchlistImportBytes = 1 << 20 // 1 MiB
+
+// watchlistExportHandler serves the watchlist as a downloadable JSON file, in exactly the shape
+// GET /watchlist already returns and watchlistImportHandler already accepts — so an export from
+// one Atlas instance imports into another with no conversion step, which is the entire point of
+// the feature (moving a real watchlist between environments beats re-entering it by hand).
+func (a *Application) watchlistExportHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	items, err := a.Watchlist.List()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if items == nil {
+		items = []watchlist.Item{} // an empty watchlist exports as [], never as null
+	}
+	filename := fmt.Sprintf("atlas-watchlist-%s.json", time.Now().UTC().Format("20060102-150405"))
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// decodeWatchlistImport accepts either the full export shape or a bare list of symbols:
+//
+//	{"items":[{"symbol":"AAPL","added_at":"..."}]}
+//	["AAPL","MSFT"]
+//
+// The first round-trips an export exactly; the second exists because a hand-written list of
+// tickers is the other realistic way someone produces this file, and refusing it would mean
+// hand-wrapping every symbol in an object for no benefit.
+func decodeWatchlistImport(body []byte) ([]watchlist.Item, error) {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return nil, errors.New("import body is empty")
+	}
+
+	if trimmed[0] == '[' {
+		var symbols []string
+		if err := json.Unmarshal(trimmed, &symbols); err != nil {
+			return nil, fmt.Errorf("parse symbol list: %w", err)
+		}
+		items := make([]watchlist.Item, 0, len(symbols))
+		for _, symbol := range symbols {
+			items = append(items, watchlist.Item{Symbol: symbol})
+		}
+		return items, nil
+	}
+
+	var payload struct {
+		Items []watchlist.Item `json:"items"`
+	}
+	if err := json.Unmarshal(trimmed, &payload); err != nil {
+		return nil, fmt.Errorf("parse watchlist export: %w", err)
+	}
+	if payload.Items == nil {
+		return nil, errors.New(`expected {"items":[...]} or a JSON array of symbols`)
+	}
+	return payload.Items, nil
+}
+
+// watchlistImportHandler applies an exported watchlist. ?mode=replace mirrors the file exactly
+// (untracking whatever it omits); anything else, including an absent parameter, merges — the
+// destructive mode always has to be asked for by name.
+func (a *Application) watchlistImportHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	mode, err := watchlistUC.ParseImportMode(r.URL.Query().Get("mode"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWatchlistImportBytes))
+	if err != nil {
+		writeError(w, http.StatusRequestEntityTooLarge, err)
+		return
+	}
+	items, err := decodeWatchlistImport(body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	result, err := a.Watchlist.Import(items, mode, time.Now().UTC().Format(time.RFC3339))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }

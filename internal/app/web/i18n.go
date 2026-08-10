@@ -208,6 +208,33 @@ var translations = map[string]map[Lang]string{
 	"watchlist.empty":      {LangEN: "Watchlist is empty.", LangPL: "Lista obserwowanych jest pusta."},
 	"watchlist.add_symbol": {LangEN: "Add a symbol", LangPL: "Dodaj symbol"},
 	"watchlist.add_submit": {LangEN: "Add", LangPL: "Dodaj"},
+	"watchlist.transfer":   {LangEN: "Move between environments", LangPL: "Przenoszenie między środowiskami"},
+	"watchlist.export":     {LangEN: "Export watchlist", LangPL: "Eksportuj listę"},
+	"watchlist.export_hint": {
+		LangEN: "Downloads a JSON file you can import into another Atlas instance.",
+		LangPL: "Pobiera plik JSON, który zaimportujesz do innej instancji Atlasa.",
+	},
+	"watchlist.import":      {LangEN: "Import watchlist", LangPL: "Importuj listę"},
+	"watchlist.import_file": {LangEN: "Exported JSON file", LangPL: "Wyeksportowany plik JSON"},
+	"watchlist.import_mode_merge": {
+		LangEN: "Merge — add missing symbols, keep everything already tracked",
+		LangPL: "Scal — dodaj brakujące symbole, zachowaj już obserwowane",
+	},
+	"watchlist.import_mode_replace": {
+		LangEN: "Replace — mirror the file exactly, untracking anything it omits",
+		LangPL: "Zastąp — odwzoruj plik dokładnie, usuwając to, czego w nim nie ma",
+	},
+	"watchlist.import_submit":  {LangEN: "Import", LangPL: "Importuj"},
+	"watchlist.import_no_file": {LangEN: "Choose a file to import.", LangPL: "Wybierz plik do zaimportowania."},
+	"watchlist.import_invalid": {LangEN: "Invalid upload.", LangPL: "Nieprawidłowy plik."},
+	"watchlist.import_done": {
+		LangEN: "Imported: %d added, %d already tracked, %d removed.",
+		LangPL: "Zaimportowano: %d dodanych, %d już obserwowanych, %d usuniętych.",
+	},
+	"confirm.import_replace": {
+		LangEN: "Replace mode will untrack every symbol missing from this file. Continue?",
+		LangPL: "Tryb zastąpienia usunie wszystkie symbole, których nie ma w tym pliku. Kontynuować?",
+	},
 	"confirm.remove_watchlist_item": {
 		LangEN: "Stop watching %s?",
 		LangPL: "Przestać obserwować %s?",

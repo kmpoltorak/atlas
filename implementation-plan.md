@@ -634,6 +634,36 @@ including the sanity check that the volatile instruments now score far above the
 live data (MARA 0.41 and SOXL 0.26 against AAPL 0.042 and MSFT 0.054) — discrimination the
 pre-fix model had no honest basis for.
 
+**Watchlist import/export, built after live testing began**: moving a watchlist between
+environments meant re-issuing one `curl` per symbol, which for a 47-symbol list is not a workflow
+anyone sustains. `GET /watchlist/export` now serves the list as a downloadable JSON file in
+exactly the shape `GET /watchlist` already returns, and `POST /watchlist/import` accepts that
+same shape back — so an export from one instance imports into another with no conversion step,
+which is the whole point. A bare array of tickers (`["AAPL","MSFT"]`) is accepted too, since a
+hand-written list is the other realistic way that file gets made. The dashboard's watchlist page
+grew a download button and a file-upload form alongside them.
+
+Import defaults to **merge** (add what's missing, touch nothing else — idempotent, so running it
+twice is harmless); `mode=replace` additionally untracks whatever the file omits, mirroring it
+exactly. Replace is the only path that removes anything and always has to be named explicitly, so
+a forgotten parameter can never clear a watchlist. The whole batch is validated before the first
+write, because `watchlist.Repository` has no transaction spanning multiple items and a half-
+applied import would leave the list in neither the old state nor the new one. Symbols already
+tracked keep their original `added_at`; new ones take the file's, falling back to now — so an
+export restores as a faithful snapshot rather than restamping everything.
+
+This also fixed a real inconsistency it surfaced: `POST /watchlist` passed symbols through raw
+while the dashboard upper-cased and trimmed them, so `{"symbol":"aapl"}` created an entry that
+`Add`'s dedup would never match against `AAPL` and the collector would try to fetch verbatim.
+Normalisation moved into `watchlist.UseCase.Add`/`Remove`, so every path shares one canonical
+form.
+
+Verified live end-to-end on the real 47-symbol watchlist: exported, then deliberately destroyed
+the list down to 2 symbols via replace, then restored from the export file and diffed — 47 out,
+47 back, symbols and `added_at` identical to the character, persisted through to TimescaleDB and
+surviving a container restart. Malformed payloads (junk, wrong object shape, empty symbol,
+duplicate symbol, unknown mode) each rejected with a specific message and no partial mutation.
+
 ## 11. Acceptance Criteria
 
 A phase is considered complete only if:
