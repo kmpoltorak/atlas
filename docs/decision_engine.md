@@ -56,10 +56,10 @@ dip and stay down"; a dip that recovers inside the recovery horizon is not a rea
 position. With no recovery model loaded RecoveryProbability is 0 and this degrades exactly to the
 previous behaviour, so the recovery model stays optional here as everywhere else.
 
-Known and deliberately not fixed here: a low correction probability still reads as mildly
-bullish, so a calm instrument scores well on this term with no upside signal behind it. Splitting
-the blend into separate risk and opportunity terms would change how every recommendation is
-produced and is recorded as a known limitation rather than slipped in alongside other work.
+This term was previously averaged in alongside the technical score, which made a low correction
+probability read as mildly bullish — a calm instrument scored well on it with no upside signal
+behind it. It is now a multiplicative risk factor (see "Scoring Model" below), so it can only
+lower a technical signal, never manufacture one.
 
 Discord notifications
 (internal/app/alerts_loop.go) are gated to the four actionable calls — BUY/ACCUMULATE/REDUCE/SELL
@@ -211,10 +211,37 @@ Risk Score
 Final Decision Score
 ```
 
-**Implementation status**: real, weighted 0.50/0.25/0.15/0.10 respectively (see this doc's top
-status note and `internal/application/decision/orchestrator.go`'s `technicalWeight`/`mlWeight`/
-`portfolioWeight`/`riskWeight` constants) — a documented first-pass heuristic, not derived from
-data, same honesty stance as every other threshold in this engine.
+**Implementation status**: real, but not as a weighted sum. Technical is the only term that
+measures an *opportunity*; the other three measure *risk*, and are applied as multiplicative
+factors that can lower the technical score but never invent one:
+
+```
+score = technical × mlFactor × portfolioFactor × riskFactor
+```
+
+Each factor is 1 when its signal has nothing to penalize. Multiplication compounds deliberately:
+a losing position, inside a portfolio drawdown, inside a correction warning is worse than any of
+the three alone.
+
+This replaced a four-term weighted average (0.50 / 0.25 / 0.15 / 0.10). The average was the wrong
+shape, because averaging a risk signal with an opportunity signal makes *absence of risk* read as
+*presence of opportunity*. Measured on the live watchlist on 2026-08-10, all three risk terms had
+collapsed into a near-constant lift of roughly +0.15 on every symbol:
+
+| term | live range | why it was inert |
+|---|---|---|
+| ML | 0.810 – 0.997 | estimates P(correction)/P(recovery) and has no upside model at all, so a calm instrument scored 0.97 with no bullish evidence |
+| Portfolio | 0.500 – 0.500 | `portfolioRiskSignal` tops out at 0.5, so as an averaged term it dragged every score toward the middle even with nothing to say |
+| Risk | 1.000 – 1.000 | `computeRiskScore` returns 1.0 for an empty portfolio — no drawdown and no volatility to measure, which the average read as maximum enthusiasm |
+
+Only `technical` (0.295 – 0.878) was carrying information. That constant lift is why
+`StrongBullish` moved from 0.75 to 0.60 in the same change: the threshold had to follow the score
+whose meaning it depends on. The new value preserves the exact BUY set rather than retuning the
+engine — measured against the live watchlist, the lowest current BUY lands at 0.6084 under the
+new scoring and the highest current non-BUY at 0.5965, so nothing reorders.
+
+Calibrating what that set *should* be is a separate question that needs outcome history, and is
+deliberately still open.
 
 ## The momentum/volume term
 

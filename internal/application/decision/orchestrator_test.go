@@ -177,7 +177,10 @@ func TestBlendMLAndPortfolioAppliesFullMixWithML(t *testing.T) {
 
 	blend := orchestrator.blendMLAndPortfolio("AAPL", bars, technical)
 
-	want := clamp01(0.9*technicalWeight + 0.5*mlWeight + 0.5*portfolioWeight + 1.0*riskWeight)
+	// Technical carries the opportunity; the other three only ever scale it down. The stub's 0.5
+	// is a real correction reading, so it halves; portfolio has nothing to say (0.5 is the top of
+	// its scale) and risk finds nothing, so neither moves the result.
+	want := clamp01(0.9 * 0.5 * 1.0 * 1.0)
 	if math.Abs(blend.Overall-want) > 0.0001 {
 		t.Fatalf("expected blended overall %.4f, got %.4f", want, blend.Overall)
 	}

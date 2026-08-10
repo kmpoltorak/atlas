@@ -209,8 +209,10 @@ technical analysis, ML prediction, per-symbol portfolio P&L, and portfolio-wide 
 (Exposure/Drawdown/Volatility, via `portfolio.UseCase.ComputeRisk`) into its score — the full
 four-term "Scoring Model" below is real now, not just Technical+ML+Portfolio (see
 docs/decision_engine.md and docs/ml.md — ML is a real trained model when one is loaded, falling
-back to a deterministic stub otherwise), though the blend weights (0.50/0.25/0.15/0.10) are
-still placeholders. `Recommendation.RiskScore` is a real field now too (previously always NULL
+back to a deterministic stub otherwise). The four terms are not averaged: technical is the only
+opportunity signal, and ML/portfolio/risk are multiplicative factors that can only lower it —
+averaging them made *absence of risk* read as *presence of opportunity*, and had collapsed all
+three into a constant +0.15 lift on every symbol. See docs/decision_engine.md's "Scoring Model". `Recommendation.RiskScore` is a real field now too (previously always NULL
 in the `recommendations` table — see migrations/001, docs/decision_engine.md's Database
 section). `Recommendation.MarketCondition` (BULL/BEAR/SIDEWAYS) is also real and persisted
 (migrations/007) — a deterministic ADX+EMA technical rule, not part of the score blend itself,

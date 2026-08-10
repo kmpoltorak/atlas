@@ -67,8 +67,10 @@ func TestBuildRecommendationActionMatrix(t *testing.T) {
 		{"lean bearish, existing position -> REDUCE", 0.35, true, 1.0, "REDUCE"},
 		{"lean bearish, no position, unconfident -> WAIT", 0.35, false, 0.1, "WAIT"},
 		{"lean bearish, no position, confident -> HOLD", 0.35, false, 1.0, "HOLD"},
-		{"lean bullish, unconfident -> WAIT", 0.60, false, 0.1, "WAIT"},
-		{"lean bullish, confident -> HOLD", 0.60, true, 1.0, "HOLD"},
+		// 0.57 sits inside [LeanBullish, StrongBullish) = [0.55, 0.60). It was 0.60 while
+		// StrongBullish was 0.75; that value is now the BUY boundary itself.
+		{"lean bullish, unconfident -> WAIT", 0.57, false, 0.1, "WAIT"},
+		{"lean bullish, confident -> HOLD", 0.57, true, 1.0, "HOLD"},
 		{"neutral, unconfident still HOLD (no lean to distrust)", 0.50, false, 0.1, "HOLD"},
 	}
 	for _, tt := range tests {
@@ -127,7 +129,7 @@ func TestBuildRecommendationConfidenceScalesWithScoreStrength(t *testing.T) {
 func TestBuildRecommendationWaitReportsRealConfidenceNotAConstant(t *testing.T) {
 	uc := NewUseCase()
 	rec, err := uc.BuildRecommendation(decision.RecommendationInput{
-		Technical:    decision.TechnicalScore{Overall: 0.60},
+		Technical:    decision.TechnicalScore{Overall: 0.57}, // inside the lean-bullish band
 		MLConfidence: 0.12,
 	})
 	if err != nil {

@@ -245,15 +245,32 @@ func mlScoreFromPrediction(prediction domainML.Prediction) float64 {
 	return clamp01(1 - unrecoveredDrop)
 }
 
-// blendWeights are the first-pass, documented weights for Technical+ML+Portfolio+Risk (see
-// docs/decision_engine.md's "Scoring Model"), same honesty stance as every other threshold in
-// this engine — picked by hand, pending real tuning, not derived from data. Sums to 1.
-const (
-	technicalWeight = 0.50
-	mlWeight        = 0.25
-	portfolioWeight = 0.15
-	riskWeight      = 0.10
-)
+// riskFactor converts one of the three risk signals into a multiplier on the technical score.
+// 1 means "nothing to penalize"; smaller means the signal found a reason for caution.
+//
+// This replaced a four-term weighted average (0.50 technical / 0.25 ML / 0.15 portfolio / 0.10
+// risk). The average was the wrong shape, because only one of its four terms measures an
+// opportunity. The other three measure risk, and a risk model that finds no risk was being read
+// as a reason to buy:
+//
+//   - ml.Prediction estimates P(correction) and P(recovery). There is no upside model at all, so
+//     a calm instrument scored 0.97 on this term with no bullish evidence behind it whatsoever.
+//     Across the live watchlist on 2026-08-10 the term spanned 0.810-0.997 — a near-constant
+//     contributing a flat lift to every symbol.
+//   - portfolioRiskSignal already tops out at 0.5, so as an averaged term it dragged *every*
+//     score toward the middle even when it had nothing to say.
+//   - computeRiskScore returns 1.0 for an empty portfolio (no drawdown, no volatility to
+//     measure), which the average read as maximum enthusiasm. Absence of a portfolio is not a
+//     buy signal; it is an absence of information.
+//
+// Together those three contributed roughly a constant +0.15 to every recommendation, which is
+// why the BUY threshold had drifted into meaning something other than what it says. As factors,
+// each one now does exactly what it measures: it can lower a technical signal, never invent one.
+// The multiplication also compounds, which is the intended reading — a weak position inside a
+// drawdown inside a correction warning is worse than any of the three alone.
+func riskFactor(score float64) float64 {
+	return clamp01(score)
+}
 
 // blendMLAndPortfolio folds the ML prediction, per-symbol portfolio P&L, and portfolio-wide
 // risk context into the technical score, per docs/decision_engine.md's Technical+ML+Portfolio+
@@ -263,7 +280,10 @@ const (
 // decision.UseCase's WAIT band) when ML isn't wired in — there's no real confidence signal to
 // distrust in that mode.
 func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, technical domainDecision.TechnicalScore) blendResult {
-	result := blendResult{Overall: technical.Overall, MLScore: 0.5, PortfolioScore: 0.5, RiskScore: 0.5, MLConfidence: 1.0}
+	// Defaults are "no penalty", not "neutral": these are risk factors now, and a signal that
+	// never ran must leave the technical score untouched rather than halving it. PortfolioScore's
+	// no-penalty value is 0.5, the top of portfolioRiskSignal's own scale.
+	result := blendResult{Overall: technical.Overall, MLScore: 1.0, PortfolioScore: 0.5, RiskScore: 1.0, MLConfidence: 1.0}
 
 	if o.ML != nil {
 		feature := mlUC.BuildFeatureVector(o.Analyzer, symbol, bars)
@@ -295,13 +315,19 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 		// partly redundant with the RSI blend in buildTechnicalScore until a real model exists —
 		// wiring the composition now means Atlas picks up a genuine ML signal automatically the
 		// moment Predict() stops being a stub, with no further orchestration changes.
-		result.Overall = clamp01(technical.Overall*technicalWeight + result.MLScore*mlWeight +
-			result.PortfolioScore*portfolioWeight + result.RiskScore*riskWeight)
+		// portfolioRiskSignal lives on a [0.3, 0.5] scale where 0.5 is "nothing to say", so it is
+		// rescaled to a factor here rather than being used raw. The other two already run 0..1
+		// with 1 meaning no penalty.
+		result.Overall = clamp01(technical.Overall *
+			riskFactor(result.MLScore) *
+			riskFactor(result.PortfolioScore/0.5) *
+			riskFactor(result.RiskScore))
 	}
 
-	if result.MLScore >= 0.6 {
-		result.Reasons = append(result.Reasons, "ML signal supportive")
-	} else if result.MLScore <= 0.4 {
+	// Only the cautious direction is reported. "ML signal supportive" used to fire whenever the
+	// correction model was quiet, which is almost always — it told the reader that a model with
+	// no upside component was endorsing a buy.
+	if result.MLScore <= 0.4 {
 		result.Reasons = append(result.Reasons, "ML signal cautious")
 	}
 	if result.PortfolioScore < 0.5 {
