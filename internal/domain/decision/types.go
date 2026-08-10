@@ -57,7 +57,14 @@ type Thresholds struct {
 // heuristics, same honesty stance as the 0.75/0.4 BUY/SELL cutoffs they originally replaced.
 func DefaultThresholds() Thresholds {
 	return Thresholds{
-		StrongBullish:   0.75,
+		// 0.60, down from 0.75, because the score it is compared against changed meaning: three
+		// risk signals used to add roughly a constant +0.15 to every symbol (see riskFactor).
+		// The number was picked to preserve the exact BUY set, not to retune the engine —
+		// measured against the live watchlist, the lowest current BUY lands at 0.6084 under the
+		// new scoring and the highest current non-BUY at 0.5965, so nothing reorders and the same
+		// 20 of 47 symbols qualify. Calibrating what that set *should* be is a separate question
+		// that needs outcome history, deliberately not answered here.
+		StrongBullish:   0.60,
 		LeanBullish:     0.55, // [LeanBullish, StrongBullish): leaning bullish, not yet strong
 		LeanBearish:     0.45, // (StrongBearish, LeanBearish]: leaning bearish, not yet strong
 		StrongBearish:   0.25,
