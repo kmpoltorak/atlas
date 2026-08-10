@@ -377,10 +377,19 @@ every ALERT_POLL_INTERVAL_SECONDS (default 300), but only pushes when a symbol's
 from the previous poll. A symbol sitting in BUY for three days produces one notification, not
 hundreds.
 
-That change-detection map lives in memory, so a restart re-notifies every symbol currently holding
-an actionable signal. Harmless when actionable signals are rare, noisy when they aren't: the
-momentum fix above moved the watchlist from four BUYs a week to twenty at once, and the first poll
-after that deploy pushed all twenty.
+That change-detection map is seeded at startup from the recommendations log (`seedLastActions`
+via `CurrentActionStreaks`), so a restart does not re-announce symbols that are merely continuing
+to say what they already said. It previously lived only in memory, which was invisible while
+actionable signals were rare and obvious the moment they weren't: four deploys on 2026-08-10
+pushed the same seventeen BUY tickers four times over, none of which had changed action — ORCL
+had read BUY continuously since 15:22.
+
+The seed answers "what did the engine last say about this symbol", not "what did we last
+successfully deliver". The difference is real and accepted: a Discord message that failed to send
+before a restart is not retried after one. Tracking delivery properly would need its own table,
+which a single-user tool doesn't warrant for a failure that is already logged as an error when it
+happens. Within one process lifetime a failed send *is* retried — the action is recorded only
+after the webhook accepts it, where the loop used to record it before even trying.
 
 Each notification is a Discord embed (`buildAlertEmbed`), not a line of text: colour-coded by
 action so an add reads differently from a trim at a glance, titled with the symbol and linked to

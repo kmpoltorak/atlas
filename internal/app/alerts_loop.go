@@ -67,7 +67,9 @@ func (a *Application) StartAlertPolling() func() {
 
 	ticker := time.NewTicker(interval)
 	done := make(chan struct{})
+
 	lastAction := make(map[string]string)
+	a.seedLastActions(lastAction)
 
 	go func() {
 		for {
@@ -82,6 +84,42 @@ func (a *Application) StartAlertPolling() func() {
 	}()
 
 	return func() { close(done) }
+}
+
+// seedLastActions primes the change-detection map from persisted history, so a restart does not
+// re-announce every symbol that is merely continuing to say what it already said.
+//
+// Without this the map starts empty and the first poll after any restart treats the entire
+// actionable watchlist as brand new. That was invisible while actionable signals were rare, and
+// became obvious the moment they weren't: four deploys on 2026-08-10 pushed the same seventeen
+// BUY tickers four times over, none of which had actually changed action — ORCL had read BUY
+// continuously since 15:22.
+//
+// The seed comes from the recommendations log rather than from a record of what was notified.
+// Those are not the same claim, and the difference is worth stating: this restores "what did the
+// engine last say about this symbol", which is exactly what lastAction means during a poll, but
+// it cannot know whether the corresponding Discord message actually left the building. A message
+// that failed to send before a restart will not be retried after one. Tracking delivery properly
+// would need its own table; for a single-user tool the failure mode (one missed alert, logged as
+// an error when it happened) does not justify that, and pollAlertsOnce below at least no longer
+// marks a failed send as delivered within a single process lifetime.
+//
+// Best-effort by design: no storage, or a failed query, simply leaves the map empty and restores
+// the previous behaviour rather than stopping the loop from running at all.
+func (a *Application) seedLastActions(lastAction map[string]string) {
+	if a.Storage == nil {
+		return
+	}
+	streaks, err := a.Storage.CurrentActionStreaks()
+	if err != nil {
+		a.Logger.Warn("could not seed alert change-detection from history; "+
+			"the first poll may re-announce actions that have not changed", zap.Error(err))
+		return
+	}
+	for symbol, streak := range streaks {
+		lastAction[symbol] = streak.Action
+	}
+	a.Logger.Info("seeded alert change-detection from persisted history", zap.Int("symbols", len(streaks)))
 }
 
 // pollAlertsOnce evaluates the watchlist once and notifies only for symbols whose action
@@ -105,15 +143,22 @@ func (a *Application) pollAlertsOnce(lastAction map[string]string) {
 		if lastAction[symbol] == action {
 			continue
 		}
-		lastAction[symbol] = action
 
+		// Actions that never push anywhere are recorded straight away: they still have to be
+		// tracked, or a later change would be measured against a stale baseline.
 		if a.Config.DiscordWebhookURL == "" || !isHighPriorityAction(action) {
+			lastAction[symbol] = action
 			continue
 		}
+
 		if err := a.Notifications.SendEmbed(buildAlertEmbed(alert)); err != nil {
+			// Deliberately left unrecorded so the next poll retries. Marking it seen here — which
+			// is what this loop used to do, by recording before sending — turned a transient
+			// Discord failure into an alert the Author never saw and never would.
 			a.Logger.Error("failed to send discord alert", zap.String("symbol", symbol), zap.Error(err))
 			continue
 		}
+		lastAction[symbol] = action
 		a.Metrics.AlertsSent.WithLabelValues(action).Inc()
 		a.Logger.Info("discord alert sent", zap.String("symbol", symbol), zap.String("action", action))
 	}
