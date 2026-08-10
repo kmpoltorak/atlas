@@ -243,6 +243,67 @@ new scoring and the highest current non-BUY at 0.5965, so nothing reorders.
 Calibrating what that set *should* be is a separate question that needs outcome history, and is
 deliberately still open.
 
+## What the technical score does not do
+
+Measured 2026-08-10 against 163,640 real hourly bars — 47 symbols, 720 days, the deepest history
+Yahoo serves for this interval (729 days is the hard limit; 730 is rejected).
+
+**No term in the technical blend has positive predictive power at any horizon tested.**
+Information coefficient (Spearman rank correlation between the term and the realized forward
+return, per symbol, then averaged):
+
+| term | 3 bars | 6 bars | 12 bars | 24 bars |
+|---|---|---|---|---|
+| momentum/volume | −0.014 | −0.021 | −0.015 | −0.011 |
+| RSI | −0.011 | −0.016 | −0.015 | −0.014 |
+| Bollinger %B | −0.013 | −0.019 | −0.016 | −0.013 |
+| OBV | −0.007 | −0.012 | −0.019 | −0.030 |
+| blended | −0.015 | −0.021 | −0.017 | −0.014 |
+
+Consistently and mildly *negative*, with only 13–21 of 47 symbols positive on any given cell.
+
+**The BUY band captures almost nothing.** Mean 12-bar forward return by the band the blended score
+lands in:
+
+| band | bars | mean forward return | vs all bars |
+|---|---|---|---|
+| BUY ≥ 0.60 | 65,277 | 0.3457% | **+0.007pp** |
+| 0.50–0.60 | 24,899 | 0.3104% | −0.029pp |
+| 0.40–0.50 | 24,092 | 0.2752% | −0.064pp |
+| weak < 0.40 | 45,988 | 0.3788% | +0.040pp |
+| all bars | 160,256 | 0.3391% | — |
+
+Entering at a BUY reading is worth 0.007pp over entering at a uniformly random moment, on a
+baseline of 0.339%. Per symbol the BUY band beats that symbol's own baseline for 23 of 46 — a
+coin flip.
+
+**The contrarian reading does not rescue it.** The weak band looks better in the table, and it is
+tempting to conclude the engine should be inverted. It should not:
+
+- The edge is **+0.0397% per 12-bar hold**. A 0.05% round trip — conservative for a liquid US
+  equity — leaves −0.010%. At 0.20%, realistic for a WSE mid cap, it leaves −0.160%. The edge is
+  smaller than the cost of capturing it.
+- It is not stable. Splitting the 720 days in half: the weak band's edge is +0.007pp in the first
+  year and +0.072pp in the second, while the BUY band's runs −0.050pp then +0.064pp. Both flip.
+- It is tail-heavy: SPCX +1.46%, CLSK +0.76%, RIOT +0.61% lead it — speculative names that
+  crashed and rebounded — though 31 of 47 symbols do share the sign.
+
+**Consequences for anyone reading this later.** Tuning the four sub-weights (0.45 / 0.20 / 0.20 /
+0.15) is optimizing noise; the terms being weighted carry no measurable signal, so a "better"
+weight set is a better fit to one sample. This is exactly why the measurement started with an
+information coefficient rather than a grid search over backtest Sharpe: a grid search would have
+returned confident-looking optimal weights and no hint that it was fitting nothing. Two
+plausible-looking leads died the same way — OBV showed IC −0.096 and only 5 of 47 symbols
+positive on a 180-day sample, which collapsed to −0.030 and 18 of 47 on the full history, and the
+same 180-day sample made the BUY band look like the best performer, which the deeper sample
+reversed.
+
+None of this says the engine is broken or that the backtests lied. Backtests show gains because
+the market rose over the window; what the score does not add is *selection* value. Atlas remains
+useful as a surveillance and review tool over a watchlist, and the ML correction signal does earn
+its place — it improves max drawdown on 30 symbols against 16 (see docs/backtesting.md). What the
+technical score does not do is identify better-than-random moments to enter on hourly bars.
+
 ## The momentum/volume term
 
 Technical Score is itself a weighted average (0.45 momentum/volume, 0.20 RSI, 0.20 Bollinger %B,
