@@ -25,21 +25,26 @@
     <input type="text" class="form-control form-control-sm mb-2" id="alertsFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
     <div class="table-responsive">
       <table class="table table-striped table-hover align-middle" id="alertsTable">
-        <thead><tr><th scope="col">{{T .Lang "table.symbol"}}</th><th scope="col">{{T .Lang "table.action"}}</th><th scope="col" class="text-end">{{T .Lang "table.confidence"}}</th><th scope="col">{{T .Lang "table.triggered_at"}}</th><th scope="col">{{T .Lang "table.reason"}}</th></tr></thead>
+        <thead><tr><th scope="col" data-sort="text">{{T .Lang "table.symbol"}}</th><th scope="col" data-sort="text">{{T .Lang "table.action"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.confidence"}}</th><th scope="col" data-sort="date">{{T .Lang "table.triggered_at"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.active_for"}}</th><th scope="col">{{T .Lang "table.reason"}}</th></tr></thead>
         <tbody>
         {{range .Alerts}}
         <tr>
-          <td>{{.Recommendation.Symbol}}</td>
+          <td><a class="atlas-symbol" href="{{yahooURL .Recommendation.Symbol}}" target="_blank" rel="noopener noreferrer" title="{{T $.Lang "table.open_in_yahoo"}}">{{.Recommendation.Symbol}}</a></td>
           <td class="{{actionClass .Recommendation.Action}}">{{actionLabel $.Lang .Recommendation.Action}}</td>
           <td class="text-end tabular-nums">{{printf "%.0f%%" (percent .Recommendation.Confidence)}}</td>
           <td>{{(localTime .TriggeredAt).Format "2006-01-02 15:04"}}</td>
+          {{/* Both renderings of the same span: the label for a person, the seconds for the
+               column sort, since "2d 4h" and "45m" don't compare correctly as text. A symbol
+               with no recorded streak yet yields the zero value and renders blank. */}}
+          {{$active := index $.ActiveFor .Recommendation.Symbol}}
+          <td class="text-end tabular-nums" data-sort-value="{{$active.Seconds}}">{{$active.Label}}</td>
           <td>{{joinReasons $.Lang .Recommendation.Reason}}</td>
         </tr>
         {{end}}
         </tbody>
         <tfoot>
         <tr class="table-group-divider">
-          <th scope="row" colspan="4">{{T .Lang "table.total"}}</th>
+          <th scope="row" colspan="5">{{T .Lang "table.total"}}</th>
           <td class="tabular-nums">{{len .Alerts}}</td>
         </tr>
         </tfoot>

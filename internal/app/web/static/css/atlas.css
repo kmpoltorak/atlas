@@ -122,3 +122,52 @@ main h2 {
   }
 }
 
+
+/* Sortable table headers (see atlasSetupTableTools). The caret is driven by aria-sort rather
+   than by a separate class, so the visual state and the state assistive tech reads can never
+   disagree. The idle caret stays faint: it should read as "this column can be sorted" without
+   competing with the header label itself. */
+.atlas-sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.atlas-sortable::after {
+  content: "↕";
+  margin-left: 0.35rem;
+  font-size: 0.75em;
+  opacity: 0.35;
+}
+.atlas-sortable[aria-sort="ascending"]::after {
+  content: "↑";
+  opacity: 1;
+}
+.atlas-sortable[aria-sort="descending"]::after {
+  content: "↓";
+  opacity: 1;
+}
+.atlas-sortable:hover::after {
+  opacity: 0.7;
+}
+.atlas-sortable:focus-visible {
+  outline: 2px solid var(--bs-primary);
+  outline-offset: -2px;
+}
+
+/* Symbol links to Yahoo Finance. A table of forty-seven blue underlined links would read as a
+   wall of links rather than a column of tickers, so these inherit the surrounding text colour
+   and carry a dotted underline instead — present enough to invite the click, quiet enough that
+   the column still scans as data. Hover and keyboard focus promote it to a normal link. */
+.atlas-symbol {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 0.2em;
+  text-decoration-color: var(--bs-secondary-color);
+}
+.atlas-symbol:hover,
+.atlas-symbol:focus-visible {
+  color: var(--bs-link-hover-color);
+  text-decoration-style: solid;
+  text-decoration-color: currentColor;
+}

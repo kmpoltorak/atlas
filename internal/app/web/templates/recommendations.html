@@ -34,7 +34,7 @@
     {{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
 
     {{if .Recommendation}}
-    <h2 class="h4">{{.Recommendation.Symbol}}: <span class="{{actionClass .Recommendation.Action}}">{{actionLabel .Lang .Recommendation.Action}}</span></h2>
+    <h2 class="h4"><a class="atlas-symbol" href="{{yahooURL .Recommendation.Symbol}}" target="_blank" rel="noopener noreferrer" title="{{T .Lang "table.open_in_yahoo"}}">{{.Recommendation.Symbol}}</a>: <span class="{{actionClass .Recommendation.Action}}">{{actionLabel .Lang .Recommendation.Action}}</span></h2>
     <div class="table-responsive">
       <table class="table">
         <tbody>

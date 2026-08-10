@@ -215,6 +215,59 @@ Final Decision Score
 status note and `internal/application/decision/orchestrator.go`'s `technicalWeight`/`mlWeight`/
 `portfolioWeight`/`riskWeight` constants) — a documented first-pass heuristic, not derived from
 data, same honesty stance as every other threshold in this engine.
+
+## The momentum/volume term
+
+Technical Score is itself a weighted average (0.45 momentum/volume, 0.20 RSI, 0.20 Bollinger %B,
+0.15 OBV). The heaviest of those, `momentumVolumeScore`, is:
+
+```
+momentum      = close_t / close_{t-12} - 1
+normalized    = momentum / (realized_vol_20 * sqrt(12))
+momentumScore = 0.5 + 0.5 * tanh(normalized / 1.5)
+confirmation  = 0.5 + 0.5 * min(1, volume / mean_volume)
+term          = 0.5 + (momentumScore - 0.5) * confirmation
+```
+
+Normalizing by the instrument's own realized volatility makes one threshold mean the same thing
+for a liquid US megacap and a thinly traded WSE listing — the same scale-free stance the ML
+feature vector settled on (docs/ml.md). Thin volume damps the reading toward neutral rather than
+reversing it: a move nobody traded is weak evidence, not counter-evidence.
+
+The window (12 bars), volatility window (20, shared with the ML feature vector), and tanh scale
+(1.5) were picked by measuring candidates against the 41807 real closed hourly bars behind the
+live watchlist, not by taste. At scale 1.0 the term saturates (p05 0.040, p95 0.971); at 2.0 it
+compresses so a genuinely strong move never reads as strong (p95 0.853). At 1.5 it spends the
+whole range: p05 0.139, p25 0.330, p50 0.509, p75 0.695, p95 0.880.
+
+### What this replaced, and why it mattered
+
+The term used to be a two-valued step function reading a **single** bar: `momentum > 0.02 && raw
+volume/1000 > 1` returned 0.82, everything else 0.48. Three defects compounded, all measured
+against production rather than argued:
+
+1. It read the newest bar, which Yahoo serves as an **unclosed live quote** — `open == close`,
+   `volume == 0`, timestamped at the moment of the request rather than a candle boundary. On
+   2026-08-10 all 47 watchlist symbols carried exactly such a row as their newest bar. Momentum
+   was therefore identically 0, so the bullish branch **could never fire on live traffic** and
+   the largest term in the whole score sat frozen at 0.48.
+2. Every BUY recorded in the week to 2026-08-10 (44 of them) landed in `0.750–0.754` against the
+   0.75 threshold — grazing the line, never clearing it — and flipped back to HOLD on the next
+   poll. SELL and REDUCE were unreachable entirely: not one was emitted. The engine was
+   effectively a three-action engine reporting six.
+3. Even on correct closed bars the rule fires on only 3.21% of them, so it contributed a
+   near-constant with occasional 0.34-wide jumps. `volume/1000` also hard-codes the share-volume
+   scale of a liquid US equity; that gate passes on 92% of bars, so it barely gated anything.
+   `ComputeVolume` already produced the scale-free measure and was being ignored.
+
+The replacement moves 0.053 per bar at the median (0.012 in the blended score), so the score
+tracks price instead of quantizing it.
+
+The unclosed bar is dropped at the source now — see `providers.dropUnclosedBars`. That fix also
+matters to the ML path independently: `BuildFeatureVector` reads the newest bar's volume, so
+inference always saw `volume = 0` while the model had been trained on real volumes. Acting only
+on closed candles is the ordinary discipline for bar-based signals — anything computed on a
+forming candle repaints until it closes.
 ---
 # Example Calculation
 ## Technical
@@ -323,6 +376,18 @@ Note also that notifications fire on *change*: the background loop re-evaluates 
 every ALERT_POLL_INTERVAL_SECONDS (default 300), but only pushes when a symbol's action differs
 from the previous poll. A symbol sitting in BUY for three days produces one notification, not
 hundreds.
+
+That change-detection map lives in memory, so a restart re-notifies every symbol currently holding
+an actionable signal. Harmless when actionable signals are rare, noisy when they aren't: the
+momentum fix above moved the watchlist from four BUYs a week to twenty at once, and the first poll
+after that deploy pushed all twenty.
+
+Each notification is a Discord embed (`buildAlertEmbed`), not a line of text: colour-coded by
+action so an add reads differently from a trim at a glance, titled with the symbol and linked to
+its quote page (`market.QuoteURL`, the same link the dashboard tables use), with
+confidence/score/market condition as an inline field row and the rationale as one bullet per line.
+The flat `[Atlas] ORCL: BUY (confidence 67%) — reason; reason; reason` string it replaced was
+legible on its own and unscannable the moment a poll fired several at once.
 Example:
 ```
 🚨 Atlas Recommendation

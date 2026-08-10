@@ -23,13 +23,13 @@
         <table class="table table-striped table-hover align-middle" id="watchlistTable">
           <thead><tr>
             <th scope="col"><input type="checkbox" class="form-check-input" id="selectAllWatchlist" aria-label="{{T .Lang "table.select_all"}}"></th>
-            <th scope="col">{{T .Lang "table.symbol"}}</th><th scope="col">{{T .Lang "table.added"}}</th><th scope="col"></th>
+            <th scope="col" data-sort="text">{{T .Lang "table.symbol"}}</th><th scope="col" data-sort="date">{{T .Lang "table.added"}}</th><th scope="col"></th>
           </tr></thead>
           <tbody>
           {{range .Items}}
           <tr>
             <td><input type="checkbox" class="form-check-input watchlist-checkbox" name="symbols" value="{{.Symbol}}"></td>
-            <td>{{.Symbol}}</td>
+            <td><a class="atlas-symbol" href="{{yahooURL .Symbol}}" target="_blank" rel="noopener noreferrer" title="{{T $.Lang "table.open_in_yahoo"}}">{{.Symbol}}</a></td>
             <td>{{if .AddedAt}}{{(localTime .AddedAt).Format "2006-01-02 15:04"}}{{end}}</td>
             <td class="text-end">
               <button type="submit" formaction="/dashboard/watchlist/delete" name="symbol" value="{{.Symbol}}"

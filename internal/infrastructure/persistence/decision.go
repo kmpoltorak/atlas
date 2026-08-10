@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"atlas/internal/domain/decision"
 )
@@ -59,4 +60,55 @@ func (t *TimescaleDB) SaveRecommendation(rec decision.Recommendation) error {
 		return fmt.Errorf("commit transaction: %w", err)
 	}
 	return nil
+}
+
+// ActionStreak is when a symbol's currently recommended action was first recorded — the answer to
+// "how long has this alert been saying this?", which a single recommendation row cannot give
+// (each row is stamped with the moment it was computed, so the newest one always reads as "now").
+type ActionStreak struct {
+	Symbol string    `db:"ticker"`
+	Action string    `db:"action"`
+	Since  time.Time `db:"since"`
+}
+
+// CurrentActionStreaks returns, per symbol, the action it currently recommends and the moment
+// that run of identical actions began.
+//
+// One query for every symbol rather than one per row on the page: the Alerts page renders a few
+// dozen symbols, and a per-symbol round trip would make page load scale with watchlist size for
+// no reason.
+//
+// The window function marks every row whose action differs from the previous one for that
+// symbol — those are the streak boundaries — and DISTINCT ON then keeps the most recent boundary
+// per symbol. A symbol's very first recorded recommendation counts as a boundary too, since
+// IS DISTINCT FROM treats the NULL from LAG as a difference; that is correct, as the streak
+// genuinely started there.
+//
+// The returned times are what the database holds, which is UTC (created_at is timestamptz,
+// defaulted to now()). Callers comparing against wall-clock time should do so in UTC.
+func (t *TimescaleDB) CurrentActionStreaks() (map[string]ActionStreak, error) {
+	ctx := context.Background()
+
+	var rows []ActionStreak
+	if err := t.db.SelectContext(ctx, &rows, `
+		WITH boundaries AS (
+		    SELECT s.ticker,
+		           r.action,
+		           r.created_at,
+		           LAG(r.action) OVER (PARTITION BY r.symbol_id ORDER BY r.created_at) AS previous_action
+		    FROM recommendations r
+		    JOIN symbols s ON s.id = r.symbol_id
+		)
+		SELECT DISTINCT ON (ticker) ticker, action, created_at AS since
+		FROM boundaries
+		WHERE previous_action IS DISTINCT FROM action
+		ORDER BY ticker, created_at DESC`); err != nil {
+		return nil, fmt.Errorf("query current action streaks: %w", err)
+	}
+
+	streaks := make(map[string]ActionStreak, len(rows))
+	for _, row := range rows {
+		streaks[row.Symbol] = row
+	}
+	return streaks, nil
 }

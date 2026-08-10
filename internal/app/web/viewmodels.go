@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"time"
 
 	"atlas/internal/domain/alerts"
@@ -82,6 +83,57 @@ type AlertsPage struct {
 	// right after startup); PollError is empty when the last attempt succeeded.
 	PollAt    time.Time
 	PollError string
+	// ActiveFor answers "how long has this alert been saying this?", keyed by symbol. A single
+	// recommendation row can't: every row is stamped with the moment it was computed, so the
+	// newest one always reads as "just now" no matter how long the action has actually held.
+	// The value comes from walking that symbol's history back to where the action last changed
+	// (persistence.CurrentActionStreaks). A symbol with no recorded history yet is simply absent,
+	// and index on a missing key yields the zero ActiveDuration, which renders as blank.
+	ActiveFor map[string]ActiveDuration
+}
+
+// ActiveDuration carries both renderings of the same span because the table needs both: Label is
+// what a person reads, Seconds is what the column sorts on, since "2d 4h" and "45m" do not
+// compare correctly as text.
+type ActiveDuration struct {
+	Label   string
+	Seconds int64
+}
+
+// FormatActiveDuration renders how long ago since was, compactly enough for a table cell: "2d 4h",
+// "3h 20m", "45m". Anything under a minute reads as "<1m" rather than "0m", which would claim
+// more precision than the poll interval (five minutes) actually provides.
+//
+// A zero or future since returns the zero value — the first means no recorded history, the second
+// means clock skew, and inventing a duration for either would be worse than showing nothing.
+func FormatActiveDuration(lang Lang, since, now time.Time) ActiveDuration {
+	if since.IsZero() || !since.Before(now) {
+		return ActiveDuration{}
+	}
+
+	elapsed := now.Sub(since)
+	days := int(elapsed.Hours()) / 24
+	hours := int(elapsed.Hours()) % 24
+	minutes := int(elapsed.Minutes()) % 60
+
+	unitDay, unitHour, unitMinute := "d", "h", "m"
+	if lang == LangPL {
+		unitDay, unitHour, unitMinute = "d", "godz", "min"
+	}
+
+	var label string
+	switch {
+	case days > 0:
+		label = fmt.Sprintf("%d%s %d%s", days, unitDay, hours, unitHour)
+	case hours > 0:
+		label = fmt.Sprintf("%d%s %d%s", hours, unitHour, minutes, unitMinute)
+	case minutes > 0:
+		label = fmt.Sprintf("%d%s", minutes, unitMinute)
+	default:
+		label = "<1" + unitMinute
+	}
+
+	return ActiveDuration{Label: label, Seconds: int64(elapsed.Seconds())}
 }
 
 // BacktestsPage is the view model for templates/backtests.html. Symbols is the watchlist,

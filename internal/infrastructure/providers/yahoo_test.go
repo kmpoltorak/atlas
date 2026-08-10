@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -45,6 +46,115 @@ func TestFetchBarsParsesProviderResponse(t *testing.T) {
 	}
 	if bars[0].Timestamp != time.Unix(1704067200, 0) {
 		t.Fatalf("unexpected first timestamp: %v", bars[0].Timestamp)
+	}
+}
+
+// Yahoo appends the live quote to an intraday series as an extra data point timestamped at the
+// moment of the request, with OHLC all equal to the current price and volume 0. Every consumer
+// downstream treats it as a finished candle and gets a zero-momentum, zero-volume reading out of
+// it, so FetchBars must not return it — see dropUnclosedBars.
+func TestFetchBarsDropsTheUnclosedTrailingBar(t *testing.T) {
+	const closedBarStart int64 = 1704067200 // candle covering [closedBarStart, +1h)
+	liveQuoteAt := closedBarStart + 4500
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(fmt.Sprintf(`{
+			"chart": {
+				"result": [{
+					"timestamp": [%d, %d],
+					"indicators": {
+						"quote": [{
+							"open": [100, 107],
+							"high": [105, 107],
+							"low": [99, 107],
+							"close": [104, 107],
+							"volume": [1000, 0]
+						}]
+					}
+				}]
+			}
+		}`, closedBarStart, liveQuoteAt)))
+	}))
+	defer server.Close()
+
+	provider := NewYahooFinanceProvider()
+	provider.BaseURL = server.URL + "/v8/finance/chart"
+	provider.Client = server.Client()
+	// One second past the live quote: the first candle has closed, the second has not.
+	provider.Now = func() time.Time { return time.Unix(liveQuoteAt+1, 0) }
+
+	bars, err := provider.FetchBars("AAPL", 2)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(bars) != 1 {
+		t.Fatalf("expected the unclosed bar to be dropped, got %d bars", len(bars))
+	}
+	if bars[0].Timestamp != time.Unix(closedBarStart, 0) {
+		t.Fatalf("expected the closed bar to survive, got %v", bars[0].Timestamp)
+	}
+}
+
+// The mirror of the case above: once a candle's interval has elapsed it is real history, even
+// though it is the newest bar in the series. Dropping it would throw away the most recent
+// closed candle on every poll.
+func TestFetchBarsKeepsTheNewestClosedBar(t *testing.T) {
+	const barStart = 1704067200
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(fmt.Sprintf(`{
+			"chart": {"result": [{
+				"timestamp": [%d],
+				"indicators": {"quote": [{"open":[100],"high":[105],"low":[99],"close":[104],"volume":[1000]}]}
+			}]}
+		}`, barStart)))
+	}))
+	defer server.Close()
+
+	provider := NewYahooFinanceProvider()
+	provider.BaseURL = server.URL + "/v8/finance/chart"
+	provider.Client = server.Client()
+	// Exactly at the close boundary — the candle is finished, not forming.
+	provider.Now = func() time.Time { return time.Unix(barStart, 0).Add(time.Hour) }
+
+	bars, err := provider.FetchBars("AAPL", 2)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(bars) != 1 {
+		t.Fatalf("expected the closed bar to be kept, got %d bars", len(bars))
+	}
+}
+
+// A flat, zero-volume hour is real history for an illiquid instrument, so the filter must key on
+// the clock rather than on the row looking degenerate.
+func TestFetchBarsKeepsAFlatClosedBar(t *testing.T) {
+	const barStart = 1704067200
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(fmt.Sprintf(`{
+			"chart": {"result": [{
+				"timestamp": [%d],
+				"indicators": {"quote": [{"open":[100],"high":[100],"low":[100],"close":[100],"volume":[0]}]}
+			}]}
+		}`, barStart)))
+	}))
+	defer server.Close()
+
+	provider := NewYahooFinanceProvider()
+	provider.BaseURL = server.URL + "/v8/finance/chart"
+	provider.Client = server.Client()
+	provider.Now = func() time.Time { return time.Unix(barStart, 0).Add(2 * time.Hour) }
+
+	bars, err := provider.FetchBars("AAPL", 2)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(bars) != 1 {
+		t.Fatalf("expected a flat but closed bar to be kept, got %d bars", len(bars))
 	}
 }
 

@@ -11,7 +11,12 @@ wired end-to-end. OBV and Bollinger Bands are now blended into Decision Engine s
 `buildTechnicalScore` folds a Bollinger %B position signal and an OBV accumulation/distribution
 signal into `TechnicalScore.Overall` as weighted-average terms (weights 0.45 momentum/volume,
 0.20 RSI, 0.20 %B, 0.15 OBV — first-pass heuristics, not tuned against outcome data) whenever
-there's enough history to compute them; `ml.FeatureVector` still draws on only those same five
+there's enough history to compute them. The momentum/volume term is a volatility-normalized
+12-bar return confirmed by relative volume, replacing a step function that read a single bar and
+in practice never fired, since Yahoo's newest "bar" is an unclosed live quote with `open ==
+close` and `volume == 0`; that row is now dropped at the provider, which also stops ML inference
+from always seeing `volume = 0` — see docs/decision_engine.md's "The momentum/volume term".
+`ml.FeatureVector` still draws on only those same five
 indicators (RSI/EMA/MACD/ATR/Volume), though as scale-free ratios rather than raw price-unit
 values since the price levels themselves were letting the model identify the symbol — see
 docs/ml.md. Extending past those five is the leading open lead for the correction model, which

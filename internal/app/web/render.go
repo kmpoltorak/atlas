@@ -14,6 +14,7 @@ import (
 	"time"
 	_ "time/tzdata" // embeds the IANA zoneinfo DB so localTime works even on a minimal image with no system tzdata installed
 
+	"atlas/internal/domain/market"
 	"atlas/internal/domain/portfolio"
 )
 
@@ -57,6 +58,10 @@ var funcMap = template.FuncMap{
 		return strings.Join(translated, "; ")
 	},
 	"reasonLabel": reasonLabel,
+	// yahooURL puts every symbol in the UI one click from its chart and fundamentals instead of
+	// something to retype into a browser. Shared with the Discord alert embeds via the domain so
+	// the two can't drift — see market.QuoteURL for why Yahoo specifically.
+	"yahooURL": market.QuoteURL,
 	// localTime converts a persisted-as-UTC timestamp (RFC3339 string or time.Time, depending on
 	// the source field) to Atlas' display timezone — see atlasLocation. Atlas is single-user and
 	// the Author is Poland-based, so this is a fixed zone, not something derived per-request.

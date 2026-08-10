@@ -27,7 +27,7 @@
         <tbody>
         {{range .Positions}}
         <tr>
-          <td>{{.Symbol}}</td>
+          <td><a class="atlas-symbol" href="{{yahooURL .Symbol}}" target="_blank" rel="noopener noreferrer" title="{{T $.Lang "table.open_in_yahoo"}}">{{.Symbol}}</a></td>
           <td class="text-end tabular-nums">{{printf "%.4f" .Quantity}}</td>
           <td class="text-end tabular-nums">{{money .AverageCost $.Rates}}</td>
           <td class="text-end tabular-nums">

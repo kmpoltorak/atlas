@@ -23,13 +23,13 @@
         <table class="table table-striped table-hover align-middle" id="positionsTable">
           <thead><tr>
             <th scope="col"><input type="checkbox" class="form-check-input" id="selectAllPositions" aria-label="{{T .Lang "table.select_all"}}"></th>
-            <th scope="col">{{T .Lang "table.symbol"}}</th><th scope="col" class="text-end">{{T .Lang "table.quantity"}}</th><th scope="col" class="text-end">{{T .Lang "table.avg_cost"}}</th><th scope="col" class="text-end">{{T .Lang "table.current_price"}}</th><th scope="col" class="text-end">{{T .Lang "table.pnl"}}</th><th scope="col"></th>
+            <th scope="col" data-sort="text">{{T .Lang "table.symbol"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.quantity"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.avg_cost"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.current_price"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.pnl"}}</th><th scope="col"></th>
           </tr></thead>
           <tbody>
           {{range .Positions}}
           <tr>
             <td><input type="checkbox" class="form-check-input position-checkbox" name="symbols" value="{{.Symbol}}"></td>
-            <td>{{.Symbol}}</td>
+            <td><a class="atlas-symbol" href="{{yahooURL .Symbol}}" target="_blank" rel="noopener noreferrer" title="{{T $.Lang "table.open_in_yahoo"}}">{{.Symbol}}</a></td>
             <td class="text-end tabular-nums">{{printf "%.4f" .Quantity}}</td>
             <td class="text-end tabular-nums">{{money .AverageCost $.Rates}}</td>
             <td class="text-end tabular-nums">
@@ -71,13 +71,13 @@
         <table class="table table-striped table-hover align-middle" id="transactionsTable">
           <thead><tr>
             <th scope="col"><input type="checkbox" class="form-check-input" id="selectAllTransactions" aria-label="{{T .Lang "table.select_all"}}"></th>
-            <th scope="col">{{T .Lang "table.symbol"}}</th><th scope="col">{{T .Lang "table.type"}}</th><th scope="col" class="text-end">{{T .Lang "table.quantity"}}</th><th scope="col" class="text-end">{{T .Lang "table.price"}}</th><th scope="col">{{T .Lang "table.currency"}}</th><th scope="col" class="text-end">{{T .Lang "table.pln_equivalent"}}</th><th scope="col">{{T .Lang "table.timestamp"}}</th><th scope="col"></th>
+            <th scope="col" data-sort="text">{{T .Lang "table.symbol"}}</th><th scope="col" data-sort="text">{{T .Lang "table.type"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.quantity"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.price"}}</th><th scope="col" data-sort="text">{{T .Lang "table.currency"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.pln_equivalent"}}</th><th scope="col" data-sort="date">{{T .Lang "table.timestamp"}}</th><th scope="col"></th>
           </tr></thead>
           <tbody>
           {{range .Transactions}}
           <tr>
             <td><input type="checkbox" class="form-check-input transaction-checkbox" name="ids" value="{{.ID}}"></td>
-            <td>{{.Symbol}}</td>
+            <td><a class="atlas-symbol" href="{{yahooURL .Symbol}}" target="_blank" rel="noopener noreferrer" title="{{T $.Lang "table.open_in_yahoo"}}">{{.Symbol}}</a></td>
             <td class="{{actionClass .Type}}">{{actionLabel $.Lang .Type}}</td>
             <td class="text-end tabular-nums">{{printf "%.4f" .Quantity}}</td>
             <td class="text-end tabular-nums">{{printf "%.2f" .Price}}</td>

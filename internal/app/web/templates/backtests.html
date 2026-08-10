@@ -42,7 +42,7 @@
     {{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
 
     {{if .Result}}
-    <h2 class="h4">{{.Result.Symbol}} — {{.Result.StrategyName}} {{.Result.StrategyVersion}}</h2>
+    <h2 class="h4"><a class="atlas-symbol" href="{{yahooURL .Result.Symbol}}" target="_blank" rel="noopener noreferrer" title="{{T .Lang "table.open_in_yahoo"}}">{{.Result.Symbol}}</a> — {{.Result.StrategyName}} {{.Result.StrategyVersion}}</h2>
     <div class="table-responsive">
       <table class="table">
         <tbody>
@@ -78,7 +78,7 @@
     <input type="text" class="form-control form-control-sm mb-2" id="tradesFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
     <div class="table-responsive">
       <table class="table table-striped table-hover align-middle" id="tradesTable">
-        <thead><tr><th scope="col">{{T .Lang "table.timestamp"}}</th><th scope="col">{{T .Lang "table.action"}}</th><th scope="col" class="text-end">{{T .Lang "table.price"}}</th><th scope="col" class="text-end">{{T .Lang "table.quantity"}}</th><th scope="col" class="text-end">{{T .Lang "table.confidence"}}</th></tr></thead>
+        <thead><tr><th scope="col" data-sort="date">{{T .Lang "table.timestamp"}}</th><th scope="col" data-sort="text">{{T .Lang "table.action"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.price"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.quantity"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.confidence"}}</th></tr></thead>
         <tbody>
         {{range .Result.Trades}}
         <tr>
