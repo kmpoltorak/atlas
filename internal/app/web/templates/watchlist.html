@@ -28,7 +28,7 @@
         <table class="table table-striped table-hover align-middle" id="watchlistTable">
           <thead><tr>
             <th scope="col"><input type="checkbox" class="form-check-input" id="selectAllWatchlist" aria-label="{{T .Lang "table.select_all"}}"></th>
-            <th scope="col" data-sort="text">{{T .Lang "table.symbol"}}</th><th scope="col" data-sort="text">{{T .Lang "table.name"}}</th><th scope="col" data-sort="text">{{T .Lang "table.type"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.today_change"}}</th><th scope="col" data-sort="date">{{T .Lang "table.added"}}</th><th scope="col"></th>
+            <th scope="col" data-sort="text">{{T .Lang "table.symbol"}}</th><th scope="col" data-sort="text">{{T .Lang "table.name"}}</th><th scope="col" data-sort="text">{{T .Lang "table.type"}}</th><th scope="col" data-sort="date">{{T .Lang "table.added"}}</th><th scope="col"></th>
           </tr></thead>
           <tbody>
           {{range .Items}}
@@ -38,9 +38,6 @@
             <td><a class="atlas-symbol" href="{{yahooURL .Symbol}}" target="_blank" rel="noopener noreferrer" title="{{T $.Lang "table.open_in_yahoo"}}">{{.Symbol}}</a></td>
             <td>{{$info.Name}}</td>
             <td>{{$info.Type}}</td>
-            <td class="text-end tabular-nums" data-sort-value="{{if $info.HasQuote}}{{$info.ChangePercent}}{{end}}">
-              {{if $info.HasQuote}}<span class="{{if ge $info.ChangePercent 0.0}}text-success{{else}}text-danger{{end}}">{{printf "%+.1f%%" $info.ChangePercent}}</span>{{end}}
-            </td>
             <td>{{if .AddedAt}}{{(localTime .AddedAt).Format "2006-01-02 15:04"}}{{end}}</td>
             <td class="text-end">
               <button type="submit" formaction="/dashboard/watchlist/delete" name="symbol" value="{{.Symbol}}"
@@ -52,7 +49,7 @@
           </tbody>
           <tfoot>
           <tr class="table-group-divider">
-            <th scope="row" colspan="6">{{T .Lang "table.total"}}</th>
+            <th scope="row" colspan="5">{{T .Lang "table.total"}}</th>
             <td class="text-end tabular-nums">{{len .Items}}</td>
           </tr>
           </tfoot>

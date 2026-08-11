@@ -25,12 +25,21 @@
     <input type="text" class="form-control form-control-sm mb-2" id="alertsFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
     <div class="table-responsive">
       <table class="table table-striped table-hover align-middle" id="alertsTable">
-        <thead><tr><th scope="col" data-sort="text">{{T .Lang "table.symbol"}}</th><th scope="col" data-sort="text">{{T .Lang "table.action"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.confidence"}}</th><th scope="col" data-sort="date">{{T .Lang "table.triggered_at"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.active_for"}}</th><th scope="col">{{T .Lang "table.reason"}}</th></tr></thead>
+        <thead><tr><th scope="col" data-sort="text">{{T .Lang "table.symbol"}}</th><th scope="col" data-sort="text">{{T .Lang "table.action"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.today_change"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.confidence"}}</th><th scope="col" data-sort="date">{{T .Lang "table.triggered_at"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.active_for"}}</th><th scope="col">{{T .Lang "table.reason"}}</th></tr></thead>
         <tbody>
         {{range .Alerts}}
+        {{$quote := index $.Info .Recommendation.Symbol}}
         <tr>
           <td><a class="atlas-symbol" href="{{yahooURL .Recommendation.Symbol}}" target="_blank" rel="noopener noreferrer" title="{{T $.Lang "table.open_in_yahoo"}}">{{.Recommendation.Symbol}}</a></td>
           <td class="{{actionClass .Recommendation.Action}}">{{actionLabel $.Lang .Recommendation.Action}}</td>
+          {{/* How the symbol is doing right now, independent of the recommendation's own closed-
+               candle data — see providers.dropUnclosedBars and web.SymbolInfo.ChangePercent. A
+               recommendation and today's live move can disagree (a BUY from before a same-day
+               drop, exactly the case this column exists to surface) — that disagreement is the
+               point, not a bug to hide. */}}
+          <td class="text-end tabular-nums" data-sort-value="{{if $quote.HasQuote}}{{$quote.ChangePercent}}{{end}}">
+            {{if $quote.HasQuote}}<span class="{{if ge $quote.ChangePercent 0.0}}text-success{{else}}text-danger{{end}}">{{printf "%+.1f%%" $quote.ChangePercent}}</span>{{end}}
+          </td>
           <td class="text-end tabular-nums">{{printf "%.0f%%" (percent .Recommendation.Confidence)}}</td>
           <td>{{(localTime .TriggeredAt).Format "2006-01-02 15:04"}}</td>
           {{/* Both renderings of the same span: the label for a person, the seconds for the
@@ -44,7 +53,7 @@
         </tbody>
         <tfoot>
         <tr class="table-group-divider">
-          <th scope="row" colspan="5">{{T .Lang "table.total"}}</th>
+          <th scope="row" colspan="6">{{T .Lang "table.total"}}</th>
           <td class="tabular-nums">{{len .Alerts}}</td>
         </tr>
         </tfoot>
