@@ -151,7 +151,13 @@
     <p class="text-body-secondary small">{{T .Lang "account.data_hint"}}</p>
     <div class="card card-md">
       <div class="card-body d-flex flex-wrap gap-4">
-        <a href="/dashboard/account/backup" class="btn btn-outline-primary btn-sm">{{T .Lang "account.backup_submit"}}</a>
+        {{/* A download link never navigates the browser away (Content-Disposition: attachment
+             just triggers a save), so without this the page would keep showing the old
+             locked-Flush state even though the backup that just downloaded already unlocked it
+             server-side. The reload is delayed, not immediate, so the download itself has time
+             to actually start firing before the page goes away. */}}
+        <a href="/dashboard/account/backup" class="btn btn-outline-primary btn-sm"
+           onclick="setTimeout(function() { location.reload(); }, 800);">{{T .Lang "account.backup_submit"}}</a>
         <form method="post" action="/dashboard/account/restore" enctype="multipart/form-data" class="d-flex flex-wrap gap-2 align-items-end mb-0">
           <div>
             <label class="form-label small mb-1">{{T .Lang "account.restore_file"}}</label>
