@@ -26,24 +26,6 @@ func NewUseCaseWithThresholds(thresholds decision.Thresholds) *UseCase {
 	return &UseCase{Thresholds: thresholds}
 }
 
-// ScoreTechnical inspects the technical evidence and returns a normalized score.
-func (u *UseCase) ScoreTechnical(input decision.TechnicalScore) (float64, error) {
-	if input.Overall < 0 {
-		return 0, nil
-	}
-	return input.Overall, nil
-}
-
-// ScoreML is intentionally a placeholder for the first ML integration stage.
-func (u *UseCase) ScoreML() (float64, error) {
-	return 0.65, nil
-}
-
-// ScoreRisk maps a simple risk posture into a numeric score for later recommendation blending.
-func (u *UseCase) ScoreRisk() (float64, error) {
-	return 0.6, nil
-}
-
 // scoreConfidence maps how far the blended score sits from the neutral center (0.5) into a
 // [0,1] confidence value — the same idea already used for the ML sub-model's own confidence
 // (see ml.UseCase.Predict's Confidence field), applied here to the engine's final blended score
@@ -136,13 +118,3 @@ func (u *UseCase) waitOrHold(overall, mlConfidence float64, leadReason string) d
 	}
 }
 
-// Recommend produces a decision-support recommendation with rationale.
-func (u *UseCase) Recommend(symbol string) (decision.Recommendation, error) {
-	recommendation := decision.Recommendation{
-		Symbol:     symbol,
-		Action:     "HOLD",
-		Confidence: 0.6,
-		Reason:     []string{"Decision-support layer only", "No automated trading action"},
-	}
-	return recommendation, nil
-}

@@ -304,6 +304,57 @@ useful as a surveillance and review tool over a watchlist, and the ML correction
 its place — it improves max drawdown on 30 symbols against 16 (see docs/backtesting.md). What the
 technical score does not do is identify better-than-random moments to enter on hourly bars.
 
+## The dip-entry rule, and why it was not shipped
+
+Measured 2026-08-11 against 226,608 real hourly bars — 45 symbols, everything Yahoo served for
+the interval, spanning 1,055 days. (FBTC and IBIT are absent: both are younger than the request
+window and Yahoo rejects it with HTTP 422.)
+
+The rule tested was the obvious one, and the right one to test — buy the dips:
+
+```
+ENTRY:  price >= 1.5x threshold below its 10-bar high
+        threshold = max(4 * trailing 20-bar realised volatility, 2%)
+EXIT:   60 bars later
+```
+
+The volatility scaling is what makes it a rule rather than a hunch: a 3% drop means something
+different for ORCL than for a thin WSE listing, and dividing by the instrument's own volatility
+makes one threshold mean the same thing everywhere.
+
+**It has no edge.** Mean 60-bar forward return at a state entry, against the mean across all bars:
+
+| variant | window | entries | edge |
+|---|---|---|---|
+| high of highs | 1,055 days | 2,880 | **−0.260%** |
+| high of closes | 1,055 days | 1,538 | **+0.339%** |
+| high of highs | last 720 days | 2,003 | +0.128% |
+| high of closes | last 720 days | 1,070 | +0.738% |
+
+Those four rows are the same rule on the same data. What separates them is whether the "10-bar
+high" is taken over bar highs or bar closes — a bookkeeping detail nobody would defend on
+economic grounds — and how far back the window reaches. A real edge does not change sign when you
+pick the other equally arbitrary convention.
+
+The stability checks agree, and they are the reason this is a verdict rather than a doubt. Across
+consecutive thirds of each symbol's own history the edge runs −0.744% / −0.458% / +0.373% (highs)
+and −0.400% / +0.514% / +0.867% (closes): the whole apparent edge lives in the most recent third
+and is absent or negative before it. Per symbol it is 21 of 44 and 24 of 42 — a coin flip. At the
+median, entries return +0.708% and +1.125% against a baseline median of +1.010%, so it straddles
+zero there too.
+
+**How this was nearly shipped.** An earlier pass measured the same rule over 720 days and recorded
++0.585% at 1.5×, with robustness checks that passed: positive for 34 of 46 symbols, median close
+to mean, stable across both halves. Every one of those checks was computed inside the window that
+happens to contain the effect. Deepening the sample by 335 older days removed it. That is the
+third time on this project a signal has survived its own sample and died on a larger one (see the
+OBV and BUY-band leads above) — the pattern is now reliable enough to state as a rule: **a result
+measured on one window is a hypothesis, not a finding.**
+
+The rule is not in the codebase. It was written, measured, and deleted; this section is what
+remains of it, so the next person to have the idea — including a future session reading its own
+notes — starts from the measurement instead of repeating it.
+
 ## The momentum/volume term
 
 Technical Score is itself a weighted average (0.45 momentum/volume, 0.20 RSI, 0.20 Bollinger %B,
