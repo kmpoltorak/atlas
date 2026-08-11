@@ -236,11 +236,15 @@ type AccountPage struct {
 	// stale/zero TrainerStatus.
 	TrainerError string
 
-	// HasBackup is true once a backup has ever been taken (persistence.TimescaleDB.
-	// LastBackupAt, migrations/017) — the "Flush all data" button stays disabled until it is,
-	// so there's always a safety net before that button can do anything. LastBackupAt is the
-	// zero time when HasBackup is false.
+	// HasBackup is true only when a backup exists AND is fresh enough (within
+	// persistence.FlushBackupFreshness) — the "Flush all data" button stays disabled otherwise,
+	// so there's always a *recent* safety net before that button can do anything (see
+	// persistence.TimescaleDB.FlushAll, migrations/017). BackupExists is true whenever any
+	// backup has ever been recorded, even a stale one — distinguishes "never backed up" from
+	// "backed up too long ago" for the locked hint's wording. LastBackupAt is the zero time when
+	// BackupExists is false.
 	HasBackup    bool
+	BackupExists bool
 	LastBackupAt time.Time
 }
 

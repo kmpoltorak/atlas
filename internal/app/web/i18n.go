@@ -345,6 +345,10 @@ var translations = map[string]map[Lang]string{
 		LangEN: "Locked — no backup has been taken yet. Download one above first; the button unlocks as soon as one exists.",
 		LangPL: "Zablokowane — nie wykonano jeszcze żadnej kopii zapasowej. Najpierw pobierz ją powyżej; przycisk odblokuje się, gdy tylko kopia będzie istnieć.",
 	},
+	"account.flush_stale_hint": {
+		LangEN: "Locked — your last backup is more than 5 minutes old. Download a fresh one above; the button unlocks right after.",
+		LangPL: "Zablokowane — ostatnia kopia zapasowa ma ponad 5 minut. Pobierz nową powyżej; przycisk odblokuje się od razu potem.",
+	},
 	"confirm.flush_all": {
 		LangEN: "This permanently deletes ALL Atlas data (positions, transactions, watchlist, price history, recommendations, ML/2FA settings) and cannot be undone. Have you downloaded a backup? Continue?",
 		LangPL: "To trwale usuwa WSZYSTKIE dane Atlasa (pozycje, transakcje, listę obserwowanych, historię cen, rekomendacje, ustawienia ML/2FA) i nie da się tego cofnąć. Czy pobrałeś(-aś) kopię zapasową? Kontynuować?",

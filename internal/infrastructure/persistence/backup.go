@@ -124,6 +124,17 @@ func (t *TimescaleDB) RestoreAll(payload []byte) error {
 // instead of a generic failure.
 var ErrNoBackupTaken = errors.New("no backup has been taken yet — download one from the Account page first")
 
+// ErrBackupTooOld is FlushAll's refusal when a backup exists but predates FlushBackupFreshness —
+// a backup from before recent changes wouldn't actually get you back to where the database is
+// right now, so it doesn't count as a safety net for a wipe happening right now.
+var ErrBackupTooOld = fmt.Errorf("last backup is more than %s old — download a fresh one first", FlushBackupFreshness)
+
+// FlushBackupFreshness is how recent FlushAll requires LastBackupAt to be. Deliberately a fixed
+// wall-clock window, not tied to ALERT_POLL_INTERVAL_SECONDS (a different concern — alert
+// staleness, not backup safety): a backup taken 20 minutes ago no longer reflects "right before
+// this wipe" once more transactions/watchlist edits have happened since.
+const FlushBackupFreshness = 5 * time.Minute
+
 // FlushAll deletes every row of every table in backupTables — a full factory reset, back to the
 // state a freshly migrated, never-used database would be in. Login itself is unaffected: the
 // admin username/password come from ADMIN_USERNAME/ADMIN_PASSWORD_HASH (see config.Load), not
@@ -132,16 +143,20 @@ var ErrNoBackupTaken = errors.New("no backup has been taken yet — download one
 // mirrors these tables (see portfolio.UseCase.Reload/watchlist.UseCase.Reload) — this only
 // touches the database.
 //
-// Refuses outright (ErrNoBackupTaken) if no backup has ever been recorded — a server-side gate,
-// not just a disabled button (see migrations/017's backup_log): a "Flush all data" click can't
-// destroy the only copy of the data with nothing to restore from. This checks existence only, not
-// recency — the Backup button's own instructions ask for a fresh one right before a risky flush,
-// but this can't tell how stale an existing one is.
+// Refuses outright — a server-side gate, not just a disabled button (see migrations/017's
+// backup_log) — if no backup has ever been recorded (ErrNoBackupTaken) or the last one is older
+// than FlushBackupFreshness (ErrBackupTooOld): a "Flush all data" click can't destroy data with
+// no recent copy to restore from.
 func (t *TimescaleDB) FlushAll() error {
-	if _, ok, err := t.LastBackupAt(); err != nil {
+	at, ok, err := t.LastBackupAt()
+	if err != nil {
 		return fmt.Errorf("check last backup: %w", err)
-	} else if !ok {
+	}
+	if !ok {
 		return ErrNoBackupTaken
+	}
+	if time.Since(at) > FlushBackupFreshness {
+		return ErrBackupTooOld
 	}
 
 	ctx := context.Background()

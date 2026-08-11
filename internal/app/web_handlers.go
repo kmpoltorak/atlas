@@ -771,15 +771,16 @@ func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 
-	var hasBackup bool
+	var backupExists bool
 	var lastBackupAt time.Time
 	if a.Storage != nil {
 		if at, ok, err := a.Storage.LastBackupAt(); err != nil {
 			a.Logger.Warn("failed to read last backup time", zap.Error(err))
 		} else {
-			hasBackup, lastBackupAt = ok, at
+			backupExists, lastBackupAt = ok, at
 		}
 	}
+	hasBackup := backupExists && time.Since(lastBackupAt) <= persistence.FlushBackupFreshness
 
 	web.Render(w, "account", web.AccountPage{
 		Lang:                  a.resolveLang(r),
@@ -796,6 +797,7 @@ func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, 
 		TrainerStatus:         trainerStatus,
 		TrainerError:          trainerErr,
 		HasBackup:             hasBackup,
+		BackupExists:          backupExists,
 		LastBackupAt:          lastBackupAt,
 	})
 }
