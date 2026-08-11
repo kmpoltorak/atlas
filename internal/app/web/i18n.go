@@ -55,11 +55,12 @@ var translations = map[string]map[Lang]string{
 	"table.open_in_yahoo": {LangEN: "Open on Yahoo Finance in a new tab", LangPL: "Otwórz w Yahoo Finance w nowej karcie"},
 	"table.quantity":      {LangEN: "Quantity", LangPL: "Ilość"},
 	"table.avg_cost":      {LangEN: "Avg. Cost", LangPL: "Śr. koszt"},
-	// Named for what it actually is, not a live market quote: Position.CurrentPrice is set once,
-	// from the most recent transaction recorded for that symbol (see portfolio.applyTransaction)
-	// — Atlas has no live price-refresh path. table.as_of is the small "as of <date>" line shown
-	// under it, same honesty-relabeling precedent as table.drawdown/table.avg_deviation above.
-	"table.current_price": {LangEN: "Last Transaction Price", LangPL: "Cena z ostatniej transakcji"},
+	// Position.CurrentPrice (see portfolio.applyTransaction) is normally overlaid with a live
+	// quote before this renders (see web_handlers.go's livePricedPositions) — "Current Price",
+	// not "Last Transaction Price", is what's actually true most of the time now. table.as_of
+	// is the small "as of <date>" line shown under it: the live quote's own timestamp when one
+	// was found, falling back to the last transaction's timestamp (the honest label) when not.
+	"table.current_price": {LangEN: "Current Price", LangPL: "Aktualna cena"},
 	"table.as_of":         {LangEN: "as of", LangPL: "stan na"},
 	"table.pnl":           {LangEN: "P&L", LangPL: "Zysk/strata"},
 	"table.total":         {LangEN: "Total", LangPL: "Suma"},

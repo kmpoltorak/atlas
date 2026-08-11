@@ -13,6 +13,7 @@ import (
 	"atlas/internal/app/web"
 	authUC "atlas/internal/application/auth"
 	mlUC "atlas/internal/application/ml"
+	portfolioUC "atlas/internal/application/portfolio"
 	watchlistUC "atlas/internal/application/watchlist"
 	"atlas/internal/domain/alerts"
 	"atlas/internal/domain/currency"
@@ -145,19 +146,16 @@ func (a *Application) dashboardPageHandler(w http.ResponseWriter, r *http.Reques
 		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	risk, err := a.Portfolio.ComputeRisk()
-	if err != nil {
-		a.renderError(w, r, http.StatusInternalServerError, err.Error())
-		return
-	}
 	transactions, err := a.Portfolio.GetTransactions()
 	if err != nil {
 		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
+	livePositions, asOf := a.livePricedPositions(positions, priceAsOf(transactions))
 	web.Render(w, "dashboard", web.DashboardPage{
-		Lang: a.resolveLang(r), Positions: positions, Risk: risk, Rates: a.exchangeRatesForDisplay(),
-		PriceAsOf:   priceAsOf(transactions),
+		Lang: a.resolveLang(r), Positions: livePositions, Risk: portfolioUC.ComputeRiskSnapshot(livePositions),
+		Rates:       a.exchangeRatesForDisplay(),
+		PriceAsOf:   asOf,
 		AlertCounts: a.alertCountsByAction(),
 	})
 }
@@ -353,12 +351,50 @@ func (a *Application) renderPortfolioPage(w http.ResponseWriter, r *http.Request
 		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
+	livePositions, asOf := a.livePricedPositions(positions, priceAsOf(transactions))
 	web.Render(w, "portfolio", web.PortfolioPage{
-		Lang: a.resolveLang(r), Positions: positions, Transactions: transactions,
+		Lang: a.resolveLang(r), Positions: livePositions, Transactions: transactions,
 		Rates: a.exchangeRatesForDisplay(), Currencies: currencyOptions(),
-		PriceAsOf: priceAsOf(transactions),
+		PriceAsOf: asOf,
 		Error:     errMsg, Success: successMsg,
 	})
+}
+
+// livePricedPositions overlays each position's live quote (see refreshWatchlistQuotes) onto
+// CurrentPrice and asOf, so the P&L/risk shown on Portfolio/Dashboard reflect the current market
+// instead of each symbol's last recorded trade (see portfolio.applyTransaction's own doc comment
+// for why CurrentPrice is otherwise frozen at trade time). asOf keeps its transaction-time
+// fallback for a symbol with no live quote yet — never held while on the watchlist, or no poll
+// cycle since being bought. Best-effort: a failed quote lookup leaves every position at its
+// existing price, matching this page's existing degrade-gracefully stance elsewhere.
+func (a *Application) livePricedPositions(positions []portfolio.Position, asOf map[string]string) ([]portfolio.Position, map[string]string) {
+	if a.Storage == nil {
+		return positions, asOf
+	}
+	quotes, err := a.Storage.SymbolInfoByTicker()
+	if err != nil {
+		a.Logger.Warn("failed to load live quotes for portfolio pricing", zap.Error(err))
+		return positions, asOf
+	}
+	return overlayLivePrices(positions, asOf, quotes)
+}
+
+// overlayLivePrices does livePricedPositions' actual overlay — split out so it's testable
+// without a database behind it, same reasoning as countActionable/filterCurrentAlerts above.
+func overlayLivePrices(positions []portfolio.Position, asOf map[string]string, quotes map[string]persistence.SymbolInfo) ([]portfolio.Position, map[string]string) {
+	priced := make([]portfolio.Position, len(positions))
+	live := make(map[string]string, len(asOf))
+	for symbol, ts := range asOf {
+		live[symbol] = ts
+	}
+	for i, position := range positions {
+		priced[i] = position
+		if quote, ok := quotes[position.Symbol]; ok && quote.LastPrice > 0 {
+			priced[i].CurrentPrice = quote.LastPrice
+			live[position.Symbol] = quote.QuoteUpdatedAt.Format(time.RFC3339)
+		}
+	}
+	return priced, live
 }
 
 // priceAsOf maps each symbol to its most recent transaction's timestamp — the same event that

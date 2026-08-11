@@ -315,23 +315,35 @@ func (u *UseCase) ComputeROI() (float64, error) {
 	return totalWeight / totalQuantity, nil
 }
 
-// ComputeRisk returns a lightweight risk snapshot based on exposure, drawdown, and volatility
-// proxies.
+// ComputeRisk returns a lightweight risk snapshot for the live portfolio state (u.Positions —
+// see applyTransaction's CurrentPrice, set from each symbol's last recorded trade, not a live
+// quote). See ComputeRiskSnapshot for what's actually computed; this method just supplies the
+// positions the decision engine and JSON API already expect to read.
+func (u *UseCase) ComputeRisk() (portfolio.RiskSnapshot, error) {
+	return ComputeRiskSnapshot(u.Positions), nil
+}
+
+// ComputeRiskSnapshot computes a lightweight risk snapshot from positions based on exposure,
+// drawdown, and volatility proxies. A pure function of its argument (not a UseCase method) so a
+// caller can feed it a different price basis than u.Positions' own — see
+// internal/app/web_handlers.go's livePricedPositions, which overlays each position's live quote
+// before calling this, so the Dashboard/Portfolio pages show risk against the current market
+// instead of each symbol's last trade price.
 //
 // Drawdown here is a current-state proxy — total unrealized loss across losing positions, as a
 // fraction of total exposure (negative; 0 when nothing is underwater) — not a true historical
 // peak-to-trough max drawdown. A real max drawdown needs a portfolio equity curve over time,
 // which needs portfolio snapshot persistence (not implemented — see PROJECT_CONTEXT.md); this
 // is what's computable from current position state alone.
-func (u *UseCase) ComputeRisk() (portfolio.RiskSnapshot, error) {
-	if len(u.Positions) == 0 {
-		return portfolio.RiskSnapshot{Exposure: 0, Drawdown: 0, Volatility: 0}, nil
+func ComputeRiskSnapshot(positions []portfolio.Position) portfolio.RiskSnapshot {
+	if len(positions) == 0 {
+		return portfolio.RiskSnapshot{Exposure: 0, Drawdown: 0, Volatility: 0}
 	}
 
 	exposure := 0.0
 	unrealizedLoss := 0.0
 	volatility := 0.0
-	for _, position := range u.Positions {
+	for _, position := range positions {
 		exposure += position.CurrentPrice * position.Quantity
 		volatility += math.Abs(position.CurrentPrice - position.AverageCost)
 		if pnl := (position.CurrentPrice - position.AverageCost) * position.Quantity; pnl < 0 {
@@ -347,8 +359,8 @@ func (u *UseCase) ComputeRisk() (portfolio.RiskSnapshot, error) {
 	return portfolio.RiskSnapshot{
 		Exposure:   exposure,
 		Drawdown:   drawdown,
-		Volatility: volatility / float64(len(u.Positions)),
-	}, nil
+		Volatility: volatility / float64(len(positions)),
+	}
 }
 
 func findPosition(positions []portfolio.Position, symbol string) portfolio.Position {

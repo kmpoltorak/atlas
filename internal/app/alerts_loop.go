@@ -166,27 +166,44 @@ func (a *Application) pollAlertsOnce(lastAction map[string]string) {
 }
 
 // refreshWatchlistQuotes fetches and persists market.Quote (current live price + prior close)
-// for every current watchlist symbol — called once per poll cycle (see pollAlertsOnce),
-// independent of alert evaluation, so the Watchlist page's "today" column stays current without
-// waiting for an hourly bar to close (see providers.dropUnclosedBars). Best-effort per symbol:
-// one provider failure just logs and moves on, matching Evaluate's own per-symbol handling.
+// for every current watchlist symbol AND every symbol with an open portfolio position — called
+// once per poll cycle (see pollAlertsOnce), independent of alert evaluation. Two consumers read
+// this, on different pages: the Watchlist/Alerts "Today" column (see alertsPageHandler), and
+// the Portfolio/Dashboard pages' live P&L and risk figures (see livePricedPositions) — a held
+// position needs a live quote even if it was bought without ever being added to the watchlist,
+// or was later removed from it, so this covers the union of the two, not just the watchlist.
+// Best-effort per symbol: one provider failure just logs and moves on, matching Evaluate's own
+// per-symbol handling.
 func (a *Application) refreshWatchlistQuotes() {
 	if a.Collector == nil || a.Collector.Provider == nil || a.Storage == nil {
 		return
 	}
-	items, err := a.Watchlist.List()
-	if err != nil {
+	symbols := make(map[string]struct{})
+	if items, err := a.Watchlist.List(); err != nil {
 		a.Logger.Warn("could not list watchlist for quote refresh", zap.Error(err))
-		return
+	} else {
+		for _, item := range items {
+			symbols[item.Symbol] = struct{}{}
+		}
 	}
-	for _, item := range items {
-		quote, err := a.Collector.Provider.FetchQuote(item.Symbol)
+	if a.Portfolio != nil {
+		if positions, err := a.Portfolio.GetPositions(); err != nil {
+			a.Logger.Warn("could not list positions for quote refresh", zap.Error(err))
+		} else {
+			for _, position := range positions {
+				symbols[position.Symbol] = struct{}{}
+			}
+		}
+	}
+
+	for symbol := range symbols {
+		quote, err := a.Collector.Provider.FetchQuote(symbol)
 		if err != nil {
-			a.Logger.Warn("failed to fetch quote", zap.String("symbol", item.Symbol), zap.Error(err))
+			a.Logger.Warn("failed to fetch quote", zap.String("symbol", symbol), zap.Error(err))
 			continue
 		}
-		if err := a.Storage.UpsertSymbolQuote(item.Symbol, quote); err != nil {
-			a.Logger.Warn("failed to persist quote", zap.String("symbol", item.Symbol), zap.Error(err))
+		if err := a.Storage.UpsertSymbolQuote(symbol, quote); err != nil {
+			a.Logger.Warn("failed to persist quote", zap.String("symbol", symbol), zap.Error(err))
 		}
 	}
 }
