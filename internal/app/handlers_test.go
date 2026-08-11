@@ -1,6 +1,41 @@
 package app
 
-import "testing"
+import (
+	"testing"
+	"time"
+
+	"atlas/internal/domain/decision"
+	"atlas/internal/domain/watchlist"
+	"atlas/internal/infrastructure/persistence"
+)
+
+func TestFilterCurrentAlertsSkipsHoldAndUntrackedSymbols(t *testing.T) {
+	since := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
+	recommendations := map[string]persistence.LatestRecommendation{
+		"AAPL": {Recommendation: decision.Recommendation{Symbol: "AAPL", Action: "BUY"}, CreatedAt: since},
+		"ORCL": {Recommendation: decision.Recommendation{Symbol: "ORCL", Action: "HOLD"}, CreatedAt: since},
+		"GDX":  {Recommendation: decision.Recommendation{Symbol: "GDX", Action: "SELL"}, CreatedAt: since}, // recorded, but no longer on the watchlist
+	}
+	items := []watchlist.Item{{Symbol: "AAPL"}, {Symbol: "ORCL"}, {Symbol: "MSFT"}}
+
+	result := filterCurrentAlerts(recommendations, items)
+	if len(result) != 1 || result[0].Recommendation.Symbol != "AAPL" {
+		t.Fatalf("expected only AAPL (ORCL is HOLD, GDX is off the watchlist, MSFT has no recorded recommendation), got %+v", result)
+	}
+	if result[0].TriggeredAt != since.Format(time.RFC3339) {
+		t.Errorf("TriggeredAt = %q, want %q", result[0].TriggeredAt, since.Format(time.RFC3339))
+	}
+}
+
+func TestFilterCurrentAlertsReturnsEmptyWhenNothingIsActionable(t *testing.T) {
+	recommendations := map[string]persistence.LatestRecommendation{
+		"AAPL": {Recommendation: decision.Recommendation{Symbol: "AAPL", Action: "HOLD"}},
+	}
+	result := filterCurrentAlerts(recommendations, []watchlist.Item{{Symbol: "AAPL"}})
+	if len(result) != 0 {
+		t.Fatalf("expected no alerts, got %+v", result)
+	}
+}
 
 func TestDecodeWatchlistImportAcceptsBothShapes(t *testing.T) {
 	// The export shape, which must round-trip exactly.

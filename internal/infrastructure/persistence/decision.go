@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -111,4 +112,98 @@ func (t *TimescaleDB) CurrentActionStreaks() (map[string]ActionStreak, error) {
 		streaks[row.Symbol] = row
 	}
 	return streaks, nil
+}
+
+// latestRecommendationRow mirrors the recommendations table's columns for LatestRecommendations
+// below. market_condition/ml_model_version are nullable in the schema (see migrations/007 and
+// 012 — added after the table's original columns, and left NULL rather than empty-string when
+// ClassifyMarketCondition/ML scoring didn't run — see decision.Recommendation's own doc
+// comments), so they're scanned as sql.NullString rather than plain string.
+type latestRecommendationRow struct {
+	Symbol          string          `db:"ticker"`
+	Action          string          `db:"action"`
+	Score           float64         `db:"score"`
+	Confidence      float64         `db:"confidence"`
+	TechnicalScore  float64         `db:"technical_score"`
+	MLScore         float64         `db:"ml_score"`
+	PortfolioScore  float64         `db:"portfolio_score"`
+	RiskScore       float64         `db:"risk_score"`
+	MarketCondition sql.NullString  `db:"market_condition"`
+	Explanation     json.RawMessage `db:"explanation"`
+	ModelVersion    string          `db:"model_version"`
+	MLModelVersion  sql.NullString  `db:"ml_model_version"`
+	CreatedAt       time.Time       `db:"created_at"`
+}
+
+// LatestRecommendation pairs a persisted decision.Recommendation with when it was computed —
+// decision.Recommendation itself carries no timestamp (a single recommendation object is used
+// both for a request's immediate response and for the historical log, and only the latter needs
+// one), so LatestRecommendations attaches it alongside rather than growing that domain type for
+// one caller's benefit.
+type LatestRecommendation struct {
+	decision.Recommendation
+	CreatedAt time.Time
+}
+
+// LatestRecommendations returns, per symbol, the most recently persisted recommendation — the
+// same row the background alert-poll loop just wrote (see internal/app/alerts_loop.go's
+// pollAlertsOnce, which persists one every ALERT_POLL_INTERVAL_SECONDS for every watchlist symbol
+// whose action isn't HOLD; a symbol that evaluates to HOLD gets no row that poll, by design —
+// see alerts.UseCase.Evaluate).
+//
+// One consequence worth being explicit about: because HOLD is never itself persisted by the poll
+// loop, a symbol that goes quiet after alerting keeps showing its last real action here until
+// either a new non-HOLD action overwrites it or something else persists a HOLD row for that
+// symbol (e.g. a manual /recommendations?symbol= lookup) — the row can lag the live signal by
+// more than one poll in that specific case. This is the same property CurrentActionStreaks above
+// and the dashboard's alert-count card (web_handlers.go's alertCountsByAction) already accepted;
+// this function does not make it worse, but does not fix it either.
+//
+// This lets the Alerts page/API serve from what the last poll already computed instead of
+// re-running the full technical+ML+portfolio+risk pipeline for every watchlist symbol on every
+// request — the same fix already applied to the dashboard's alert-count card (see
+// internal/app/web_handlers.go's alertCountsByAction) for the same reason: with the bars cache
+// and the poll interval both defaulting to 300s, a request landing in the gap paid for up to 47
+// sequential provider fetches plus ML inference inline, measured at p90 8.4s / p99 >10s on live
+// traffic.
+func (t *TimescaleDB) LatestRecommendations() (map[string]LatestRecommendation, error) {
+	ctx := context.Background()
+
+	var rows []latestRecommendationRow
+	if err := t.db.SelectContext(ctx, &rows, `
+		SELECT DISTINCT ON (s.ticker)
+		       s.ticker, r.action, r.score, r.confidence, r.technical_score, r.ml_score,
+		       r.portfolio_score, r.risk_score, r.market_condition, r.explanation,
+		       r.model_version, r.ml_model_version, r.created_at
+		FROM recommendations r
+		JOIN symbols s ON s.id = r.symbol_id
+		ORDER BY s.ticker, r.created_at DESC`); err != nil {
+		return nil, fmt.Errorf("query latest recommendations: %w", err)
+	}
+
+	result := make(map[string]LatestRecommendation, len(rows))
+	for _, row := range rows {
+		var reason []string
+		if err := json.Unmarshal(row.Explanation, &reason); err != nil {
+			return nil, fmt.Errorf("unmarshal recommendation reason for %s: %w", row.Symbol, err)
+		}
+		result[row.Symbol] = LatestRecommendation{
+			Recommendation: decision.Recommendation{
+				Symbol:          row.Symbol,
+				Action:          row.Action,
+				Score:           row.Score,
+				Confidence:      row.Confidence,
+				TechnicalScore:  row.TechnicalScore,
+				MLScore:         row.MLScore,
+				PortfolioScore:  row.PortfolioScore,
+				RiskScore:       row.RiskScore,
+				MarketCondition: row.MarketCondition.String,
+				Reason:          reason,
+				ModelVersion:    row.ModelVersion,
+				MLModelVersion:  row.MLModelVersion.String,
+			},
+			CreatedAt: row.CreatedAt,
+		}
+	}
+	return result, nil
 }

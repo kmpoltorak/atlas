@@ -12,6 +12,7 @@ import (
 
 	mlUC "atlas/internal/application/ml"
 	watchlistUC "atlas/internal/application/watchlist"
+	"atlas/internal/domain/alerts"
 	backtestingDomain "atlas/internal/domain/backtesting"
 	"atlas/internal/domain/decision"
 	"atlas/internal/domain/market"
@@ -97,10 +98,12 @@ func (a *Application) persistPrediction(pred mlDomain.Prediction) {
 // MACD, ATR, Volume, OBV, ADX, Bollinger Bands) for a symbol at the current moment to the
 // indicators table (migrations/001, migrations/006). Wired into every path that already builds a
 // live recommendation from fresh bars: recommendationsHandler (GET /recommendations) and the
-// alert-poll loop / alertsHandler (GET /alerts) via alerts.Alert.Bars. Deliberately NOT wired into
-// backtesting — those bars are historical/simulated, and this table represents live, as-of-now
-// indicator readings, the same "hypothetical, not real" distinction that already keeps
-// backtesting's individual simulated recommendations out of the recommendations table (see
+// background alert-poll loop (pollAlertsOnce, via alerts.Alert.Bars) — GET /alerts itself no
+// longer builds live recommendations at all (see currentAlerts), so it has nothing fresh to
+// snapshot; the poll loop already covers every watchlist symbol on its own cadence. Deliberately
+// NOT wired into backtesting — those bars are historical/simulated, and this table represents
+// live, as-of-now indicator readings, the same "hypothetical, not real" distinction that already
+// keeps backtesting's individual simulated recommendations out of the recommendations table (see
 // docs/backtesting.md).
 func (a *Application) persistIndicatorSnapshot(symbol string, bars []market.Bar) {
 	if a.Storage == nil || a.Analyzer == nil {
@@ -308,23 +311,67 @@ func (a *Application) watchlistHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// alertsHandler evaluates the watchlist and returns every non-HOLD recommendation. Per-symbol
-// collection failures are surfaced as warnings rather than failing the whole request.
+// alertsHandler returns every non-HOLD recommendation for the current watchlist, read from what
+// the background alert-poll loop already computed (see currentAlerts) rather than re-evaluating
+// live on every request.
 func (a *Application) alertsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
 		return
 	}
-	result, err := a.Alerts.Evaluate()
-	for _, alert := range result {
-		a.persistRecommendation(alert.Recommendation)
-		a.persistIndicatorSnapshot(alert.Recommendation.Symbol, alert.Bars)
-	}
+	result, err := a.currentAlerts()
 	response := map[string]any{"alerts": result}
 	if err != nil {
 		response["warnings"] = err.Error()
 	}
 	writeJSON(w, http.StatusOK, response)
+}
+
+// currentAlerts reads the Alerts page/API's data from persisted state (see
+// persistence.TimescaleDB.LatestRecommendations) instead of re-running the full technical+ML+
+// portfolio+risk pipeline for every watchlist symbol on every request — GET /alerts and GET
+// /dashboard/alerts used to both call alerts.UseCase.Evaluate directly, the same "recompute the
+// whole watchlist to render one page" shape the dashboard's alert-count card had before it was
+// fixed to read persisted state too (see web_handlers.go's alertCountsByAction); with the bars
+// cache and the alert-poll interval both defaulting to 300s, a request landing in the gap paid
+// for up to 47 sequential provider fetches plus ML inference inline. Freshness here is exactly
+// "as of the last alert poll" (see AlertPollStatus, surfaced separately on the Alerts page),
+// same tradeoff already accepted for the dashboard card.
+//
+// Scoped to the current watchlist, same convention as alertCountsByAction/countActionable, so a
+// symbol removed from the watchlist stops appearing even if its last recorded action was never
+// overwritten.
+func (a *Application) currentAlerts() ([]alerts.Alert, error) {
+	if a.Storage == nil {
+		return nil, nil
+	}
+	recommendations, err := a.Storage.LatestRecommendations()
+	if err != nil {
+		return nil, err
+	}
+	items, err := a.Watchlist.List()
+	if err != nil {
+		return nil, err
+	}
+	return filterCurrentAlerts(recommendations, items), nil
+}
+
+// filterCurrentAlerts applies the two rules that can silently put a wrong alert on screen — skip
+// HOLD, and only ever show a symbol still on the watchlist — split out from currentAlerts purely
+// so they're testable without a database behind them, same reasoning as countActionable above.
+func filterCurrentAlerts(recommendations map[string]persistence.LatestRecommendation, items []watchlist.Item) []alerts.Alert {
+	result := make([]alerts.Alert, 0, len(items))
+	for _, item := range items {
+		latest, ok := recommendations[item.Symbol]
+		if !ok || latest.Action == "HOLD" {
+			continue
+		}
+		result = append(result, alerts.Alert{
+			Recommendation: latest.Recommendation,
+			TriggeredAt:    latest.CreatedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	return result
 }
 
 // recommendationsHandler builds an explainable BUY/SELL/HOLD recommendation for a symbol.
