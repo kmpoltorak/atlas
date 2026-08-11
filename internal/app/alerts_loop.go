@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"atlas/internal/domain/alerts"
+	"atlas/internal/domain/currency"
 	"atlas/internal/domain/market"
 	"atlas/internal/infrastructure/notifications"
 
@@ -166,29 +167,79 @@ func (a *Application) pollAlertsOnce(lastAction map[string]string) {
 }
 
 // refreshWatchlistQuotes fetches and persists market.Quote (current live price + prior close)
-// for every current watchlist symbol — called once per poll cycle (see pollAlertsOnce),
-// independent of alert evaluation, so the Watchlist page's "today" column stays current without
-// waiting for an hourly bar to close (see providers.dropUnclosedBars). Best-effort per symbol:
-// one provider failure just logs and moves on, matching Evaluate's own per-symbol handling.
+// for every current watchlist symbol AND every symbol with an open portfolio position — called
+// once per poll cycle (see pollAlertsOnce), independent of alert evaluation. Two consumers read
+// this, on different pages: the Watchlist/Alerts "Today" column (see alertsPageHandler), and
+// the Portfolio/Dashboard pages' live P&L and risk figures (see livePricedPositions) — a held
+// position needs a live quote even if it was bought without ever being added to the watchlist,
+// or was later removed from it, so this covers the union of the two, not just the watchlist.
+// Best-effort per symbol: one provider failure just logs and moves on, matching Evaluate's own
+// per-symbol handling.
 func (a *Application) refreshWatchlistQuotes() {
 	if a.Collector == nil || a.Collector.Provider == nil || a.Storage == nil {
 		return
 	}
-	items, err := a.Watchlist.List()
-	if err != nil {
+	symbols := make(map[string]struct{})
+	if items, err := a.Watchlist.List(); err != nil {
 		a.Logger.Warn("could not list watchlist for quote refresh", zap.Error(err))
-		return
+	} else {
+		for _, item := range items {
+			symbols[item.Symbol] = struct{}{}
+		}
 	}
-	for _, item := range items {
-		quote, err := a.Collector.Provider.FetchQuote(item.Symbol)
+	if a.Portfolio != nil {
+		if positions, err := a.Portfolio.GetPositions(); err != nil {
+			a.Logger.Warn("could not list positions for quote refresh", zap.Error(err))
+		} else {
+			for _, position := range positions {
+				symbols[position.Symbol] = struct{}{}
+			}
+		}
+	}
+
+	for symbol := range symbols {
+		quote, err := a.Collector.Provider.FetchQuote(symbol)
 		if err != nil {
-			a.Logger.Warn("failed to fetch quote", zap.String("symbol", item.Symbol), zap.Error(err))
+			a.Logger.Warn("failed to fetch quote", zap.String("symbol", symbol), zap.Error(err))
 			continue
 		}
-		if err := a.Storage.UpsertSymbolQuote(item.Symbol, quote); err != nil {
-			a.Logger.Warn("failed to persist quote", zap.String("symbol", item.Symbol), zap.Error(err))
+		quote, err = a.quoteToPLN(quote)
+		if err != nil {
+			a.Logger.Warn("failed to convert quote to PLN", zap.String("symbol", symbol), zap.String("currency", quote.Currency), zap.Error(err))
+			continue
+		}
+		if err := a.Storage.UpsertSymbolQuote(symbol, quote); err != nil {
+			a.Logger.Warn("failed to persist quote", zap.String("symbol", symbol), zap.Error(err))
 		}
 	}
+}
+
+// quoteToPLN converts a Quote's Price/PreviousClose from its native trading currency into PLN
+// (currency.Base) — the currency Position.CurrentPrice and everything downstream of it
+// (P&L, risk) is always denominated in (see portfolio.applyTransaction). Without this, a live
+// USD quote overlaid onto a PLN-denominated position produced nonsense figures: a ~$130 stock
+// read as if it were 130 PLN, roughly a 4x understatement.
+//
+// An empty or unrecognized currency is treated as already-PLN rather than converted: Yahoo
+// reports "PLN" for every WSE (.WA) ticker already, and Atlas only converts the three
+// currencies it actually supports (currency.Valid) — anything else (a blank response, or an
+// instrument type Atlas' portfolio recording was never meant to hold) is left as-is rather than
+// guessing at a rate.
+func (a *Application) quoteToPLN(quote market.Quote) (market.Quote, error) {
+	code := currency.Code(quote.Currency)
+	if quote.Currency == "" || !currency.Valid(code) || a.ExchangeRates == nil {
+		return quote, nil
+	}
+	price, err := a.ExchangeRates.ToBase(quote.Price, code)
+	if err != nil {
+		return market.Quote{}, err
+	}
+	previousClose, err := a.ExchangeRates.ToBase(quote.PreviousClose, code)
+	if err != nil {
+		return market.Quote{}, err
+	}
+	quote.Price, quote.PreviousClose = price, previousClose
+	return quote, nil
 }
 
 // isHighPriorityAction reports whether an action should push a Discord notification, per

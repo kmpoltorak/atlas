@@ -55,6 +55,9 @@ type PortfolioPage struct {
 	// Currencies lists the currencies the record-transaction form's dropdown offers, e.g.
 	// ["PLN", "EUR", "USD"] — see currency.All().
 	Currencies []string
+	// Symbols is the watchlist, offered as the record-transaction form's symbol dropdown so the
+	// common case doesn't require typing a ticker by hand — see RecommendationsPage.Symbols.
+	Symbols []string
 	// PriceAsOf — see DashboardPage.PriceAsOf.
 	PriceAsOf map[string]string
 	Error     string

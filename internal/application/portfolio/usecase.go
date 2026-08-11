@@ -48,20 +48,32 @@ func NewUseCase() *UseCase {
 // app's "no silent degraded mode" stance.
 func NewUseCaseWithRepository(repo Repository) (*UseCase, error) {
 	uc := &UseCase{Repository: repo}
-	if repo == nil {
-		return uc, nil
-	}
-	positions, err := repo.GetPositions()
-	if err != nil {
+	if err := uc.Reload(); err != nil {
 		return nil, err
 	}
-	uc.Positions = positions
-	transactions, err := repo.GetTransactions()
-	if err != nil {
-		return nil, err
-	}
-	uc.Transactions = transactions
 	return uc, nil
+}
+
+// Reload re-reads Positions/Transactions from Repository, discarding whatever the in-memory
+// working copy currently holds — used after an out-of-band bulk change to the underlying data
+// (persistence.TimescaleDB's FlushAll/RestoreAll, wired up from the Account page's Backup/
+// Restore/Flush buttons) that per-mutation methods like RecordTransaction can't express. A nil
+// Repository just clears the in-memory copy, matching NewUseCase's zero-value state.
+func (u *UseCase) Reload() error {
+	if u.Repository == nil {
+		u.Positions, u.Transactions = nil, nil
+		return nil
+	}
+	positions, err := u.Repository.GetPositions()
+	if err != nil {
+		return err
+	}
+	transactions, err := u.Repository.GetTransactions()
+	if err != nil {
+		return err
+	}
+	u.Positions, u.Transactions = positions, transactions
+	return nil
 }
 
 // GetPositions returns the current snapshot held by the use case.
@@ -88,6 +100,14 @@ func (u *UseCase) RecordTransaction(tx portfolio.Transaction) error {
 	}
 	if tx.Type != "BUY" && tx.Type != "SELL" {
 		return errors.New("transaction type is unsupported")
+	}
+	// A caller that never sets Timestamp (both the dashboard form and the JSON API leave it out)
+	// would otherwise store "" here. persistence.SaveTransaction already falls back to time.Now
+	// for what it writes to the DB, but that corrected value never makes it back into tx — so
+	// the in-memory Transactions slice (what GetTransactions/the dashboard actually reads until
+	// the next restart) kept the empty string, rendering as the zero time "0001-01-01 00:00".
+	if tx.Timestamp == "" {
+		tx.Timestamp = time.Now().UTC().Format(time.RFC3339)
 	}
 	if tx.Currency == "" {
 		tx.Currency = string(currency.Base)
@@ -124,16 +144,26 @@ func (u *UseCase) RecordTransaction(tx portfolio.Transaction) error {
 	u.Transactions = append(u.Transactions, tx)
 
 	position := applyTransaction(findPosition(u.Positions, tx.Symbol), tx)
-	if index := findPositionIndex(u.Positions, tx.Symbol); index >= 0 {
+	return u.applyPositionUpdate(position)
+}
+
+// applyPositionUpdate folds a freshly computed position into u.Positions and the repository: a
+// position that still holds a nonzero quantity is upserted, one that's back to zero (a symbol
+// fully sold) is dropped entirely — a closed position lives on only in transaction history, not
+// as a lingering zero-quantity row someone has to notice and delete by hand. Shared by
+// RecordTransaction (append path) and recomputePosition (replay-after-delete path) so the two
+// can't drift on this rule.
+func (u *UseCase) applyPositionUpdate(position portfolio.Position) error {
+	if position.Quantity == 0 {
+		return u.RemovePosition(position.Symbol)
+	}
+	if index := findPositionIndex(u.Positions, position.Symbol); index >= 0 {
 		u.Positions[index] = position
 	} else {
 		u.Positions = append(u.Positions, position)
 	}
-
 	if u.Repository != nil {
-		if err := u.Repository.SavePositions(u.Positions); err != nil {
-			return err
-		}
+		return u.Repository.SavePositions(u.Positions)
 	}
 	return nil
 }
@@ -205,12 +235,7 @@ func (u *UseCase) RemoveTransaction(id string) error {
 		}
 	}
 
-	u.recomputePosition(symbol)
-
-	if u.Repository != nil {
-		return u.Repository.SavePositions(u.Positions)
-	}
-	return nil
+	return u.applyPositionUpdate(u.recomputePosition(symbol))
 }
 
 // RemoveTransactions deletes several historical transactions by id (bulk delete from the
@@ -231,11 +256,14 @@ func (u *UseCase) RemoveTransactions(ids []string) error {
 }
 
 // recomputePosition rebuilds a symbol's position from scratch by replaying every remaining
-// transaction for that symbol in chronological order. Transactions with an unparseable
-// timestamp keep their existing relative order (stable sort) rather than being dropped or
-// erroring — the same "don't fail a trade record over a cosmetic field" stance RecordTransaction
-// already takes for persistence.
-func (u *UseCase) recomputePosition(symbol string) {
+// transaction for that symbol in chronological order — pure and side-effect free; callers pass
+// the result to applyPositionUpdate to fold it back into u.Positions/the repository. Transactions
+// with an unparseable timestamp keep their existing relative order (stable sort) rather than
+// being dropped or erroring — the same "don't fail a trade record over a cosmetic field" stance
+// RecordTransaction already takes for persistence. A symbol with no transactions left at all
+// naturally comes back as the zero-quantity Position{Symbol: symbol}, which applyPositionUpdate
+// treats as "remove it" — the same rule a real SELL-to-zero follows.
+func (u *UseCase) recomputePosition(symbol string) portfolio.Position {
 	var symbolTx []portfolio.Transaction
 	for _, t := range u.Transactions {
 		if t.Symbol == symbol {
@@ -255,12 +283,7 @@ func (u *UseCase) recomputePosition(symbol string) {
 	for _, t := range symbolTx {
 		position = applyTransaction(position, t)
 	}
-
-	if index := findPositionIndex(u.Positions, symbol); index >= 0 {
-		u.Positions[index] = position
-	} else if len(symbolTx) > 0 {
-		u.Positions = append(u.Positions, position)
-	}
+	return position
 }
 
 // applyTransaction folds one transaction's effect into a position: weighted-average cost on
@@ -315,23 +338,35 @@ func (u *UseCase) ComputeROI() (float64, error) {
 	return totalWeight / totalQuantity, nil
 }
 
-// ComputeRisk returns a lightweight risk snapshot based on exposure, drawdown, and volatility
-// proxies.
+// ComputeRisk returns a lightweight risk snapshot for the live portfolio state (u.Positions —
+// see applyTransaction's CurrentPrice, set from each symbol's last recorded trade, not a live
+// quote). See ComputeRiskSnapshot for what's actually computed; this method just supplies the
+// positions the decision engine and JSON API already expect to read.
+func (u *UseCase) ComputeRisk() (portfolio.RiskSnapshot, error) {
+	return ComputeRiskSnapshot(u.Positions), nil
+}
+
+// ComputeRiskSnapshot computes a lightweight risk snapshot from positions based on exposure,
+// drawdown, and volatility proxies. A pure function of its argument (not a UseCase method) so a
+// caller can feed it a different price basis than u.Positions' own — see
+// internal/app/web_handlers.go's livePricedPositions, which overlays each position's live quote
+// before calling this, so the Dashboard/Portfolio pages show risk against the current market
+// instead of each symbol's last trade price.
 //
 // Drawdown here is a current-state proxy — total unrealized loss across losing positions, as a
 // fraction of total exposure (negative; 0 when nothing is underwater) — not a true historical
 // peak-to-trough max drawdown. A real max drawdown needs a portfolio equity curve over time,
 // which needs portfolio snapshot persistence (not implemented — see PROJECT_CONTEXT.md); this
 // is what's computable from current position state alone.
-func (u *UseCase) ComputeRisk() (portfolio.RiskSnapshot, error) {
-	if len(u.Positions) == 0 {
-		return portfolio.RiskSnapshot{Exposure: 0, Drawdown: 0, Volatility: 0}, nil
+func ComputeRiskSnapshot(positions []portfolio.Position) portfolio.RiskSnapshot {
+	if len(positions) == 0 {
+		return portfolio.RiskSnapshot{Exposure: 0, Drawdown: 0, Volatility: 0}
 	}
 
 	exposure := 0.0
 	unrealizedLoss := 0.0
 	volatility := 0.0
-	for _, position := range u.Positions {
+	for _, position := range positions {
 		exposure += position.CurrentPrice * position.Quantity
 		volatility += math.Abs(position.CurrentPrice - position.AverageCost)
 		if pnl := (position.CurrentPrice - position.AverageCost) * position.Quantity; pnl < 0 {
@@ -347,8 +382,8 @@ func (u *UseCase) ComputeRisk() (portfolio.RiskSnapshot, error) {
 	return portfolio.RiskSnapshot{
 		Exposure:   exposure,
 		Drawdown:   drawdown,
-		Volatility: volatility / float64(len(u.Positions)),
-	}, nil
+		Volatility: volatility / float64(len(positions)),
+	}
 }
 
 func findPosition(positions []portfolio.Position, symbol string) portfolio.Position {

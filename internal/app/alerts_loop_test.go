@@ -12,11 +12,13 @@ import (
 	analyzerUC "atlas/internal/application/analyzer"
 	collectorUC "atlas/internal/application/collector"
 	decisionUC "atlas/internal/application/decision"
+	exchangerateUC "atlas/internal/application/exchangerate"
 	notificationsUC "atlas/internal/application/notifications"
 	portfolioUC "atlas/internal/application/portfolio"
 	watchlistUC "atlas/internal/application/watchlist"
 	"atlas/internal/config"
 	"atlas/internal/domain/alerts"
+	"atlas/internal/domain/currency"
 	"atlas/internal/domain/decision"
 	"atlas/internal/domain/market"
 	"atlas/internal/domain/portfolio"
@@ -261,5 +263,45 @@ func TestPollAlertsOnceTracksNonNotifyingActionsWithoutSending(t *testing.T) {
 
 	if lastAction["AAPL"] != "BUY" {
 		t.Fatalf("expected the action to be tracked even with no webhook configured, got %q", lastAction["AAPL"])
+	}
+}
+
+type fakeRateProvider struct{ rates map[currency.Code]float64 }
+
+func (p fakeRateProvider) FetchRates() (map[currency.Code]float64, error) { return p.rates, nil }
+
+type noopRateCache struct{}
+
+func (noopRateCache) Get() (map[currency.Code]float64, bool) { return nil, false }
+func (noopRateCache) Set(map[currency.Code]float64)          {}
+
+// This is the exact bug a real portfolio hit live: a USD quote (e.g. SPCX at ~$11) overlaid
+// straight onto a PLN-denominated position without conversion read as if it were 11 PLN, roughly
+// a 4x understatement of P&L/risk.
+func TestQuoteToPLNConvertsNonPLNCurrency(t *testing.T) {
+	app := &Application{ExchangeRates: exchangerateUC.NewUseCase(
+		fakeRateProvider{rates: map[currency.Code]float64{currency.USD: 3.8}}, noopRateCache{})}
+
+	quote, err := app.quoteToPLN(market.Quote{Symbol: "SPCX", Price: 11, PreviousClose: 10, Currency: "USD"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if quote.Price != 41.8 || quote.PreviousClose != 38 {
+		t.Fatalf("expected USD converted to PLN at 3.8, got %+v", quote)
+	}
+}
+
+func TestQuoteToPLNLeavesPLNAndUnknownCurrenciesUnconverted(t *testing.T) {
+	app := &Application{ExchangeRates: exchangerateUC.NewUseCase(
+		fakeRateProvider{rates: map[currency.Code]float64{currency.USD: 3.8}}, noopRateCache{})}
+
+	for _, code := range []string{"PLN", "", "GBP"} {
+		quote, err := app.quoteToPLN(market.Quote{Symbol: "ALE.WA", Price: 46.71, Currency: code})
+		if err != nil {
+			t.Fatalf("currency %q: unexpected error: %v", code, err)
+		}
+		if quote.Price != 46.71 {
+			t.Fatalf("currency %q: expected the price left unconverted, got %v", code, quote.Price)
+		}
 	}
 }

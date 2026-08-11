@@ -72,8 +72,12 @@
         <tbody>
         <tr>
           <td class="tabular-nums">{{money .Risk.Exposure .Rates}}</td>
-          <td class="tabular-nums">{{printf "%.2f%%" (percent .Risk.Drawdown)}}</td>
-          <td class="tabular-nums">{{money .Risk.Volatility .Rates}}</td>
+          <td class="tabular-nums {{pnlClass .Risk.Drawdown}}">{{printf "%.2f%%" (percent .Risk.Drawdown)}}</td>
+          {{/* Volatility itself is an unsigned mean |CurrentPrice-AverageCost| (see
+               portfolio.RiskSnapshot's doc comment) — coloring the number by its own sign isn't
+               possible, so this borrows Drawdown's sign instead: red when the portfolio is
+               currently net underwater, green otherwise, same "are we up or down" signal. */}}
+          <td class="tabular-nums {{pnlClass .Risk.Drawdown}}">{{money .Risk.Volatility .Rates}}</td>
         </tr>
         </tbody>
       </table>

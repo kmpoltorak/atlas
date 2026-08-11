@@ -24,15 +24,25 @@ func NewUseCase() *UseCase {
 // failure here is returned rather than silently starting empty.
 func NewUseCaseWithRepository(repo Repository) (*UseCase, error) {
 	uc := &UseCase{Repository: repo}
-	if repo == nil {
-		return uc, nil
-	}
-	items, err := repo.GetItems()
-	if err != nil {
+	if err := uc.Reload(); err != nil {
 		return nil, err
 	}
-	uc.Items = items
 	return uc, nil
+}
+
+// Reload re-reads Items from Repository, discarding whatever the in-memory working copy
+// currently holds — see portfolio.UseCase.Reload, the same fix for the same class of bug.
+func (u *UseCase) Reload() error {
+	if u.Repository == nil {
+		u.Items = nil
+		return nil
+	}
+	items, err := u.Repository.GetItems()
+	if err != nil {
+		return err
+	}
+	u.Items = items
+	return nil
 }
 
 // NormalizeSymbol puts a ticker into the single canonical form the rest of Atlas expects:

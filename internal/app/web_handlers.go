@@ -13,6 +13,7 @@ import (
 	"atlas/internal/app/web"
 	authUC "atlas/internal/application/auth"
 	mlUC "atlas/internal/application/ml"
+	portfolioUC "atlas/internal/application/portfolio"
 	watchlistUC "atlas/internal/application/watchlist"
 	"atlas/internal/domain/alerts"
 	"atlas/internal/domain/currency"
@@ -145,19 +146,16 @@ func (a *Application) dashboardPageHandler(w http.ResponseWriter, r *http.Reques
 		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	risk, err := a.Portfolio.ComputeRisk()
-	if err != nil {
-		a.renderError(w, r, http.StatusInternalServerError, err.Error())
-		return
-	}
 	transactions, err := a.Portfolio.GetTransactions()
 	if err != nil {
 		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
+	livePositions, asOf := a.livePricedPositions(positions, priceAsOf(transactions))
 	web.Render(w, "dashboard", web.DashboardPage{
-		Lang: a.resolveLang(r), Positions: positions, Risk: risk, Rates: a.exchangeRatesForDisplay(),
-		PriceAsOf:   priceAsOf(transactions),
+		Lang: a.resolveLang(r), Positions: livePositions, Risk: portfolioUC.ComputeRiskSnapshot(livePositions),
+		Rates:       a.exchangeRatesForDisplay(),
+		PriceAsOf:   asOf,
 		AlertCounts: a.alertCountsByAction(),
 	})
 }
@@ -353,12 +351,54 @@ func (a *Application) renderPortfolioPage(w http.ResponseWriter, r *http.Request
 		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	web.Render(w, "portfolio", web.PortfolioPage{
-		Lang: a.resolveLang(r), Positions: positions, Transactions: transactions,
+	livePositions, asOf := a.livePricedPositions(positions, priceAsOf(transactions))
+	data := web.PortfolioPage{
+		Lang: a.resolveLang(r), Positions: livePositions, Transactions: transactions,
 		Rates: a.exchangeRatesForDisplay(), Currencies: currencyOptions(),
-		PriceAsOf: priceAsOf(transactions),
+		PriceAsOf: asOf,
 		Error:     errMsg, Success: successMsg,
-	})
+	}
+	if symbols, err := a.watchlistSymbols(); err == nil {
+		data.Symbols = symbols
+	}
+	web.Render(w, "portfolio", data)
+}
+
+// livePricedPositions overlays each position's live quote (see refreshWatchlistQuotes) onto
+// CurrentPrice and asOf, so the P&L/risk shown on Portfolio/Dashboard reflect the current market
+// instead of each symbol's last recorded trade (see portfolio.applyTransaction's own doc comment
+// for why CurrentPrice is otherwise frozen at trade time). asOf keeps its transaction-time
+// fallback for a symbol with no live quote yet — never held while on the watchlist, or no poll
+// cycle since being bought. Best-effort: a failed quote lookup leaves every position at its
+// existing price, matching this page's existing degrade-gracefully stance elsewhere.
+func (a *Application) livePricedPositions(positions []portfolio.Position, asOf map[string]string) ([]portfolio.Position, map[string]string) {
+	if a.Storage == nil {
+		return positions, asOf
+	}
+	quotes, err := a.Storage.SymbolInfoByTicker()
+	if err != nil {
+		a.Logger.Warn("failed to load live quotes for portfolio pricing", zap.Error(err))
+		return positions, asOf
+	}
+	return overlayLivePrices(positions, asOf, quotes)
+}
+
+// overlayLivePrices does livePricedPositions' actual overlay — split out so it's testable
+// without a database behind it, same reasoning as countActionable/filterCurrentAlerts above.
+func overlayLivePrices(positions []portfolio.Position, asOf map[string]string, quotes map[string]persistence.SymbolInfo) ([]portfolio.Position, map[string]string) {
+	priced := make([]portfolio.Position, len(positions))
+	live := make(map[string]string, len(asOf))
+	for symbol, ts := range asOf {
+		live[symbol] = ts
+	}
+	for i, position := range positions {
+		priced[i] = position
+		if quote, ok := quotes[position.Symbol]; ok && quote.LastPrice > 0 {
+			priced[i].CurrentPrice = quote.LastPrice
+			live[position.Symbol] = quote.QuoteUpdatedAt.Format(time.RFC3339)
+		}
+	}
+	return priced, live
 }
 
 // priceAsOf maps each symbol to its most recent transaction's timestamp — the same event that
@@ -953,6 +993,126 @@ func (a *Application) mlTrainHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.renderAccountPage(w, r, "", "Training started — this can take a few minutes (longer on the very first run). Refresh this page to check progress.")
+}
+
+// backupOperationTimeout is how long accountBackupHandler/accountRestoreHandler/
+// accountFlushHandler get past http.Server's default WriteTimeout (10s, cmd/api/main.go — sized
+// for ordinary fast JSON/HTML responses). A full-database dump/restore/wipe can legitimately run
+// longer than that once prices/indicators/recommendations have accumulated — confirmed live: a
+// ~25MB restore was silently killed mid-request, the client just seeing an empty response.
+const backupOperationTimeout = 2 * time.Minute
+
+// extendWriteDeadline lifts the connection's write deadline for the handlers above — best-effort:
+// logs and continues if the underlying ResponseWriter doesn't support deadlines, the same
+// "optional enhancement, never a hard failure" stance the rest of this file takes for
+// non-critical paths.
+func (a *Application) extendWriteDeadline(w http.ResponseWriter, d time.Duration) {
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(d)); err != nil {
+		a.Logger.Warn("failed to extend write deadline", zap.Error(err))
+	}
+}
+
+// accountBackupHandler streams every table persistence.TimescaleDB.BackupAll covers as one
+// downloadable JSON file — a portable snapshot for disaster recovery or seeding a fresh
+// environment. Read-only, so unlike Restore/Flush below it needs no confirmation dialog.
+func (a *Application) accountBackupHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	if a.Storage == nil {
+		http.Error(w, "no database configured", http.StatusServiceUnavailable)
+		return
+	}
+	a.extendWriteDeadline(w, backupOperationTimeout)
+	payload, err := a.Storage.BackupAll()
+	if err != nil {
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+	filename := fmt.Sprintf("atlas-backup-%s.json", time.Now().UTC().Format("20060102-150405"))
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	_, _ = w.Write(payload)
+}
+
+// accountRestoreHandler replaces every row Atlas has with the contents of an uploaded
+// accountBackupHandler file — the recovery path after accountFlushHandler, or how to seed a
+// fresh environment from an existing one's backup.
+func (a *Application) accountRestoreHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if a.Storage == nil {
+		a.renderAccountPage(w, r, "No database configured.", "")
+		return
+	}
+	a.extendWriteDeadline(w, backupOperationTimeout)
+	if err := r.ParseMultipartForm(maxBackupRestoreBytes); err != nil {
+		a.renderAccountPage(w, r, "Invalid form submission.", "")
+		return
+	}
+	file, _, err := r.FormFile("backup")
+	if err != nil {
+		a.renderAccountPage(w, r, "Choose a backup file to restore.", "")
+		return
+	}
+	defer file.Close()
+	payload, err := io.ReadAll(io.LimitReader(file, maxBackupRestoreBytes))
+	if err != nil {
+		a.renderAccountPage(w, r, "Failed to read the uploaded file: "+err.Error(), "")
+		return
+	}
+	if err := a.Storage.RestoreAll(payload); err != nil {
+		a.renderAccountPage(w, r, "Restore failed: "+err.Error(), "")
+		return
+	}
+	a.reloadCachedState()
+	a.renderAccountPage(w, r, "", "Data restored from backup.")
+}
+
+// accountFlushHandler wipes every table Atlas stores data in — positions, transactions,
+// watchlist, price/indicator history, recommendations, ML/2FA settings — back to the state a
+// freshly migrated database would be in (see persistence.TimescaleDB.FlushAll's doc comment for
+// exactly what survives, notably login itself). Confirmed client-side (account.html) since there
+// is no undo short of a prior backup.
+func (a *Application) accountFlushHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if a.Storage == nil {
+		a.renderAccountPage(w, r, "No database configured.", "")
+		return
+	}
+	a.extendWriteDeadline(w, backupOperationTimeout)
+	if err := a.Storage.FlushAll(); err != nil {
+		a.renderAccountPage(w, r, "Flush failed: "+err.Error(), "")
+		return
+	}
+	a.reloadCachedState()
+	a.renderAccountPage(w, r, "", "All data has been wiped. Atlas is back to a freshly installed state.")
+}
+
+// reloadCachedState resyncs every in-memory cache that mirrors a database table (see
+// portfolio.UseCase.Reload/watchlist.UseCase.Reload) after a bulk out-of-band change
+// (accountFlushHandler/accountRestoreHandler) that per-mutation methods like RecordTransaction
+// can't express — the same class of staleness TestRecordTransactionDefaultsTimestampWhenEmpty's
+// bug came from, just at bulk scale instead of per-transaction. Logs rather than fails outright:
+// the underlying data is already committed either way, so a stale cache is a display bug that
+// would sort itself out on the next restart, not silent data loss. ML model *selection* (which
+// trained file is active) is intentionally left alone here — resolveMLEnabled/model files
+// themselves aren't touched by Flush/Restore, matching the existing "disable without deleting"
+// design (see account.ml_engine_heading) — only the enabled/disabled toggle is resynced.
+func (a *Application) reloadCachedState() {
+	if err := a.Portfolio.Reload(); err != nil {
+		a.Logger.Warn("failed to reload portfolio state after bulk data change", zap.Error(err))
+	}
+	if err := a.Watchlist.Reload(); err != nil {
+		a.Logger.Warn("failed to reload watchlist state after bulk data change", zap.Error(err))
+	}
+	a.Orchestrator.SetMLEnabled(resolveMLEnabled(a.Storage, a.Logger, a.Config.MLEnabled))
 }
 
 // totpSetupHandler starts a new enrollment (authUC.UseCase.BeginTOTPEnrollment) and renders the

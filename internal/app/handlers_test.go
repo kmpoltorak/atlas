@@ -5,9 +5,44 @@ import (
 	"time"
 
 	"atlas/internal/domain/decision"
+	"atlas/internal/domain/portfolio"
 	"atlas/internal/domain/watchlist"
 	"atlas/internal/infrastructure/persistence"
 )
+
+func TestOverlayLivePricesUsesQuoteWhenAvailable(t *testing.T) {
+	positions := []portfolio.Position{{Symbol: "ETFBDIVPL.WA", Quantity: 10, AverageCost: 302.55, CurrentPrice: 302.55}}
+	asOf := map[string]string{"ETFBDIVPL.WA": "2026-08-11T12:18:33Z"}
+	updatedAt := time.Date(2026, 8, 11, 14, 46, 59, 0, time.UTC)
+	quotes := map[string]persistence.SymbolInfo{
+		"ETFBDIVPL.WA": {LastPrice: 301.6, QuoteUpdatedAt: updatedAt},
+	}
+
+	priced, live := overlayLivePrices(positions, asOf, quotes)
+	if priced[0].CurrentPrice != 301.6 {
+		t.Fatalf("expected the live price to overlay CurrentPrice, got %v", priced[0].CurrentPrice)
+	}
+	if live["ETFBDIVPL.WA"] != updatedAt.Format(time.RFC3339) {
+		t.Fatalf("expected asOf to switch to the quote timestamp, got %q", live["ETFBDIVPL.WA"])
+	}
+	// The original AverageCost/Quantity must survive untouched.
+	if priced[0].AverageCost != 302.55 || priced[0].Quantity != 10 {
+		t.Fatalf("expected AverageCost/Quantity unchanged, got %+v", priced[0])
+	}
+}
+
+func TestOverlayLivePricesFallsBackWithoutAQuote(t *testing.T) {
+	positions := []portfolio.Position{{Symbol: "AAPL", CurrentPrice: 200}}
+	asOf := map[string]string{"AAPL": "2026-08-01T00:00:00Z"}
+
+	priced, live := overlayLivePrices(positions, asOf, map[string]persistence.SymbolInfo{})
+	if priced[0].CurrentPrice != 200 {
+		t.Fatalf("expected the original CurrentPrice to survive with no quote, got %v", priced[0].CurrentPrice)
+	}
+	if live["AAPL"] != "2026-08-01T00:00:00Z" {
+		t.Fatalf("expected asOf to keep the transaction timestamp, got %q", live["AAPL"])
+	}
+}
 
 func TestFilterCurrentAlertsSkipsHoldAndUntrackedSymbols(t *testing.T) {
 	since := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)

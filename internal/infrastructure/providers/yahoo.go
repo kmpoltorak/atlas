@@ -129,6 +129,7 @@ type chartMeta struct {
 	ShortName          string  `json:"shortName"`
 	LongName           string  `json:"longName"`
 	FullExchangeName   string  `json:"fullExchangeName"`
+	Currency           string  `json:"currency"`
 	RegularMarketPrice float64 `json:"regularMarketPrice"`
 	// ChartPreviousClose is relative to the *requested chart window*, not necessarily "yesterday's
 	// close" — e.g. a 5-day request returns the close from before that whole window. It only means
@@ -218,6 +219,7 @@ func (p *YahooFinanceProvider) FetchQuote(symbol string) (market.Quote, error) {
 		Symbol:        symbol,
 		Price:         meta.RegularMarketPrice,
 		PreviousClose: meta.ChartPreviousClose,
+		Currency:      meta.Currency,
 	}, nil
 }
 

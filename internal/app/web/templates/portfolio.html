@@ -115,7 +115,17 @@
         <form method="post" action="/dashboard/portfolio">
           <div class="mb-3">
             <label class="form-label">{{T .Lang "table.symbol"}}</label>
+            {{if .Symbols}}
+            <select class="form-select text-uppercase" name="symbol" required>
+              <option value="">{{T .Lang "common.choose"}}</option>
+              {{range .Symbols}}
+              <option value="{{.}}">{{.}}</option>
+              {{end}}
+            </select>
+            {{else}}
             <input type="text" class="form-control text-uppercase" name="symbol" required>
+            <div class="form-text">{{T .Lang "watchlist.dropdown_hint" | safeHTML}}</div>
+            {{end}}
           </div>
           <div class="mb-3">
             <label class="form-label">{{T .Lang "table.type"}}</label>

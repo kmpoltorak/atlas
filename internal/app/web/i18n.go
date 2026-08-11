@@ -55,11 +55,12 @@ var translations = map[string]map[Lang]string{
 	"table.open_in_yahoo": {LangEN: "Open on Yahoo Finance in a new tab", LangPL: "Otwórz w Yahoo Finance w nowej karcie"},
 	"table.quantity":      {LangEN: "Quantity", LangPL: "Ilość"},
 	"table.avg_cost":      {LangEN: "Avg. Cost", LangPL: "Śr. koszt"},
-	// Named for what it actually is, not a live market quote: Position.CurrentPrice is set once,
-	// from the most recent transaction recorded for that symbol (see portfolio.applyTransaction)
-	// — Atlas has no live price-refresh path. table.as_of is the small "as of <date>" line shown
-	// under it, same honesty-relabeling precedent as table.drawdown/table.avg_deviation above.
-	"table.current_price": {LangEN: "Last Transaction Price", LangPL: "Cena z ostatniej transakcji"},
+	// Position.CurrentPrice (see portfolio.applyTransaction) is normally overlaid with a live
+	// quote before this renders (see web_handlers.go's livePricedPositions) — "Current Price",
+	// not "Last Transaction Price", is what's actually true most of the time now. table.as_of
+	// is the small "as of <date>" line shown under it: the live quote's own timestamp when one
+	// was found, falling back to the last transaction's timestamp (the honest label) when not.
+	"table.current_price": {LangEN: "Current Price", LangPL: "Aktualna cena"},
 	"table.as_of":         {LangEN: "as of", LangPL: "stan na"},
 	"table.pnl":           {LangEN: "P&L", LangPL: "Zysk/strata"},
 	"table.total":         {LangEN: "Total", LangPL: "Suma"},
@@ -69,11 +70,14 @@ var translations = map[string]map[Lang]string{
 	// what they actually compute rather than reusing "Drawdown"/"Volatility", which
 	// table.max_drawdown/table.volatility below already mean something different and real
 	// (backtesting.Result — peak-to-trough drawdown, annualized return stddev).
-	"table.drawdown":       {LangEN: "Unrealized Loss / Exposure", LangPL: "Strata niezrealizowana / ekspozycja"},
-	"table.avg_deviation":  {LangEN: "Avg. Deviation from Cost", LangPL: "Śr. odchylenie od kosztu"},
-	"table.volatility":     {LangEN: "Volatility", LangPL: "Zmienność"},
-	"table.type":           {LangEN: "Type", LangPL: "Typ"},
-	"table.price":          {LangEN: "Price", LangPL: "Cena"},
+	"table.drawdown":      {LangEN: "Unrealized Loss / Exposure", LangPL: "Strata niezrealizowana / ekspozycja"},
+	"table.avg_deviation": {LangEN: "Avg. Deviation from Cost", LangPL: "Śr. odchylenie od kosztu"},
+	"table.volatility":    {LangEN: "Volatility", LangPL: "Zmienność"},
+	"table.type":          {LangEN: "Type", LangPL: "Typ"},
+	// Named "Unit price", not "Price": Transaction.Price is per-unit (see its doc comment) and
+	// gets multiplied by Quantity everywhere it's used, so a bare "Price" reads ambiguously as
+	// the total cost of the trade.
+	"table.price":          {LangEN: "Unit Price", LangPL: "Cena jednostkowa"},
 	"table.timestamp":      {LangEN: "Timestamp", LangPL: "Znacznik czasu"},
 	"table.currency":       {LangEN: "Currency", LangPL: "Waluta"},
 	"table.pln_equivalent": {LangEN: "PLN Equivalent", LangPL: "Równowartość w PLN"},
@@ -280,8 +284,8 @@ var translations = map[string]map[Lang]string{
 		LangEN: "Master switch for whether BUY/SELL/HOLD scoring factors in ML/portfolio/risk at all, on top of the technical score. Takes effect immediately, no restart needed. Model files below stay loaded and usable via /predict either way.",
 		LangPL: "Główny przełącznik decydujący, czy ocena BUY/SELL/HOLD w ogóle uwzględnia ML/portfel/ryzyko, poza wynikiem technicznym. Działa natychmiast, bez restartu. Pliki modeli poniżej zostają załadowane i dostępne przez /predict niezależnie od tego ustawienia.",
 	},
-	"account.ml_engine_enable_submit":  {LangEN: "Enable ML blend", LangPL: "Włącz blend ML"},
-	"account.ml_engine_disable_submit": {LangEN: "Disable ML blend", LangPL: "Wyłącz blend ML"},
+	"account.ml_engine_enable_submit":  {LangEN: "Enable ML additive", LangPL: "Włącz dodatek ML"},
+	"account.ml_engine_disable_submit": {LangEN: "Disable ML additive", LangPL: "Wyłącz dodatek ML"},
 
 	"account.ml_models_heading": {LangEN: "ML models", LangPL: "Modele ML"},
 	"account.ml_models_hint": {
@@ -316,6 +320,30 @@ var translations = map[string]map[Lang]string{
 	"account.train_succeeded":   {LangEN: "succeeded", LangPL: "zakończone sukcesem"},
 	"account.train_failed":      {LangEN: "failed", LangPL: "nieudane"},
 	"account.train_output":      {LangEN: "Output", LangPL: "Wynik"},
+
+	"account.data_heading": {LangEN: "Database backup", LangPL: "Kopia zapasowa bazy danych"},
+	"account.data_hint": {
+		LangEN: "Downloads everything Atlas stores — positions, transactions, watchlist, price/indicator history, recommendations, settings — as one JSON file, restorable here or on a fresh environment.",
+		LangPL: "Pobiera wszystko, co przechowuje Atlas — pozycje, transakcje, listę obserwowanych, historię cen/wskaźników, rekomendacje, ustawienia — jako jeden plik JSON, możliwy do przywrócenia tutaj lub na nowym środowisku.",
+	},
+	"account.backup_submit":  {LangEN: "Download backup", LangPL: "Pobierz kopię zapasową"},
+	"account.restore_file":   {LangEN: "Backup JSON file", LangPL: "Plik JSON kopii zapasowej"},
+	"account.restore_submit": {LangEN: "Restore from backup", LangPL: "Przywróć z kopii zapasowej"},
+	"confirm.restore_backup": {
+		LangEN: "Restoring will replace ALL current data with the contents of this file. Continue?",
+		LangPL: "Przywrócenie zastąpi WSZYSTKIE obecne dane zawartością tego pliku. Kontynuować?",
+	},
+
+	"account.danger_heading": {LangEN: "Danger zone", LangPL: "Strefa zagrożenia"},
+	"account.flush_hint": {
+		LangEN: "Permanently wipes positions, transactions, watchlist, price/indicator history, recommendations, and ML/2FA settings — back to a freshly installed Atlas. Your login isn't affected. There is no undo short of restoring a backup taken beforehand.",
+		LangPL: "Trwale usuwa pozycje, transakcje, listę obserwowanych, historię cen/wskaźników, rekomendacje oraz ustawienia ML/2FA — Atlas wraca do stanu świeżej instalacji. Logowanie pozostaje bez zmian. Nie ma cofnięcia poza przywróceniem wcześniej zrobionej kopii zapasowej.",
+	},
+	"account.flush_submit": {LangEN: "Flush all data", LangPL: "Wyczyść wszystkie dane"},
+	"confirm.flush_all": {
+		LangEN: "This permanently deletes ALL Atlas data (positions, transactions, watchlist, price history, recommendations, ML/2FA settings) and cannot be undone. Have you downloaded a backup? Continue?",
+		LangPL: "To trwale usuwa WSZYSTKIE dane Atlasa (pozycje, transakcje, listę obserwowanych, historię cen, rekomendacje, ustawienia ML/2FA) i nie da się tego cofnąć. Czy pobrałeś(-aś) kopię zapasową? Kontynuować?",
+	},
 
 	// TOTP enrollment (totp_enroll.html)
 	"totp.title":   {LangEN: "Atlas — Set up 2FA", LangPL: "Atlas — Konfiguracja 2FA"},
