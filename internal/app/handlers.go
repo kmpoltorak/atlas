@@ -70,6 +70,52 @@ func (a *Application) collectBars(symbol string, window int) ([]market.Bar, erro
 	return bars, err
 }
 
+// refreshRecommendation recomputes and persists symbol's recommendation right after a
+// transaction changes whether the portfolio holds it — opening a first position or selling one
+// down to zero flips BuildRecommendation's HasPosition gate (BUY vs ACCUMULATE, SELL vs REDUCE).
+// Without this, the previously-computed recommendation stays cached and visibly wrong (e.g.
+// "REDUCE" showing for a symbol with no position — a real bug report) until the next alert-poll
+// cycle recomputes it, up to ALERT_POLL_INTERVAL_SECONDS later. Runs in its own goroutine (called
+// as "go a.refreshRecommendation(symbol)") since collectBars can be a real network call to the
+// market provider — recording a transaction shouldn't wait on that. Best-effort: a failure here
+// just logs, matching persistRecommendation's own stance — the transaction itself already
+// succeeded and must not be affected by a stale-cache repair failing.
+func (a *Application) refreshRecommendation(symbol string) {
+	if a.Orchestrator == nil || a.Collector == nil {
+		return
+	}
+	bars, err := a.collectBars(symbol, a.Config.CollectorWindow)
+	if err != nil {
+		a.Logger.Warn("failed to refresh recommendation after transaction", zap.String("symbol", symbol), zap.Error(err))
+		return
+	}
+	rec, err := a.Orchestrator.BuildRecommendationFromBars(symbol, bars)
+	if err != nil {
+		a.Logger.Warn("failed to build recommendation after transaction", zap.String("symbol", symbol), zap.Error(err))
+		return
+	}
+	a.Metrics.RecommendationsTotal.WithLabelValues(rec.Action).Inc()
+	a.persistRecommendation(rec)
+	a.persistIndicatorSnapshot(symbol, bars)
+}
+
+// transactionSymbol looks up id's symbol before RemoveTransaction deletes it — needed so the
+// caller can still call refreshRecommendation with the right symbol after removal. Returns "" if
+// not found (already gone, or the id never existed), the same no-op stance RemoveTransaction
+// itself takes for an unknown id.
+func (a *Application) transactionSymbol(id string) string {
+	transactions, err := a.Portfolio.GetTransactions()
+	if err != nil {
+		return ""
+	}
+	for _, tx := range transactions {
+		if tx.ID == id {
+			return tx.Symbol
+		}
+	}
+	return ""
+}
+
 // persistRecommendation best-effort writes a recommendation to the history log (see
 // migrations/001's recommendations table). Unlike portfolio writes, a failure here doesn't
 // fail the request: Atlas can still give a truthful live analysis even if the audit log isn't
@@ -226,6 +272,7 @@ func (a *Application) portfolioHandler(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
+		go a.refreshRecommendation(tx.Symbol)
 		writeJSON(w, http.StatusCreated, map[string]string{"status": "recorded"})
 	case http.MethodDelete:
 		symbol := r.URL.Query().Get("symbol")
@@ -237,6 +284,7 @@ func (a *Application) portfolioHandler(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
+		go a.refreshRecommendation(symbol)
 		writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 	default:
 		methodNotAllowed(w)
@@ -262,9 +310,13 @@ func (a *Application) transactionsHandler(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusBadRequest, errors.New("id query parameter is required"))
 			return
 		}
+		symbol := a.transactionSymbol(id)
 		if err := a.Portfolio.RemoveTransaction(id); err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
+		}
+		if symbol != "" {
+			go a.refreshRecommendation(symbol)
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 	default:

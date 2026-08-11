@@ -235,6 +235,13 @@ type AccountPage struct {
 	// page was rendered (e.g. the atlas-trainer service isn't running) — shown instead of a
 	// stale/zero TrainerStatus.
 	TrainerError string
+
+	// HasBackup is true once a backup has ever been taken (persistence.TimescaleDB.
+	// LastBackupAt, migrations/017) — the "Flush all data" button stays disabled until it is,
+	// so there's always a safety net before that button can do anything. LastBackupAt is the
+	// zero time when HasBackup is false.
+	HasBackup    bool
+	LastBackupAt time.Time
 }
 
 // TrainerStatus mirrors trainer.Status (internal/infrastructure/trainer) for the Account page —

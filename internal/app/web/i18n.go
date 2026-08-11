@@ -340,6 +340,11 @@ var translations = map[string]map[Lang]string{
 		LangPL: "Trwale usuwa pozycje, transakcje, listę obserwowanych, historię cen/wskaźników, rekomendacje oraz ustawienia ML/2FA — Atlas wraca do stanu świeżej instalacji. Logowanie pozostaje bez zmian. Nie ma cofnięcia poza przywróceniem wcześniej zrobionej kopii zapasowej.",
 	},
 	"account.flush_submit": {LangEN: "Flush all data", LangPL: "Wyczyść wszystkie dane"},
+	"account.last_backup":  {LangEN: "Last backup:", LangPL: "Ostatnia kopia zapasowa:"},
+	"account.flush_locked_hint": {
+		LangEN: "Locked — no backup has been taken yet. Download one above first; the button unlocks as soon as one exists.",
+		LangPL: "Zablokowane — nie wykonano jeszcze żadnej kopii zapasowej. Najpierw pobierz ją powyżej; przycisk odblokuje się, gdy tylko kopia będzie istnieć.",
+	},
 	"confirm.flush_all": {
 		LangEN: "This permanently deletes ALL Atlas data (positions, transactions, watchlist, price history, recommendations, ML/2FA settings) and cannot be undone. Have you downloaded a backup? Continue?",
 		LangPL: "To trwale usuwa WSZYSTKIE dane Atlasa (pozycje, transakcje, listę obserwowanych, historię cen, rekomendacje, ustawienia ML/2FA) i nie da się tego cofnąć. Czy pobrałeś(-aś) kopię zapasową? Kontynuować?",

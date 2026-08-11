@@ -238,6 +238,7 @@ func (a *Application) portfolioPageHandler(w http.ResponseWriter, r *http.Reques
 			a.renderPortfolioPage(w, r, err.Error(), "")
 			return
 		}
+		go a.refreshRecommendation(tx.Symbol)
 		a.renderPortfolioPage(w, r, "", "Transaction recorded.")
 	default:
 		methodNotAllowed(w)
@@ -262,6 +263,7 @@ func (a *Application) portfolioDeleteHandler(w http.ResponseWriter, r *http.Requ
 		a.renderPortfolioPage(w, r, err.Error(), "")
 		return
 	}
+	go a.refreshRecommendation(symbol)
 	a.renderPortfolioPage(w, r, "", "Removed "+symbol+" from your positions.")
 }
 
@@ -306,9 +308,13 @@ func (a *Application) portfolioTransactionDeleteHandler(w http.ResponseWriter, r
 		return
 	}
 	id := r.FormValue("id")
+	symbol := a.transactionSymbol(id)
 	if err := a.Portfolio.RemoveTransaction(id); err != nil {
 		a.renderPortfolioPage(w, r, err.Error(), "")
 		return
+	}
+	if symbol != "" {
+		go a.refreshRecommendation(symbol)
 	}
 	a.renderPortfolioPage(w, r, "", "Transaction removed and position recomputed.")
 }
@@ -765,6 +771,16 @@ func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 
+	var hasBackup bool
+	var lastBackupAt time.Time
+	if a.Storage != nil {
+		if at, ok, err := a.Storage.LastBackupAt(); err != nil {
+			a.Logger.Warn("failed to read last backup time", zap.Error(err))
+		} else {
+			hasBackup, lastBackupAt = ok, at
+		}
+	}
+
 	web.Render(w, "account", web.AccountPage{
 		Lang:                  a.resolveLang(r),
 		Username:              a.Auth.Username,
@@ -779,6 +795,8 @@ func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, 
 		TrainerConfigured:     trainerConfigured,
 		TrainerStatus:         trainerStatus,
 		TrainerError:          trainerErr,
+		HasBackup:             hasBackup,
+		LastBackupAt:          lastBackupAt,
 	})
 }
 

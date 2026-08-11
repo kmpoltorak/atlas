@@ -167,10 +167,16 @@
     <p class="text-body-secondary small">{{T .Lang "account.flush_hint"}}</p>
     <div class="card card-md border-danger">
       <div class="card-body">
+        {{if .HasBackup}}
+        <p class="text-body-secondary small">{{T .Lang "account.last_backup"}} {{(localTime .LastBackupAt).Format "2006-01-02 15:04"}}</p>
         <form method="post" action="/dashboard/account/flush" class="mb-0">
           <button type="submit" class="btn btn-danger"
                   onclick="return confirm('{{T .Lang "confirm.flush_all"}}');">{{T .Lang "account.flush_submit"}}</button>
         </form>
+        {{else}}
+        <p class="text-danger small">{{T .Lang "account.flush_locked_hint"}}</p>
+        <button type="button" class="btn btn-danger" disabled>{{T .Lang "account.flush_submit"}}</button>
+        {{end}}
       </div>
     </div>
   </main>

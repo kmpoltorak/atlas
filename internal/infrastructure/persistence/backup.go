@@ -2,9 +2,12 @@ package persistence
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -43,7 +46,40 @@ func (t *TimescaleDB) BackupAll() ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encode backup: %w", err)
 	}
+	if err := t.RecordBackup(); err != nil {
+		return nil, fmt.Errorf("record backup: %w", err)
+	}
 	return payload, nil
+}
+
+// RecordBackup durably marks that a full backup was just taken — the safety record FlushAll
+// checks before allowing a wipe (see migrations/017). Called automatically at the end of a
+// successful BackupAll; a separate method only so FlushAll's check (LastBackupAt) has a single,
+// explicit thing to read rather than inferring "was a backup taken" some other way.
+func (t *TimescaleDB) RecordBackup() error {
+	ctx := context.Background()
+	if _, err := t.db.ExecContext(ctx, `
+		INSERT INTO backup_log (id, last_backup_at) VALUES (TRUE, NOW())
+		ON CONFLICT (id) DO UPDATE SET last_backup_at = EXCLUDED.last_backup_at`); err != nil {
+		return fmt.Errorf("record backup: %w", err)
+	}
+	return nil
+}
+
+// LastBackupAt returns when BackupAll was last confirmed taken (see RecordBackup). ok is false
+// when no backup has ever been recorded — the normal state for an instance that has never used
+// the Backup button, not an error; FlushAll uses this to refuse a wipe with no safety net to
+// fall back on.
+func (t *TimescaleDB) LastBackupAt() (at time.Time, ok bool, err error) {
+	ctx := context.Background()
+	err = t.db.QueryRowxContext(ctx, `SELECT last_backup_at FROM backup_log WHERE id = TRUE`).Scan(&at)
+	if err == sql.ErrNoRows {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("get last backup time: %w", err)
+	}
+	return at, true, nil
 }
 
 // RestoreAll replaces every row of every table in backupTables with the contents of a BackupAll
@@ -83,6 +119,11 @@ func (t *TimescaleDB) RestoreAll(payload []byte) error {
 	return nil
 }
 
+// ErrNoBackupTaken is FlushAll's refusal when no backup has ever been recorded (see
+// LastBackupAt) — checked by name so accountFlushHandler can show a specific, actionable message
+// instead of a generic failure.
+var ErrNoBackupTaken = errors.New("no backup has been taken yet — download one from the Account page first")
+
 // FlushAll deletes every row of every table in backupTables — a full factory reset, back to the
 // state a freshly migrated, never-used database would be in. Login itself is unaffected: the
 // admin username/password come from ADMIN_USERNAME/ADMIN_PASSWORD_HASH (see config.Load), not
@@ -90,7 +131,19 @@ func (t *TimescaleDB) RestoreAll(payload []byte) error {
 // install where 2FA has never been set up. Callers must also reset whatever in-memory state
 // mirrors these tables (see portfolio.UseCase.Reload/watchlist.UseCase.Reload) — this only
 // touches the database.
+//
+// Refuses outright (ErrNoBackupTaken) if no backup has ever been recorded — a server-side gate,
+// not just a disabled button (see migrations/017's backup_log): a "Flush all data" click can't
+// destroy the only copy of the data with nothing to restore from. This checks existence only, not
+// recency — the Backup button's own instructions ask for a fresh one right before a risky flush,
+// but this can't tell how stale an existing one is.
 func (t *TimescaleDB) FlushAll() error {
+	if _, ok, err := t.LastBackupAt(); err != nil {
+		return fmt.Errorf("check last backup: %w", err)
+	} else if !ok {
+		return ErrNoBackupTaken
+	}
+
 	ctx := context.Background()
 	tx, err := t.db.BeginTxx(ctx, nil)
 	if err != nil {
