@@ -51,6 +51,10 @@ func (s *stubStorage) GetBars(symbol string) ([]market.Bar, error) {
 	return s.storedBars, s.err
 }
 
+func (s stubProvider) FetchInstrumentInfo(symbol string) (market.InstrumentInfo, error) {
+	return market.InstrumentInfo{Symbol: symbol}, nil
+}
+
 func (s stubProvider) FetchBars(symbol string, window int) ([]market.Bar, error) {
 	if s.callCount != nil {
 		*s.callCount++

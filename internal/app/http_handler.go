@@ -45,6 +45,7 @@ func (a *Application) NewHandler() http.Handler {
 	mux.HandleFunc("/dashboard/watchlist/delete", a.watchlistDeleteHandler)
 	mux.HandleFunc("/dashboard/watchlist/bulk-delete", a.watchlistBulkDeleteHandler)
 	mux.HandleFunc("/dashboard/watchlist/import", a.watchlistImportPageHandler)
+	mux.HandleFunc("/dashboard/watchlist/refresh-info", a.watchlistRefreshInfoHandler)
 	mux.HandleFunc("/dashboard/account", a.accountPageHandler)
 	mux.HandleFunc("/dashboard/account/totp/setup", a.totpSetupHandler)
 	mux.HandleFunc("/dashboard/account/totp/qr.png", a.totpQRHandler)

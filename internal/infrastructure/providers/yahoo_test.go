@@ -49,6 +49,71 @@ func TestFetchBarsParsesProviderResponse(t *testing.T) {
 	}
 }
 
+func TestFetchInstrumentInfoParsesMeta(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"chart": {
+				"result": [{
+					"meta": {
+						"instrumentType": "ETF",
+						"shortName": "SPDR S&P 500",
+						"longName": "State Street SPDR S&P 500 ETF Trust",
+						"fullExchangeName": "NYSEArca"
+					}
+				}]
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	provider := NewYahooFinanceProvider()
+	provider.BaseURL = server.URL + "/v8/finance/chart"
+	provider.Client = server.Client()
+
+	info, err := provider.FetchInstrumentInfo("SPY")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	want := struct{ Name, Type, Exchange string }{"State Street SPDR S&P 500 ETF Trust", "ETF", "NYSEArca"}
+	if info.Name != want.Name || info.Type != want.Type || info.Exchange != want.Exchange {
+		t.Fatalf("got %+v, want %+v", info, want)
+	}
+}
+
+// Futures contracts (e.g. "CL=F") are the observed real-world case: Yahoo leaves longName empty
+// for them but still sets shortName, so FetchInstrumentInfo must fall back rather than return "".
+func TestFetchInstrumentInfoFallsBackToShortNameWhenLongNameIsEmpty(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"chart": {
+				"result": [{
+					"meta": {
+						"instrumentType": "FUTURE",
+						"shortName": "Crude Oil Sep 26",
+						"longName": "",
+						"fullExchangeName": "NY Mercantile"
+					}
+				}]
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	provider := NewYahooFinanceProvider()
+	provider.BaseURL = server.URL + "/v8/finance/chart"
+	provider.Client = server.Client()
+
+	info, err := provider.FetchInstrumentInfo("CL=F")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if info.Name != "Crude Oil Sep 26" {
+		t.Fatalf("expected shortName fallback, got %q", info.Name)
+	}
+}
+
 // Yahoo appends the live quote to an intraday series as an extra data point timestamped at the
 // moment of the request, with OHLC all equal to the current price and volume 0. Every consumer
 // downstream treats it as a finished candle and gets a zero-momentum, zero-volume reading out of

@@ -16,6 +16,11 @@
     {{if .Success}}<div class="alert alert-success">{{.Success}}</div>{{end}}
 
     {{if .Items}}
+    <div class="d-flex align-items-center gap-2 mb-2">
+      <form method="post" action="/dashboard/watchlist/refresh-info" class="mb-0">
+        <button type="submit" class="btn btn-outline-secondary btn-sm" title="{{T .Lang "watchlist.refresh_info_hint"}}">{{T .Lang "watchlist.refresh_info"}}</button>
+      </form>
+    </div>
     <form method="post" action="/dashboard/watchlist/bulk-delete" id="watchlistForm"
           data-confirm-bulk="{{T .Lang "confirm.remove_watchlist_bulk"}}">
       <input type="text" class="form-control form-control-sm mb-2" id="watchlistFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
@@ -23,13 +28,16 @@
         <table class="table table-striped table-hover align-middle" id="watchlistTable">
           <thead><tr>
             <th scope="col"><input type="checkbox" class="form-check-input" id="selectAllWatchlist" aria-label="{{T .Lang "table.select_all"}}"></th>
-            <th scope="col" data-sort="text">{{T .Lang "table.symbol"}}</th><th scope="col" data-sort="date">{{T .Lang "table.added"}}</th><th scope="col"></th>
+            <th scope="col" data-sort="text">{{T .Lang "table.symbol"}}</th><th scope="col" data-sort="text">{{T .Lang "table.name"}}</th><th scope="col" data-sort="text">{{T .Lang "table.type"}}</th><th scope="col" data-sort="date">{{T .Lang "table.added"}}</th><th scope="col"></th>
           </tr></thead>
           <tbody>
           {{range .Items}}
+          {{$info := index $.Info .Symbol}}
           <tr>
             <td><input type="checkbox" class="form-check-input watchlist-checkbox" name="symbols" value="{{.Symbol}}"></td>
             <td><a class="atlas-symbol" href="{{yahooURL .Symbol}}" target="_blank" rel="noopener noreferrer" title="{{T $.Lang "table.open_in_yahoo"}}">{{.Symbol}}</a></td>
+            <td>{{$info.Name}}</td>
+            <td>{{$info.Type}}</td>
             <td>{{if .AddedAt}}{{(localTime .AddedAt).Format "2006-01-02 15:04"}}{{end}}</td>
             <td class="text-end">
               <button type="submit" formaction="/dashboard/watchlist/delete" name="symbol" value="{{.Symbol}}"
@@ -41,7 +49,7 @@
           </tbody>
           <tfoot>
           <tr class="table-group-divider">
-            <th scope="row" colspan="3">{{T .Lang "table.total"}}</th>
+            <th scope="row" colspan="5">{{T .Lang "table.total"}}</th>
             <td class="text-end tabular-nums">{{len .Items}}</td>
           </tr>
           </tfoot>

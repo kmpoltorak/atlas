@@ -529,10 +529,88 @@ func (a *Application) watchlistPageHandler(w http.ResponseWriter, r *http.Reques
 			a.renderWatchlistPage(w, r, err.Error(), "")
 			return
 		}
+		if err := a.fetchAndSaveSymbolInfo(symbol); err != nil {
+			a.Logger.Warn("failed to fetch symbol info for newly added watchlist item", zap.String("symbol", symbol), zap.Error(err))
+		}
 		a.renderWatchlistPage(w, r, "", "Added "+symbol+" to the watchlist.")
 	default:
 		methodNotAllowed(w)
 	}
+}
+
+// fetchAndSaveSymbolInfo best-effort fetches and persists what a symbol actually is (see
+// market.InstrumentInfo) — its display name and instrument type (EQUITY/ETF/FUTURE/...), read
+// off the market provider and shown on the Watchlist page so a ticker doesn't have to be looked
+// up elsewhere. Called right after a symbol is added (see watchlistPageHandler) and by
+// watchlistRefreshInfoHandler for symbols added before this existed. Best-effort: the watchlist
+// item itself is already saved by the time this runs, so a lookup failure here should leave that
+// row's Name/Type blank, not fail the request — same non-fatal stance as persistIndicatorSnapshot.
+func (a *Application) fetchAndSaveSymbolInfo(symbol string) error {
+	if a.Collector == nil || a.Collector.Provider == nil || a.Storage == nil {
+		return nil
+	}
+	info, err := a.Collector.Provider.FetchInstrumentInfo(symbol)
+	if err != nil {
+		return err
+	}
+	return a.Storage.UpsertSymbolInfo(symbol, info)
+}
+
+// watchlistRefreshInfoHandler backfills market.InstrumentInfo for every watchlist symbol that
+// doesn't have one yet (see symbolsMissingInfo) — the one-time catch-up for symbols added
+// before this feature existed; new adds already fetch it inline (watchlistPageHandler).
+// Sequential and synchronous: this runs once per deliberate button click, not on every page
+// render, so paying provider latency here — unlike the live-recompute-on-every-request bugs
+// already fixed on this dashboard (2cd6683, and the Alerts page) — is the expected cost of the
+// action the click asked for, not a regression of the same kind.
+func (a *Application) watchlistRefreshInfoHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	items, err := a.Watchlist.List()
+	if err != nil {
+		a.renderWatchlistPage(w, r, err.Error(), "")
+		return
+	}
+	existing, err := a.Storage.SymbolInfoByTicker()
+	if err != nil {
+		a.renderWatchlistPage(w, r, err.Error(), "")
+		return
+	}
+
+	missing := symbolsMissingInfo(items, existing)
+	updated, failed := 0, 0
+	for _, symbol := range missing {
+		if err := a.fetchAndSaveSymbolInfo(symbol); err != nil {
+			a.Logger.Warn("failed to fetch symbol info", zap.String("symbol", symbol), zap.Error(err))
+			failed++
+			continue
+		}
+		updated++
+	}
+
+	message := fmt.Sprintf("Fetched info for %d symbol(s).", updated)
+	switch {
+	case len(missing) == 0:
+		message = "Every symbol already has info."
+	case failed > 0:
+		message += fmt.Sprintf(" %d failed — try again in a moment.", failed)
+	}
+	a.renderWatchlistPage(w, r, "", message)
+}
+
+// symbolsMissingInfo reports which watchlist symbols have no recorded market.InstrumentInfo yet
+// — split out from watchlistRefreshInfoHandler so it's testable without a database behind it,
+// same reasoning as countActionable/filterCurrentAlerts above.
+func symbolsMissingInfo(items []watchlist.Item, existing map[string]persistence.SymbolInfo) []string {
+	var missing []string
+	for _, item := range items {
+		if _, ok := existing[item.Symbol]; !ok {
+			missing = append(missing, item.Symbol)
+		}
+	}
+	return missing
 }
 
 // watchlistDeleteHandler removes a symbol — the dashboard equivalent of DELETE /watchlist (see
@@ -586,7 +664,28 @@ func (a *Application) renderWatchlistPage(w http.ResponseWriter, r *http.Request
 		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	web.Render(w, "watchlist", web.WatchlistPage{Lang: a.resolveLang(r), Items: items, Error: errMsg, Success: successMsg})
+	web.Render(w, "watchlist", web.WatchlistPage{
+		Lang: a.resolveLang(r), Items: items, Info: a.watchlistSymbolInfo(), Error: errMsg, Success: successMsg,
+	})
+}
+
+// watchlistSymbolInfo reads what each symbol actually is (see fetchAndSaveSymbolInfo) for the
+// Watchlist page's Name/Type columns. Best-effort like modelOptions above: a failed query costs
+// those two columns and nothing else, since the watchlist itself doesn't depend on this.
+func (a *Application) watchlistSymbolInfo() map[string]web.SymbolInfo {
+	if a.Storage == nil {
+		return nil
+	}
+	stored, err := a.Storage.SymbolInfoByTicker()
+	if err != nil {
+		a.Logger.Warn("failed to load symbol info for the watchlist page", zap.Error(err))
+		return nil
+	}
+	info := make(map[string]web.SymbolInfo, len(stored))
+	for ticker, symbolInfo := range stored {
+		info[ticker] = web.SymbolInfo{Name: symbolInfo.Name, Type: symbolInfo.AssetClass}
+	}
+	return info
 }
 
 // accountPageHandler shows the current 2FA status and the enable/disable entry points — see

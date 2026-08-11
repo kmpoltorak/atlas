@@ -20,6 +20,10 @@ func (s stubProvider) FetchBars(symbol string, window int) ([]market.Bar, error)
 	return s.bars[symbol], nil
 }
 
+func (s stubProvider) FetchInstrumentInfo(symbol string) (market.InstrumentInfo, error) {
+	return market.InstrumentInfo{Symbol: symbol}, nil
+}
+
 // uptrendBars is a rising series long enough for the decision engine's momentum term to have a
 // reading: it needs more than that term's lookback window, and the per-bar returns must vary,
 // since a perfectly uniform climb has zero realized volatility to normalize against and reads as
