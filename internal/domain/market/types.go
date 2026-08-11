@@ -24,9 +24,21 @@ type InstrumentInfo struct {
 	Exchange string
 }
 
+// Quote is a symbol's current live price and the prior session's close — enough to show "how is
+// this doing today", independent of Bar's closed-candle history (see providers.dropUnclosedBars'
+// doc comment for why the decision engine deliberately never acts on an intraday, still-forming
+// price). Purely informational: nothing in the decision engine reads this.
+type Quote struct {
+	Symbol        string
+	Price         float64
+	PreviousClose float64
+}
+
 type MarketProvider interface {
 	FetchBars(symbol string, window int) ([]Bar, error)
 	// FetchInstrumentInfo returns descriptive metadata for symbol, for a human reading the
 	// watchlist — not consumed by the decision engine.
 	FetchInstrumentInfo(symbol string) (InstrumentInfo, error)
+	// FetchQuote returns symbol's current live price and prior close — see Quote.
+	FetchQuote(symbol string) (Quote, error)
 }

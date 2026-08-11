@@ -161,11 +161,29 @@ type WatchlistPage struct {
 	Success string
 }
 
-// SymbolInfo is the Watchlist page's rendering of persistence.SymbolInfo — just the two fields
-// the table shows (see WatchlistPage.Info).
+// SymbolInfo is the Watchlist page's rendering of persistence.SymbolInfo — the fields the table
+// shows (see WatchlistPage.Info).
 type SymbolInfo struct {
 	Name string
 	Type string
+	// LastPrice/PreviousClose back the "Today" column — the live price vs. the prior session's
+	// close, refreshed every alert-poll cycle (see internal/app/alerts_loop.go's
+	// refreshWatchlistQuotes), independent of whether an hourly bar has closed yet today. Zero
+	// PreviousClose means no quote has been fetched for this symbol yet (see HasQuote).
+	LastPrice     float64
+	PreviousClose float64
+}
+
+// HasQuote reports whether a live quote has been fetched for this symbol yet (see
+// refreshWatchlistQuotes) — false right after a symbol is added, until the next poll cycle.
+func (s SymbolInfo) HasQuote() bool {
+	return s.PreviousClose > 0
+}
+
+// ChangePercent is today's move — LastPrice against the prior session's close — as a percentage
+// (e.g. -2.94, not -0.0294). Meaningless when HasQuote is false; callers must check that first.
+func (s SymbolInfo) ChangePercent() float64 {
+	return (s.LastPrice/s.PreviousClose - 1) * 100
 }
 
 // AccountPage is the view model for templates/account.html.

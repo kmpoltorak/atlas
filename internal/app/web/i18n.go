@@ -47,6 +47,9 @@ var translations = map[string]map[Lang]string{
 	// Shared table headers/labels, reused across multiple pages
 	"table.symbol": {LangEN: "Symbol", LangPL: "Symbol"},
 	"table.name":   {LangEN: "Name", LangPL: "Nazwa"},
+	// Today's live price vs. the prior session's close — see web.SymbolInfo.ChangePercent.
+	// Blank until the first alert-poll cycle after a symbol is added has run.
+	"table.today_change": {LangEN: "Today", LangPL: "Dzisiaj"},
 	// Announced on every symbol link. It names the destination and the new tab, because a link
 	// that opens elsewhere without saying so is disorienting for anyone not watching the viewport.
 	"table.open_in_yahoo": {LangEN: "Open on Yahoo Finance in a new tab", LangPL: "Otwórz w Yahoo Finance w nowej karcie"},

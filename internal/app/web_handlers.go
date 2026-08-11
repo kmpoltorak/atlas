@@ -683,7 +683,10 @@ func (a *Application) watchlistSymbolInfo() map[string]web.SymbolInfo {
 	}
 	info := make(map[string]web.SymbolInfo, len(stored))
 	for ticker, symbolInfo := range stored {
-		info[ticker] = web.SymbolInfo{Name: symbolInfo.Name, Type: symbolInfo.AssetClass}
+		info[ticker] = web.SymbolInfo{
+			Name: symbolInfo.Name, Type: symbolInfo.AssetClass,
+			LastPrice: symbolInfo.LastPrice, PreviousClose: symbolInfo.PreviousClose,
+		}
 	}
 	return info
 }

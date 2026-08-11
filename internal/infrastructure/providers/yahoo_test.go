@@ -114,6 +114,35 @@ func TestFetchInstrumentInfoFallsBackToShortNameWhenLongNameIsEmpty(t *testing.T
 	}
 }
 
+func TestFetchQuoteParsesMeta(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"chart": {
+				"result": [{
+					"meta": {
+						"regularMarketPrice": 146.605,
+						"chartPreviousClose": 151.05
+					}
+				}]
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	provider := NewYahooFinanceProvider()
+	provider.BaseURL = server.URL + "/v8/finance/chart"
+	provider.Client = server.Client()
+
+	quote, err := provider.FetchQuote("ORCL")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if quote.Symbol != "ORCL" || quote.Price != 146.605 || quote.PreviousClose != 151.05 {
+		t.Fatalf("unexpected quote: %+v", quote)
+	}
+}
+
 // Yahoo appends the live quote to an intraday series as an extra data point timestamped at the
 // moment of the request, with OHLC all equal to the current price and volume 0. Every consumer
 // downstream treats it as a finished candle and gets a zero-momentum, zero-volume reading out of
