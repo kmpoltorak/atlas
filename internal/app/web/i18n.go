@@ -70,11 +70,14 @@ var translations = map[string]map[Lang]string{
 	// what they actually compute rather than reusing "Drawdown"/"Volatility", which
 	// table.max_drawdown/table.volatility below already mean something different and real
 	// (backtesting.Result — peak-to-trough drawdown, annualized return stddev).
-	"table.drawdown":       {LangEN: "Unrealized Loss / Exposure", LangPL: "Strata niezrealizowana / ekspozycja"},
-	"table.avg_deviation":  {LangEN: "Avg. Deviation from Cost", LangPL: "Śr. odchylenie od kosztu"},
-	"table.volatility":     {LangEN: "Volatility", LangPL: "Zmienność"},
-	"table.type":           {LangEN: "Type", LangPL: "Typ"},
-	"table.price":          {LangEN: "Price", LangPL: "Cena"},
+	"table.drawdown":      {LangEN: "Unrealized Loss / Exposure", LangPL: "Strata niezrealizowana / ekspozycja"},
+	"table.avg_deviation": {LangEN: "Avg. Deviation from Cost", LangPL: "Śr. odchylenie od kosztu"},
+	"table.volatility":    {LangEN: "Volatility", LangPL: "Zmienność"},
+	"table.type":          {LangEN: "Type", LangPL: "Typ"},
+	// Named "Unit price", not "Price": Transaction.Price is per-unit (see its doc comment) and
+	// gets multiplied by Quantity everywhere it's used, so a bare "Price" reads ambiguously as
+	// the total cost of the trade.
+	"table.price":          {LangEN: "Unit Price", LangPL: "Cena jednostkowa"},
 	"table.timestamp":      {LangEN: "Timestamp", LangPL: "Znacznik czasu"},
 	"table.currency":       {LangEN: "Currency", LangPL: "Waluta"},
 	"table.pln_equivalent": {LangEN: "PLN Equivalent", LangPL: "Równowartość w PLN"},

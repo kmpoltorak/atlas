@@ -352,12 +352,16 @@ func (a *Application) renderPortfolioPage(w http.ResponseWriter, r *http.Request
 		return
 	}
 	livePositions, asOf := a.livePricedPositions(positions, priceAsOf(transactions))
-	web.Render(w, "portfolio", web.PortfolioPage{
+	data := web.PortfolioPage{
 		Lang: a.resolveLang(r), Positions: livePositions, Transactions: transactions,
 		Rates: a.exchangeRatesForDisplay(), Currencies: currencyOptions(),
 		PriceAsOf: asOf,
 		Error:     errMsg, Success: successMsg,
-	})
+	}
+	if symbols, err := a.watchlistSymbols(); err == nil {
+		data.Symbols = symbols
+	}
+	web.Render(w, "portfolio", data)
 }
 
 // livePricedPositions overlays each position's live quote (see refreshWatchlistQuotes) onto
