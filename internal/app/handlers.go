@@ -210,6 +210,14 @@ func (a *Application) persistBacktestRun(result backtestingDomain.StrategyResult
 }
 
 // symbolsHandler lists the symbols currently tracked on the watchlist.
+//
+// @Summary List watchlist symbols
+// @Description Returns every ticker currently on the watchlist, as a plain string list.
+// @Tags Market Data
+// @Produce json
+// @Success 200 {object} map[string][]string "{"symbols": ["AAPL", "MSFT"]}"
+// @Failure 500 {object} map[string]string
+// @Router /symbols [get]
 func (a *Application) symbolsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -228,6 +236,18 @@ func (a *Application) symbolsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // pricesHandler collects and persists OHLCV bars for a symbol via the market data provider.
+//
+// @Summary Get OHLCV price bars for a symbol
+// @Description Collects hourly bars from the market data provider (cached — see collectBars),
+// @Description persists them, and returns them oldest-first.
+// @Tags Market Data
+// @Produce json
+// @Param symbol query string true "Ticker, e.g. AAPL"
+// @Param window query int false "Lookback in days (default: COLLECTOR_WINDOW_DAYS)"
+// @Success 200 {object} map[string]any "{"symbol": "AAPL", "bars": [...]}"
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string "provider unreachable"
+// @Router /prices [get]
 func (a *Application) pricesHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -248,6 +268,27 @@ func (a *Application) pricesHandler(w http.ResponseWriter, r *http.Request) {
 
 // portfolioHandler returns the current position snapshot and risk context (GET) or records a
 // transaction (POST).
+//
+// @Summary Get portfolio positions and risk, record a transaction, or remove a position
+// @Description GET returns every current position plus the portfolio-wide risk snapshot.
+// @Description POST records a BUY/SELL transaction (JSON body: portfolio.Transaction — symbol,
+// @Description type, quantity, price, currency are required; PLN needs no currency conversion
+// @Description setup) and updates the position; a transaction that sells a position down to zero
+// @Description removes it from the position list, keeping the transaction in history.
+// @Description DELETE (?symbol=) clears a symbol's current position aggregate without touching
+// @Description transaction history — distinct from selling it via a POST.
+// @Tags Portfolio
+// @Accept json
+// @Produce json
+// @Param symbol query string false "Ticker to remove (DELETE only)"
+// @Param transaction body portfolio.Transaction false "Transaction to record (POST only)"
+// @Success 200 {object} map[string]any "GET: {"positions": [...], "risk": {...}}; DELETE: {"status": "removed"}"
+// @Success 201 {object} map[string]string "POST: {"status": "recorded"}"
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /portfolio [get]
+// @Router /portfolio [post]
+// @Router /portfolio [delete]
 func (a *Application) portfolioHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -295,6 +336,18 @@ func (a *Application) portfolioHandler(w http.ResponseWriter, r *http.Request) {
 // recomputing the affected symbol's position from what remains (see
 // portfolio.UseCase.RemoveTransaction). Distinct from portfolioHandler's DELETE, which clears a
 // symbol's current position aggregate without touching transaction history.
+//
+// @Summary List transaction history, or delete one and recompute its position
+// @Description GET returns every recorded transaction. DELETE (?id=) removes one and replays the
+// @Description affected symbol's remaining transactions to recompute its position from scratch.
+// @Tags Portfolio
+// @Produce json
+// @Param id query string false "Transaction id to remove (DELETE only)"
+// @Success 200 {object} map[string]any "GET: {"transactions": [...]}; DELETE: {"status": "removed"}"
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /transactions [get]
+// @Router /transactions [delete]
 func (a *Application) transactionsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -325,6 +378,22 @@ func (a *Application) transactionsHandler(w http.ResponseWriter, r *http.Request
 }
 
 // watchlistHandler lists tracked symbols (GET), adds a new one (POST), or removes one (DELETE).
+//
+// @Summary List, add, or remove watchlist symbols
+// @Description GET returns every tracked item. POST adds a symbol (JSON body: {"symbol": "AAPL"}).
+// @Description DELETE (?symbol=) untracks one. Adding an already-tracked symbol, or removing an
+// @Description untracked one, is a no-op rather than an error.
+// @Tags Watchlist
+// @Accept json
+// @Produce json
+// @Param symbol query string false "Ticker to remove (DELETE only)"
+// @Success 200 {object} map[string]any "GET: {"items": [...]}; DELETE: {"status": "removed"}"
+// @Success 201 {object} map[string]string "POST: {"status": "added"}"
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /watchlist [get]
+// @Router /watchlist [post]
+// @Router /watchlist [delete]
 func (a *Application) watchlistHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -366,6 +435,15 @@ func (a *Application) watchlistHandler(w http.ResponseWriter, r *http.Request) {
 // alertsHandler returns every non-HOLD recommendation for the current watchlist, read from what
 // the background alert-poll loop already computed (see currentAlerts) rather than re-evaluating
 // live on every request.
+//
+// @Summary List current actionable alerts
+// @Description Every watchlist symbol whose latest recommendation isn't HOLD, as of the last
+// @Description background alert-poll cycle (ALERT_POLL_INTERVAL_SECONDS, default 300s) — not
+// @Description recomputed live on this request.
+// @Tags Recommendations
+// @Produce json
+// @Success 200 {object} map[string]any "{"alerts": [...]}"
+// @Router /alerts [get]
 func (a *Application) alertsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -427,6 +505,19 @@ func filterCurrentAlerts(recommendations map[string]persistence.LatestRecommenda
 }
 
 // recommendationsHandler builds an explainable BUY/SELL/HOLD recommendation for a symbol.
+//
+// @Summary Get a live BUY/SELL/HOLD recommendation for a symbol
+// @Description Runs the full technical+ML+portfolio+risk pipeline against freshly collected
+// @Description bars and returns an explainable decision.Recommendation. Decision-support only —
+// @Description Atlas never executes trades.
+// @Tags Recommendations
+// @Produce json
+// @Param symbol query string true "Ticker, e.g. AAPL"
+// @Param window query int false "Lookback in days (default: COLLECTOR_WINDOW_DAYS)"
+// @Success 200 {object} decision.Recommendation
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string "provider unreachable"
+// @Router /recommendations [get]
 func (a *Application) recommendationsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -454,6 +545,18 @@ func (a *Application) recommendationsHandler(w http.ResponseWriter, r *http.Requ
 }
 
 // predictionsHandler runs the ML inference path for a symbol using freshly collected bars.
+// @Summary Get a raw ML prediction for a symbol
+// @Description Runs the ML inference path alone (no technical/portfolio/risk blend, no
+// @Description BUY/SELL/HOLD decision) against freshly collected bars — the deterministic
+// @Description RSI-derived stub when no trained model is loaded (see internal/application/ml).
+// @Tags Machine Learning
+// @Produce json
+// @Param symbol query string true "Ticker, e.g. AAPL"
+// @Param window query int false "Lookback in days (default: COLLECTOR_WINDOW_DAYS)"
+// @Success 200 {object} mlDomain.Prediction
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string "provider unreachable"
+// @Router /predictions [get]
 func (a *Application) predictionsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -487,6 +590,21 @@ const backtestDefaultWindow = 180
 const backtestDefaultCapital = 10000.0
 
 // backtestsHandler runs a historical simulation of the real decision pipeline for a symbol.
+//
+// @Summary Run a backtest simulation for a symbol
+// @Description Simulates the live decision engine's current thresholds over historical bars and
+// @Description persists the result to backtest history.
+// @Tags Backtests
+// @Produce json
+// @Param symbol query string true "Ticker, e.g. AAPL"
+// @Param window query int false "Lookback in days (default: 180)"
+// @Param capital query number false "Starting capital (default: 10000)"
+// @Param strategy query string false "Strategy name label (default: atlas-orchestrator)"
+// @Param version query string false "Strategy version label (default: v1)"
+// @Success 200 {object} backtestingDomain.StrategyResult
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string "provider unreachable"
+// @Router /backtests [get]
 func (a *Application) backtestsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -545,6 +663,21 @@ const backtestWalkForwardDefaultWindow = 500
 // thresholds over the whole window with no splitting or optimization. Not persisted: this is a
 // report for a human to review (BestThresholds), not a decision that gets replayed later — see
 // docs/backtesting.md's Implementation status note.
+// @Summary Run a walk-forward backtest with threshold optimization
+// @Description Splits the window 60/20/20 (train/validate/test) and optimizes candidate
+// @Description thresholds against real historical data — a report for a human to review, not
+// @Description persisted or replayed like a plain backtest.
+// @Tags Backtests
+// @Produce json
+// @Param symbol query string true "Ticker, e.g. AAPL"
+// @Param window query int false "Lookback in days (default: 500)"
+// @Param capital query number false "Starting capital (default: 10000)"
+// @Param strategy query string false "Strategy name label (default: atlas-orchestrator)"
+// @Param version query string false "Strategy version label (default: v1)"
+// @Success 200 {object} backtestingDomain.WalkForwardResult
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string "provider unreachable"
+// @Router /backtests/walkforward [get]
 func (a *Application) backtestWalkForwardHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -595,6 +728,17 @@ const backtestHistoryDefaultLimit = 20
 // backtestHistoryHandler lists previously persisted backtest runs for a symbol (migrations/005's
 // backtest_runs table), newest first — distinct from backtestsHandler, which always executes a
 // fresh simulation.
+// @Summary List past backtest runs for a symbol
+// @Description Reads previously persisted backtest runs (migrations/005), newest first — does
+// @Description not execute a new simulation.
+// @Tags Backtests
+// @Produce json
+// @Param symbol query string true "Ticker, e.g. AAPL"
+// @Param limit query int false "Max rows to return (default: 20)"
+// @Success 200 {object} map[string]any "{"runs": [...]}"
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /backtests/history [get]
 func (a *Application) backtestHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -635,6 +779,13 @@ const maxBackupRestoreBytes = 200 << 20 // 200 MiB
 // GET /watchlist already returns and watchlistImportHandler already accepts — so an export from
 // one Atlas instance imports into another with no conversion step, which is the entire point of
 // the feature (moving a real watchlist between environments beats re-entering it by hand).
+// @Summary Download the watchlist as a JSON file
+// @Description Same shape GET /watchlist returns and POST /watchlist/import accepts — an export
+// @Description from one Atlas instance imports into another with no conversion step.
+// @Tags Watchlist
+// @Produce json
+// @Success 200 {object} map[string]any "{"items": [...]}"
+// @Router /watchlist/export [get]
 func (a *Application) watchlistExportHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -694,6 +845,19 @@ func decodeWatchlistImport(body []byte) ([]watchlist.Item, error) {
 // watchlistImportHandler applies an exported watchlist. ?mode=replace mirrors the file exactly
 // (untracking whatever it omits); anything else, including an absent parameter, merges — the
 // destructive mode always has to be asked for by name.
+// @Summary Import a watchlist export
+// @Description Accepts either the full export shape ({"items":[...]}) or a bare JSON array of
+// @Description symbols. mode=merge (default) keeps existing symbols; mode=replace untracks
+// @Description whatever the file omits.
+// @Tags Watchlist
+// @Accept json
+// @Produce json
+// @Param mode query string false "merge (default) or replace"
+// @Param items body object true "Watchlist export body — see description"
+// @Success 200 {object} watchlistUC.ImportResult
+// @Failure 400 {object} map[string]string
+// @Failure 413 {object} map[string]string "body over 1 MiB"
+// @Router /watchlist/import [post]
 func (a *Application) watchlistImportHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)

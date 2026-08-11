@@ -8,12 +8,21 @@ import (
 
 	"atlas/internal/app/web"
 	"atlas/internal/domain"
+
+	httpSwagger "github.com/swaggo/http-swagger/v2"
+
+	_ "atlas/docs" // registers the generated OpenAPI spec with swaggo/swag — see docs/README (swag init)
 )
 
 func (a *Application) NewHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", a.Metrics.Handler())
 	mux.Handle("/static/", http.FileServer(http.FS(web.StaticFS)))
+	// /swagger/index.html — interactive API docs (see cmd/api/main.go's @title block and the
+	// @Summary/@Router annotations on each JSON handler below). Not in publicPaths
+	// (auth_middleware.go), so it needs the same session as the rest of the API when auth is
+	// enabled — "Try it out" then reuses that session's cookie automatically.
+	mux.HandleFunc("/swagger/", httpSwagger.WrapHandler)
 	mux.HandleFunc("/health", a.healthHandler)
 	mux.HandleFunc("/symbols", a.symbolsHandler)
 	mux.HandleFunc("/prices", a.pricesHandler)
@@ -126,6 +135,15 @@ func (r *statusRecorder) Unwrap() http.ResponseWriter {
 // gracefully without (the Account page's "Train new candidate" button just explains the manual
 // path instead), so Docker/Kubernetes restarting atlas-api because atlas-trainer is down would
 // be exactly the wrong response.
+//
+// @Summary Health check
+// @Description Pings the database and cache directly (not a bare liveness check). No
+// @Description authentication required — see auth_middleware.go's publicPaths.
+// @Tags System
+// @Produce json
+// @Success 200 {object} domain.HealthStatus
+// @Failure 503 {object} domain.HealthStatus "database or redis unreachable"
+// @Router /health [get]
 func (a *Application) healthHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
