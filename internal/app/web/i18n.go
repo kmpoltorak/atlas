@@ -284,8 +284,8 @@ var translations = map[string]map[Lang]string{
 		LangEN: "Master switch for whether BUY/SELL/HOLD scoring factors in ML/portfolio/risk at all, on top of the technical score. Takes effect immediately, no restart needed. Model files below stay loaded and usable via /predict either way.",
 		LangPL: "Główny przełącznik decydujący, czy ocena BUY/SELL/HOLD w ogóle uwzględnia ML/portfel/ryzyko, poza wynikiem technicznym. Działa natychmiast, bez restartu. Pliki modeli poniżej zostają załadowane i dostępne przez /predict niezależnie od tego ustawienia.",
 	},
-	"account.ml_engine_enable_submit":  {LangEN: "Enable ML blend", LangPL: "Włącz blend ML"},
-	"account.ml_engine_disable_submit": {LangEN: "Disable ML blend", LangPL: "Wyłącz blend ML"},
+	"account.ml_engine_enable_submit":  {LangEN: "Enable ML additive", LangPL: "Włącz dodatek ML"},
+	"account.ml_engine_disable_submit": {LangEN: "Disable ML additive", LangPL: "Wyłącz dodatek ML"},
 
 	"account.ml_models_heading": {LangEN: "ML models", LangPL: "Modele ML"},
 	"account.ml_models_hint": {
@@ -320,6 +320,30 @@ var translations = map[string]map[Lang]string{
 	"account.train_succeeded":   {LangEN: "succeeded", LangPL: "zakończone sukcesem"},
 	"account.train_failed":      {LangEN: "failed", LangPL: "nieudane"},
 	"account.train_output":      {LangEN: "Output", LangPL: "Wynik"},
+
+	"account.data_heading": {LangEN: "Database backup", LangPL: "Kopia zapasowa bazy danych"},
+	"account.data_hint": {
+		LangEN: "Downloads everything Atlas stores — positions, transactions, watchlist, price/indicator history, recommendations, settings — as one JSON file, restorable here or on a fresh environment.",
+		LangPL: "Pobiera wszystko, co przechowuje Atlas — pozycje, transakcje, listę obserwowanych, historię cen/wskaźników, rekomendacje, ustawienia — jako jeden plik JSON, możliwy do przywrócenia tutaj lub na nowym środowisku.",
+	},
+	"account.backup_submit":  {LangEN: "Download backup", LangPL: "Pobierz kopię zapasową"},
+	"account.restore_file":   {LangEN: "Backup JSON file", LangPL: "Plik JSON kopii zapasowej"},
+	"account.restore_submit": {LangEN: "Restore from backup", LangPL: "Przywróć z kopii zapasowej"},
+	"confirm.restore_backup": {
+		LangEN: "Restoring will replace ALL current data with the contents of this file. Continue?",
+		LangPL: "Przywrócenie zastąpi WSZYSTKIE obecne dane zawartością tego pliku. Kontynuować?",
+	},
+
+	"account.danger_heading": {LangEN: "Danger zone", LangPL: "Strefa zagrożenia"},
+	"account.flush_hint": {
+		LangEN: "Permanently wipes positions, transactions, watchlist, price/indicator history, recommendations, and ML/2FA settings — back to a freshly installed Atlas. Your login isn't affected. There is no undo short of restoring a backup taken beforehand.",
+		LangPL: "Trwale usuwa pozycje, transakcje, listę obserwowanych, historię cen/wskaźników, rekomendacje oraz ustawienia ML/2FA — Atlas wraca do stanu świeżej instalacji. Logowanie pozostaje bez zmian. Nie ma cofnięcia poza przywróceniem wcześniej zrobionej kopii zapasowej.",
+	},
+	"account.flush_submit": {LangEN: "Flush all data", LangPL: "Wyczyść wszystkie dane"},
+	"confirm.flush_all": {
+		LangEN: "This permanently deletes ALL Atlas data (positions, transactions, watchlist, price history, recommendations, ML/2FA settings) and cannot be undone. Have you downloaded a backup? Continue?",
+		LangPL: "To trwale usuwa WSZYSTKIE dane Atlasa (pozycje, transakcje, listę obserwowanych, historię cen, rekomendacje, ustawienia ML/2FA) i nie da się tego cofnąć. Czy pobrałeś(-aś) kopię zapasową? Kontynuować?",
+	},
 
 	// TOTP enrollment (totp_enroll.html)
 	"totp.title":   {LangEN: "Atlas — Set up 2FA", LangPL: "Atlas — Konfiguracja 2FA"},

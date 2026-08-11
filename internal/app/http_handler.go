@@ -55,6 +55,9 @@ func (a *Application) NewHandler() http.Handler {
 	mux.HandleFunc("/dashboard/account/ml/activate", a.mlModelActivateHandler)
 	mux.HandleFunc("/dashboard/account/ml/delete", a.mlModelDeleteHandler)
 	mux.HandleFunc("/dashboard/account/ml/train", a.mlTrainHandler)
+	mux.HandleFunc("/dashboard/account/backup", a.accountBackupHandler)
+	mux.HandleFunc("/dashboard/account/restore", a.accountRestoreHandler)
+	mux.HandleFunc("/dashboard/account/flush", a.accountFlushHandler)
 
 	// Bare "/dashboard" (no trailing path) isn't a real route — every actual page lives under
 	// "/dashboard/..." — but it's a natural URL to type or bookmark expecting the dashboard
@@ -102,6 +105,15 @@ type statusRecorder struct {
 func (r *statusRecorder) WriteHeader(statusCode int) {
 	r.status = statusCode
 	r.ResponseWriter.WriteHeader(statusCode)
+}
+
+// Unwrap exposes the underlying ResponseWriter to http.ResponseController — without it,
+// SetWriteDeadline (accountBackupHandler/accountRestoreHandler/accountFlushHandler's
+// extendWriteDeadline) fails with "feature not supported" on every request, since instrument
+// wraps every ResponseWriter in a *statusRecorder that the standard library otherwise has no way
+// to see through to the real connection. Confirmed live: this was silently no-op-ing before.
+func (r *statusRecorder) Unwrap() http.ResponseWriter {
+	return r.ResponseWriter
 }
 
 // healthHandler pings the real database and cache connections, per the response shape

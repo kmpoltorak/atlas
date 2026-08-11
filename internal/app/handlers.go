@@ -573,6 +573,12 @@ func (a *Application) backtestHistoryHandler(w http.ResponseWriter, r *http.Requ
 // malformed or hostile upload from being read into memory unbounded.
 const maxWatchlistImportBytes = 1 << 20 // 1 MiB
 
+// maxBackupRestoreBytes caps an uploaded accountRestoreHandler file. A full BackupAll dump
+// (prices, indicators, recommendations included) is real bulk data, not a handful of symbols
+// like the watchlist import above, so this leaves generous headroom for that while still
+// stopping an unbounded read into memory.
+const maxBackupRestoreBytes = 200 << 20 // 200 MiB
+
 // watchlistExportHandler serves the watchlist as a downloadable JSON file, in exactly the shape
 // GET /watchlist already returns and watchlistImportHandler already accepts — so an export from
 // one Atlas instance imports into another with no conversion step, which is the entire point of

@@ -995,6 +995,126 @@ func (a *Application) mlTrainHandler(w http.ResponseWriter, r *http.Request) {
 	a.renderAccountPage(w, r, "", "Training started — this can take a few minutes (longer on the very first run). Refresh this page to check progress.")
 }
 
+// backupOperationTimeout is how long accountBackupHandler/accountRestoreHandler/
+// accountFlushHandler get past http.Server's default WriteTimeout (10s, cmd/api/main.go — sized
+// for ordinary fast JSON/HTML responses). A full-database dump/restore/wipe can legitimately run
+// longer than that once prices/indicators/recommendations have accumulated — confirmed live: a
+// ~25MB restore was silently killed mid-request, the client just seeing an empty response.
+const backupOperationTimeout = 2 * time.Minute
+
+// extendWriteDeadline lifts the connection's write deadline for the handlers above — best-effort:
+// logs and continues if the underlying ResponseWriter doesn't support deadlines, the same
+// "optional enhancement, never a hard failure" stance the rest of this file takes for
+// non-critical paths.
+func (a *Application) extendWriteDeadline(w http.ResponseWriter, d time.Duration) {
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(d)); err != nil {
+		a.Logger.Warn("failed to extend write deadline", zap.Error(err))
+	}
+}
+
+// accountBackupHandler streams every table persistence.TimescaleDB.BackupAll covers as one
+// downloadable JSON file — a portable snapshot for disaster recovery or seeding a fresh
+// environment. Read-only, so unlike Restore/Flush below it needs no confirmation dialog.
+func (a *Application) accountBackupHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	if a.Storage == nil {
+		http.Error(w, "no database configured", http.StatusServiceUnavailable)
+		return
+	}
+	a.extendWriteDeadline(w, backupOperationTimeout)
+	payload, err := a.Storage.BackupAll()
+	if err != nil {
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+	filename := fmt.Sprintf("atlas-backup-%s.json", time.Now().UTC().Format("20060102-150405"))
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	_, _ = w.Write(payload)
+}
+
+// accountRestoreHandler replaces every row Atlas has with the contents of an uploaded
+// accountBackupHandler file — the recovery path after accountFlushHandler, or how to seed a
+// fresh environment from an existing one's backup.
+func (a *Application) accountRestoreHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if a.Storage == nil {
+		a.renderAccountPage(w, r, "No database configured.", "")
+		return
+	}
+	a.extendWriteDeadline(w, backupOperationTimeout)
+	if err := r.ParseMultipartForm(maxBackupRestoreBytes); err != nil {
+		a.renderAccountPage(w, r, "Invalid form submission.", "")
+		return
+	}
+	file, _, err := r.FormFile("backup")
+	if err != nil {
+		a.renderAccountPage(w, r, "Choose a backup file to restore.", "")
+		return
+	}
+	defer file.Close()
+	payload, err := io.ReadAll(io.LimitReader(file, maxBackupRestoreBytes))
+	if err != nil {
+		a.renderAccountPage(w, r, "Failed to read the uploaded file: "+err.Error(), "")
+		return
+	}
+	if err := a.Storage.RestoreAll(payload); err != nil {
+		a.renderAccountPage(w, r, "Restore failed: "+err.Error(), "")
+		return
+	}
+	a.reloadCachedState()
+	a.renderAccountPage(w, r, "", "Data restored from backup.")
+}
+
+// accountFlushHandler wipes every table Atlas stores data in — positions, transactions,
+// watchlist, price/indicator history, recommendations, ML/2FA settings — back to the state a
+// freshly migrated database would be in (see persistence.TimescaleDB.FlushAll's doc comment for
+// exactly what survives, notably login itself). Confirmed client-side (account.html) since there
+// is no undo short of a prior backup.
+func (a *Application) accountFlushHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if a.Storage == nil {
+		a.renderAccountPage(w, r, "No database configured.", "")
+		return
+	}
+	a.extendWriteDeadline(w, backupOperationTimeout)
+	if err := a.Storage.FlushAll(); err != nil {
+		a.renderAccountPage(w, r, "Flush failed: "+err.Error(), "")
+		return
+	}
+	a.reloadCachedState()
+	a.renderAccountPage(w, r, "", "All data has been wiped. Atlas is back to a freshly installed state.")
+}
+
+// reloadCachedState resyncs every in-memory cache that mirrors a database table (see
+// portfolio.UseCase.Reload/watchlist.UseCase.Reload) after a bulk out-of-band change
+// (accountFlushHandler/accountRestoreHandler) that per-mutation methods like RecordTransaction
+// can't express — the same class of staleness TestRecordTransactionDefaultsTimestampWhenEmpty's
+// bug came from, just at bulk scale instead of per-transaction. Logs rather than fails outright:
+// the underlying data is already committed either way, so a stale cache is a display bug that
+// would sort itself out on the next restart, not silent data loss. ML model *selection* (which
+// trained file is active) is intentionally left alone here — resolveMLEnabled/model files
+// themselves aren't touched by Flush/Restore, matching the existing "disable without deleting"
+// design (see account.ml_engine_heading) — only the enabled/disabled toggle is resynced.
+func (a *Application) reloadCachedState() {
+	if err := a.Portfolio.Reload(); err != nil {
+		a.Logger.Warn("failed to reload portfolio state after bulk data change", zap.Error(err))
+	}
+	if err := a.Watchlist.Reload(); err != nil {
+		a.Logger.Warn("failed to reload watchlist state after bulk data change", zap.Error(err))
+	}
+	a.Orchestrator.SetMLEnabled(resolveMLEnabled(a.Storage, a.Logger, a.Config.MLEnabled))
+}
+
 // totpSetupHandler starts a new enrollment (authUC.UseCase.BeginTOTPEnrollment) and renders the
 // QR-code confirmation page. Requires a valid session (like every /dashboard/* route), read via
 // the same cookie requireAuth already validated.
