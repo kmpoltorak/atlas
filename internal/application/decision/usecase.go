@@ -117,4 +117,3 @@ func (u *UseCase) waitOrHold(overall, mlConfidence float64, leadReason string) d
 		Reason:     []string{"Mixed signal composition", "Decision-support layer only"},
 	}
 }
-
