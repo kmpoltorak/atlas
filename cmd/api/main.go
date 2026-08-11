@@ -16,6 +16,17 @@ import (
 	"go.uber.org/zap"
 )
 
+// @title Atlas API
+// @version 1.0
+// @description Decision-support trading-signal API: market data, portfolio, watchlist,
+// @description recommendations, ML predictions, and backtests. Atlas never executes trades —
+// @description every recommendation is advisory only.
+// @description
+// @description Every route except /health, /metrics, /login, and /static/* requires a session
+// @description cookie (see internal/app/auth_middleware.go) whenever ADMIN_USERNAME/
+// @description ADMIN_PASSWORD_HASH are set — log in via the dashboard in the same browser first,
+// @description then "Try it out" here reuses that session automatically.
+// @BasePath /
 func main() {
 	cfg := config.Load()
 

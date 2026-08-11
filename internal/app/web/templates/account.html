@@ -72,18 +72,21 @@
           <div class="card-body">
             <h3 class="h6 card-title">{{T .Lang "account.ml_correction_heading"}}</h3>
             {{if .CorrectionModels}}
-            <form method="post" action="/dashboard/account/ml/activate" class="d-flex gap-2">
+            <form method="post" action="/dashboard/account/ml/activate">
               <input type="hidden" name="role" value="correction">
-              <select name="filename" class="form-select form-select-sm">
-                {{if not .CorrectionModelActive}}<option value="" selected>{{T .Lang "account.ml_none_active"}}</option>{{end}}
-                {{range .CorrectionModels}}
-                <option value="{{.Filename}}" {{if .Active}}selected{{end}}>{{.Description}}{{if .Active}} ({{T $.Lang "account.ml_active_badge"}}){{end}}</option>
-                {{end}}
-              </select>
-              <button type="submit" class="btn btn-sm btn-primary text-nowrap">{{T .Lang "account.ml_activate_submit"}}</button>
-              <button type="submit" formaction="/dashboard/account/ml/delete" class="btn btn-sm btn-outline-danger text-nowrap"
-                      data-confirm-template="{{T .Lang "confirm.remove_model"}}"
-                      onclick="return confirm(this.dataset.confirmTemplate.replace('%s', this.form.filename.value));">{{T .Lang "account.ml_delete_submit"}}</button>
+              <div class="d-flex gap-2">
+                <select name="filename" id="correctionModelSelect" class="form-select form-select-sm">
+                  {{if not .CorrectionModelActive}}<option value="" selected>{{T .Lang "account.ml_none_active"}}</option>{{end}}
+                  {{range .CorrectionModels}}
+                  <option value="{{.Filename}}" title="{{.Description}}" {{if .Active}}selected{{end}}>{{.Label}}{{if .Active}} ({{T $.Lang "account.ml_active_badge"}}){{end}}</option>
+                  {{end}}
+                </select>
+                <button type="submit" class="btn btn-sm btn-primary text-nowrap">{{T .Lang "account.ml_activate_submit"}}</button>
+                <button type="submit" formaction="/dashboard/account/ml/delete" class="btn btn-sm btn-outline-danger text-nowrap"
+                        data-confirm-template="{{T .Lang "confirm.remove_model"}}"
+                        onclick="return confirm(this.dataset.confirmTemplate.replace('%s', this.form.filename.value));">{{T .Lang "account.ml_delete_submit"}}</button>
+              </div>
+              <p class="text-body-secondary small mb-0 mt-1" id="correctionModelDetails"></p>
             </form>
             {{else}}
             <p class="text-body-secondary small mb-0">{{T .Lang "account.ml_no_models"}}</p>
@@ -96,18 +99,21 @@
           <div class="card-body">
             <h3 class="h6 card-title">{{T .Lang "account.ml_recovery_heading"}}</h3>
             {{if .RecoveryModels}}
-            <form method="post" action="/dashboard/account/ml/activate" class="d-flex gap-2">
+            <form method="post" action="/dashboard/account/ml/activate">
               <input type="hidden" name="role" value="recovery">
-              <select name="filename" class="form-select form-select-sm">
-                {{if not .RecoveryModelActive}}<option value="" selected>{{T .Lang "account.ml_none_active"}}</option>{{end}}
-                {{range .RecoveryModels}}
-                <option value="{{.Filename}}" {{if .Active}}selected{{end}}>{{.Description}}{{if .Active}} ({{T $.Lang "account.ml_active_badge"}}){{end}}</option>
-                {{end}}
-              </select>
-              <button type="submit" class="btn btn-sm btn-primary text-nowrap">{{T .Lang "account.ml_activate_submit"}}</button>
-              <button type="submit" formaction="/dashboard/account/ml/delete" class="btn btn-sm btn-outline-danger text-nowrap"
-                      data-confirm-template="{{T .Lang "confirm.remove_model"}}"
-                      onclick="return confirm(this.dataset.confirmTemplate.replace('%s', this.form.filename.value));">{{T .Lang "account.ml_delete_submit"}}</button>
+              <div class="d-flex gap-2">
+                <select name="filename" id="recoveryModelSelect" class="form-select form-select-sm">
+                  {{if not .RecoveryModelActive}}<option value="" selected>{{T .Lang "account.ml_none_active"}}</option>{{end}}
+                  {{range .RecoveryModels}}
+                  <option value="{{.Filename}}" title="{{.Description}}" {{if .Active}}selected{{end}}>{{.Label}}{{if .Active}} ({{T $.Lang "account.ml_active_badge"}}){{end}}</option>
+                  {{end}}
+                </select>
+                <button type="submit" class="btn btn-sm btn-primary text-nowrap">{{T .Lang "account.ml_activate_submit"}}</button>
+                <button type="submit" formaction="/dashboard/account/ml/delete" class="btn btn-sm btn-outline-danger text-nowrap"
+                        data-confirm-template="{{T .Lang "confirm.remove_model"}}"
+                        onclick="return confirm(this.dataset.confirmTemplate.replace('%s', this.form.filename.value));">{{T .Lang "account.ml_delete_submit"}}</button>
+              </div>
+              <p class="text-body-secondary small mb-0 mt-1" id="recoveryModelDetails"></p>
             </form>
             {{else}}
             <p class="text-body-secondary small mb-0">{{T .Lang "account.ml_no_models"}}</p>
@@ -151,7 +157,13 @@
     <p class="text-body-secondary small">{{T .Lang "account.data_hint"}}</p>
     <div class="card card-md">
       <div class="card-body d-flex flex-wrap gap-4">
-        <a href="/dashboard/account/backup" class="btn btn-outline-primary btn-sm">{{T .Lang "account.backup_submit"}}</a>
+        {{/* A download link never navigates the browser away (Content-Disposition: attachment
+             just triggers a save), so without this the page would keep showing the old
+             locked-Flush state even though the backup that just downloaded already unlocked it
+             server-side. The reload is delayed, not immediate, so the download itself has time
+             to actually start firing before the page goes away. */}}
+        <a href="/dashboard/account/backup" class="btn btn-outline-primary btn-sm"
+           onclick="setTimeout(function() { location.reload(); }, 800);">{{T .Lang "account.backup_submit"}}</a>
         <form method="post" action="/dashboard/account/restore" enctype="multipart/form-data" class="d-flex flex-wrap gap-2 align-items-end mb-0">
           <div>
             <label class="form-label small mb-1">{{T .Lang "account.restore_file"}}</label>
@@ -167,14 +179,31 @@
     <p class="text-body-secondary small">{{T .Lang "account.flush_hint"}}</p>
     <div class="card card-md border-danger">
       <div class="card-body">
+        {{if .BackupExists}}
+        <p class="text-body-secondary small">{{T .Lang "account.last_backup"}} {{(localTime .LastBackupAt).Format "2006-01-02 15:04"}}</p>
+        {{end}}
+        {{if .HasBackup}}
         <form method="post" action="/dashboard/account/flush" class="mb-0">
           <button type="submit" class="btn btn-danger"
                   onclick="return confirm('{{T .Lang "confirm.flush_all"}}');">{{T .Lang "account.flush_submit"}}</button>
         </form>
+        {{else if .BackupExists}}
+        <p class="text-danger small">{{T .Lang "account.flush_stale_hint"}}</p>
+        <button type="button" class="btn btn-danger" disabled>{{T .Lang "account.flush_submit"}}</button>
+        {{else}}
+        <p class="text-danger small">{{T .Lang "account.flush_locked_hint"}}</p>
+        <button type="button" class="btn btn-danger" disabled>{{T .Lang "account.flush_submit"}}</button>
+        {{end}}
       </div>
     </div>
   </main>
   {{template "scripts" .}}
+  {{if .CorrectionModels}}
+  <script>atlasSetupModelDetails('correctionModelSelect', 'correctionModelDetails')</script>
+  {{end}}
+  {{if .RecoveryModels}}
+  <script>atlasSetupModelDetails('recoveryModelSelect', 'recoveryModelDetails')</script>
+  {{end}}
 </body>
 </html>
 {{end}}

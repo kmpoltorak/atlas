@@ -1,5 +1,23 @@
 'use strict'
 
+// Mirrors a <select>'s selected <option title="..."> into a sibling element — used by the
+// Account page's ML model pickers (see ml.ModelInfo.ShortLabel/Description): a native <option>
+// can't wrap or truncate its own text, so the full metrics (PR AUC, ROC AUC, sample sizes,
+// baseline verdict) that actually matter for the promotion decision moved out of the visible
+// label — which is now just Version + trained date, short enough to fit — into title, and this
+// keeps them readable below the dropdown without relying on a hover tooltip.
+function atlasSetupModelDetails(selectId, detailsId) {
+  const select = document.getElementById(selectId)
+  const details = document.getElementById(detailsId)
+  if (!select || !details) return
+  const sync = () => {
+    const option = select.selectedOptions[0]
+    details.textContent = option ? option.title : ''
+  }
+  select.addEventListener('change', sync)
+  sync()
+}
+
 // Wires up a checkbox-select "Delete selected" bulk-delete form: a select-all checkbox in the
 // header, one checkbox per row (checkboxClass), and a bulk submit button (bulkBtnId) that stays
 // disabled until at least one row is checked. Shared across every dashboard page with this
