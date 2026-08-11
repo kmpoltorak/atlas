@@ -122,7 +122,8 @@ func TestFetchQuoteParsesMeta(t *testing.T) {
 				"result": [{
 					"meta": {
 						"regularMarketPrice": 146.605,
-						"chartPreviousClose": 151.05
+						"chartPreviousClose": 151.05,
+						"currency": "USD"
 					}
 				}]
 			}
@@ -138,7 +139,7 @@ func TestFetchQuoteParsesMeta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if quote.Symbol != "ORCL" || quote.Price != 146.605 || quote.PreviousClose != 151.05 {
+	if quote.Symbol != "ORCL" || quote.Price != 146.605 || quote.PreviousClose != 151.05 || quote.Currency != "USD" {
 		t.Fatalf("unexpected quote: %+v", quote)
 	}
 }

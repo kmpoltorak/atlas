@@ -32,6 +32,12 @@ type Quote struct {
 	Symbol        string
 	Price         float64
 	PreviousClose float64
+	// Currency is the instrument's native trading currency (e.g. "USD" for a US stock, "PLN"
+	// for a WSE listing), exactly as the provider reports it — an ISO 4217 code, but not
+	// necessarily one of currency.Valid's three; callers that need to combine this with
+	// PLN-denominated portfolio figures (Position.CurrentPrice) must convert first. May be
+	// empty if the provider didn't report one.
+	Currency string
 }
 
 type MarketProvider interface {

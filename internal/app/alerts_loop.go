@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"atlas/internal/domain/alerts"
+	"atlas/internal/domain/currency"
 	"atlas/internal/domain/market"
 	"atlas/internal/infrastructure/notifications"
 
@@ -202,10 +203,43 @@ func (a *Application) refreshWatchlistQuotes() {
 			a.Logger.Warn("failed to fetch quote", zap.String("symbol", symbol), zap.Error(err))
 			continue
 		}
+		quote, err = a.quoteToPLN(quote)
+		if err != nil {
+			a.Logger.Warn("failed to convert quote to PLN", zap.String("symbol", symbol), zap.String("currency", quote.Currency), zap.Error(err))
+			continue
+		}
 		if err := a.Storage.UpsertSymbolQuote(symbol, quote); err != nil {
 			a.Logger.Warn("failed to persist quote", zap.String("symbol", symbol), zap.Error(err))
 		}
 	}
+}
+
+// quoteToPLN converts a Quote's Price/PreviousClose from its native trading currency into PLN
+// (currency.Base) — the currency Position.CurrentPrice and everything downstream of it
+// (P&L, risk) is always denominated in (see portfolio.applyTransaction). Without this, a live
+// USD quote overlaid onto a PLN-denominated position produced nonsense figures: a ~$130 stock
+// read as if it were 130 PLN, roughly a 4x understatement.
+//
+// An empty or unrecognized currency is treated as already-PLN rather than converted: Yahoo
+// reports "PLN" for every WSE (.WA) ticker already, and Atlas only converts the three
+// currencies it actually supports (currency.Valid) — anything else (a blank response, or an
+// instrument type Atlas' portfolio recording was never meant to hold) is left as-is rather than
+// guessing at a rate.
+func (a *Application) quoteToPLN(quote market.Quote) (market.Quote, error) {
+	code := currency.Code(quote.Currency)
+	if quote.Currency == "" || !currency.Valid(code) || a.ExchangeRates == nil {
+		return quote, nil
+	}
+	price, err := a.ExchangeRates.ToBase(quote.Price, code)
+	if err != nil {
+		return market.Quote{}, err
+	}
+	previousClose, err := a.ExchangeRates.ToBase(quote.PreviousClose, code)
+	if err != nil {
+		return market.Quote{}, err
+	}
+	quote.Price, quote.PreviousClose = price, previousClose
+	return quote, nil
 }
 
 // isHighPriorityAction reports whether an action should push a Discord notification, per
