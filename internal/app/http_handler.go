@@ -50,6 +50,7 @@ func (a *Application) NewHandler() http.Handler {
 	mux.HandleFunc("/dashboard/account/totp/qr.png", a.totpQRHandler)
 	mux.HandleFunc("/dashboard/account/totp/confirm", a.totpConfirmHandler)
 	mux.HandleFunc("/dashboard/account/totp/disable", a.totpDisableHandler)
+	mux.HandleFunc("/dashboard/account/ml/toggle", a.mlEngineToggleHandler)
 	mux.HandleFunc("/dashboard/account/ml/activate", a.mlModelActivateHandler)
 	mux.HandleFunc("/dashboard/account/ml/delete", a.mlModelDeleteHandler)
 	mux.HandleFunc("/dashboard/account/ml/train", a.mlTrainHandler)

@@ -633,6 +633,7 @@ func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, 
 		RecoveryModels:        a.modelOptions(mlUC.RoleRecovery, a.ML.CurrentRecoveryModel()),
 		CorrectionModelActive: a.ML.CurrentModel() != nil,
 		RecoveryModelActive:   a.ML.CurrentRecoveryModel() != nil,
+		MLEnabled:             a.Orchestrator.MLEnabled(),
 		TrainerConfigured:     trainerConfigured,
 		TrainerStatus:         trainerStatus,
 		TrainerError:          trainerErr,
@@ -660,6 +661,38 @@ func (a *Application) modelOptions(role mlUC.Role, active *mlUC.OnnxModel) []web
 		}
 	}
 	return options
+}
+
+// mlEngineToggleHandler flips the decision engine's ML-blend toggle from the Account page — the
+// switch takes effect immediately (decision.Orchestrator.SetMLEnabled hot-swaps a runtime flag,
+// no restart needed) and is durably recorded (migrations/015) so it survives one. Model files
+// stay loaded and usable via /predict either way; this only controls whether BuildRecommendation
+// factors them into BUY/SELL/HOLD.
+func (a *Application) mlEngineToggleHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		a.renderAccountPage(w, r, "Invalid form submission.", "")
+		return
+	}
+	enabled := r.FormValue("enabled") == "true"
+
+	a.Orchestrator.SetMLEnabled(enabled)
+	if err := a.Storage.SetMLEnabled(enabled); err != nil {
+		// The toggle already took effect in memory; only the durable record failed, so this
+		// warns rather than rolling the toggle back — a restart would just re-read ML_ENABLED's
+		// default in that case, not silently lose the running setting, same stance as
+		// mlModelActivateHandler's SetActiveModelSelection failure below.
+		a.Logger.Warn("failed to persist ML-enabled setting", zap.Bool("enabled", enabled), zap.Error(err))
+	}
+
+	if enabled {
+		a.renderAccountPage(w, r, "", "ML blend enabled — recommendations now factor in ML/portfolio/risk again.")
+	} else {
+		a.renderAccountPage(w, r, "", "ML blend disabled — recommendations now score from the technical term alone.")
+	}
 }
 
 // mlModelActivateHandler loads the model the Account page's dropdown submitted and, on success,

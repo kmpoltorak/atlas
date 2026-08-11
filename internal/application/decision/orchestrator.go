@@ -2,6 +2,7 @@ package decision
 
 import (
 	"math"
+	"sync/atomic"
 
 	analyzerUC "atlas/internal/application/analyzer"
 	mlUC "atlas/internal/application/ml"
@@ -26,14 +27,24 @@ type Orchestrator struct {
 	Portfolio *portfolioUC.UseCase
 	Decision  *UseCase
 	ML        *mlUC.UseCase
+
+	// mlEnabled is a runtime on/off switch for the ML+Portfolio+Risk blend, independent of
+	// whether ML is wired in at all (see NewOrchestrator vs NewOrchestratorWithML) — the
+	// Account dashboard page flips this live (see SetMLEnabled) so a toggle takes effect
+	// immediately, with no restart needed, unlike the ML_ENABLED env var it defaults from
+	// (config.Config.MLEnabled). Defaults true: unset, it preserves NewOrchestratorWithML's
+	// existing behavior exactly.
+	mlEnabled atomic.Bool
 }
 
 func NewOrchestrator(analyzerUC *analyzerUC.UseCase, portfolioUC *portfolioUC.UseCase, decisionUC *UseCase) *Orchestrator {
-	return &Orchestrator{
+	o := &Orchestrator{
 		Analyzer:  analyzerUC,
 		Portfolio: portfolioUC,
 		Decision:  decisionUC,
 	}
+	o.mlEnabled.Store(true)
+	return o
 }
 
 // NewOrchestratorWithML wires the ML use case in as well, enabling the full Technical+ML+
@@ -43,6 +54,21 @@ func NewOrchestratorWithML(analyzerUC *analyzerUC.UseCase, portfolioUC *portfoli
 	o := NewOrchestrator(analyzerUC, portfolioUC, decisionUC)
 	o.ML = mlUC
 	return o
+}
+
+// MLEnabled reports whether the ML+Portfolio+Risk blend is currently switched on (see
+// mlEnabled) — read by the Account page to render the toggle's current state.
+func (o *Orchestrator) MLEnabled() bool {
+	return o.mlEnabled.Load()
+}
+
+// SetMLEnabled flips the runtime ML-blend toggle — called by the Account page's handler after
+// durably recording the choice (persistence.TimescaleDB.SetMLEnabled), and by the composition
+// root at startup to apply config.Config.MLEnabled/the durable override. Safe to call whether or
+// not ML was wired in at construction (NewOrchestrator vs NewOrchestratorWithML); with o.ML nil,
+// blendMLAndPortfolio's gate on o.ML already skips the blend regardless of this flag.
+func (o *Orchestrator) SetMLEnabled(enabled bool) {
+	o.mlEnabled.Store(enabled)
 }
 
 // BuildRecommendationFromBars builds a recommendation from OHLCV bars, a portfolio snapshot, and the decision engine.
@@ -285,7 +311,16 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 	// no-penalty value is 0.5, the top of portfolioRiskSignal's own scale.
 	result := blendResult{Overall: technical.Overall, MLScore: 1.0, PortfolioScore: 0.5, RiskScore: 1.0, MLConfidence: 1.0}
 
-	if o.ML != nil {
+	// mlActive also gates the runtime mlEnabled toggle (see SetMLEnabled), so the Account page's
+	// switch reproduces exactly what NewOrchestrator (ML never wired in) already does for the
+	// prediction call and the multiplication below: no prediction call, no ML/Portfolio/Risk
+	// multiplication, MLConfidence stays at its never-triggers-WAIT default, MLModelVersion stays
+	// empty. Portfolio position/risk data is deliberately NOT gated on this — HasPosition (BUY vs
+	// ACCUMULATE, SELL vs REDUCE) reflects real portfolio state independent of whether the ML
+	// blend is switched on, exactly as it already does when ML was never wired in at all.
+	mlActive := o.ML != nil && o.mlEnabled.Load()
+
+	if mlActive {
 		feature := mlUC.BuildFeatureVector(o.Analyzer, symbol, bars)
 		if prediction, err := o.ML.Predict(feature); err == nil {
 			result.MLScore = mlScoreFromPrediction(prediction)
@@ -306,10 +341,10 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 	}
 
 	// Gated on ML specifically (not "ML or Portfolio"): every existing NewOrchestrator call
-	// site already passes a non-nil Portfolio, so gating on either would have silently
-	// changed behavior everywhere instead of only where NewOrchestratorWithML opts in.
-	// Portfolio's non-nil-ness on its own does not enable the blend.
-	if o.ML != nil {
+	// site already passes a non-nil Portfolio, so gating on either would have silently changed
+	// behavior everywhere instead of only where NewOrchestratorWithML opts in — Portfolio's
+	// non-nil-ness on its own does not enable the blend.
+	if mlActive {
 		// Technical stays dominant; ML/Portfolio/Risk are secondary signals. ML is currently
 		// RSI-derived too (see ml.UseCase.Predict) when no trained model is loaded, so this is
 		// partly redundant with the RSI blend in buildTechnicalScore until a real model exists —

@@ -176,6 +176,12 @@ type AccountPage struct {
 	CorrectionModelActive bool
 	RecoveryModelActive   bool
 
+	// MLEnabled is the live decision.Orchestrator.MLEnabled() value — whether BUY/SELL/HOLD
+	// scoring currently blends ML+Portfolio+Risk into the technical score, or scores from the
+	// technical term alone. Seeded from ML_ENABLED at startup but flippable here without a
+	// restart (see internal/app/app.go's resolveMLEnabled and migrations/015).
+	MLEnabled bool
+
 	// TrainerConfigured is true when TRAINER_URL is set (see config.Config.TrainerURL) — the
 	// "Train new candidate" section always renders, but explains how to run
 	// training/retrain.sh by hand instead when this is false, rather than showing a
