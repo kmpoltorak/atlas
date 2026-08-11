@@ -145,6 +145,21 @@ Positions
 Profit/Loss
 Drawdown
 ```
+
+## Trading costs
+
+Every simulated trade is charged `tradeCostRate` (0.1%) on each side, so a round trip costs 0.2%.
+The entry fee comes out of the same cash that buys the shares, so a position is smaller than a
+free trade would have bought, and the cost basis it carries into the decision engine
+(`simPortfolio.AverageCost`) is the price actually paid. A round trip that gained less than the
+fee counts as a losing trade, not a winning one.
+
+Before this existed, every simulation traded for free. That flatters exactly the strategies a
+backtest is most likely to be run on — the ones that trade often for a small edge each time — and
+0.1% per side is the difference between a real result and an unreachable one for any of them. The
+rate is a conservative retail default covering commission and spread; set it to the real brokerage
+fee before reading a result as money.
+
 ---
 # Performance Metrics
 Every backtest must calculate:

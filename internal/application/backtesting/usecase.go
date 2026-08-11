@@ -20,6 +20,13 @@ import (
 // warm-up period used by the analyzer.
 const minLookback = 15
 
+// tradeCostRate is charged on each side of a trade, so a round trip costs twice this. Until it
+// was added, every simulation traded for free and reported returns nobody could have earned —
+// which matters most for exactly the strategies a backtest is likeliest to flatter, the ones that
+// trade often for a small edge each time. 0.1% per side is a conservative retail default covering
+// commission and spread; set it to the real brokerage fee before reading any result as money.
+const tradeCostRate = 0.001
+
 // UseCase runs a historical simulation of the real decision pipeline (analyzer + decision
 // engine, via Orchestrator) against past bars. Per docs/backtesting.md's "No Future Data
 // Leakage" principle, the decision at bar i only ever sees bars[:i+1].
@@ -153,16 +160,20 @@ func (u *UseCase) simulate(symbol string, bars []market.Bar, initialCapital floa
 		switch recommendation.Action {
 		case "BUY":
 			if cash > 0 {
-				entryPrice = today.Close
-				quantity = cash / today.Close
+				// entryPrice is the effective per-share cost basis including the entry fee, not
+				// the market price — so the position's ROI (which reaches the decision engine via
+				// simPortfolio.AverageCost) reflects what the shares actually cost.
+				entryPrice = today.Close / (1 - tradeCostRate)
+				quantity = cash / entryPrice
 				cash = 0
 				trades = append(trades, newTrade(today, symbol, recommendation, quantity))
 			}
 		case "SELL":
 			if quantity > 0 {
 				sold := quantity
-				cash += quantity * today.Close
-				if today.Close > entryPrice {
+				cash += quantity * today.Close * (1 - tradeCostRate)
+				// A trade that gained less than the round trip cost is a loss, not a win.
+				if today.Close*(1-tradeCostRate) > entryPrice {
 					wins++
 				} else {
 					losses++

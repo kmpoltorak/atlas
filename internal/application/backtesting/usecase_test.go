@@ -194,3 +194,34 @@ func TestRocAUCIsUndefinedWithOnlyOneClass(t *testing.T) {
 		t.Fatalf("expected 0.5 when only one class is present, got %v", auc)
 	}
 }
+
+// TestTradingCostsAreCharged pins the one thing a zero-fee backtester gets wrong: a strategy
+// that buys and never sells should end up holding strictly fewer shares than its capital would
+// have bought at the market price, because the entry fee came out of the same cash.
+func TestTradingCostsAreCharged(t *testing.T) {
+	uc := NewUseCase(newOrchestrator())
+	bars := uptrendBars(40)
+
+	result, err := uc.Run("AAPL", bars, 10000, "momentum", "v1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var bought bool
+	for _, trade := range result.Trades {
+		if trade.Action != "BUY" {
+			continue
+		}
+		bought = true
+		free := 10000 / trade.Price
+		if trade.Quantity >= free {
+			t.Fatalf("entry fee not charged: got %v shares, a free trade would buy %v", trade.Quantity, free)
+		}
+		if trade.Quantity < free*(1-2*tradeCostRate) {
+			t.Fatalf("entry fee overcharged: got %v shares against %v at one fee", trade.Quantity, free)
+		}
+		break
+	}
+	if !bought {
+		t.Fatal("expected at least one BUY to check the fee against")
+	}
+}
