@@ -90,6 +90,12 @@ type AlertsPage struct {
 	// (persistence.CurrentActionStreaks). A symbol with no recorded history yet is simply absent,
 	// and index on a missing key yields the zero ActiveDuration, which renders as blank.
 	ActiveFor map[string]ActiveDuration
+	// Info is per-symbol quote data (see SymbolInfo.LastPrice/PreviousClose/ChangePercent) for
+	// the "Today" column — how the symbol is doing right now, independent of whether an hourly
+	// bar has closed yet today (see providers.dropUnclosedBars). A symbol absent from this map,
+	// or with HasQuote false, simply has no quote fetched yet — the column renders blank, not
+	// the page failing.
+	Info map[string]SymbolInfo
 }
 
 // ActiveDuration carries both renderings of the same span because the table needs both: Label is
@@ -161,11 +167,33 @@ type WatchlistPage struct {
 	Success string
 }
 
-// SymbolInfo is the Watchlist page's rendering of persistence.SymbolInfo — just the two fields
-// the table shows (see WatchlistPage.Info).
+// SymbolInfo is one persistence.SymbolInfo row's rendering, shared by two pages that each read
+// only the fields they show: the Watchlist page's Name/Type columns (WatchlistPage.Info — what
+// a symbol is, fetched once) and the Alerts page's "Today" column (AlertsPage.Info — how it's
+// doing right now, refreshed every alert-poll cycle). Deliberately not shown on Watchlist: a
+// live, constantly-changing price doesn't belong on a page about which symbols are tracked, not
+// how they're currently doing — see AlertsPage.Info's doc comment.
 type SymbolInfo struct {
 	Name string
 	Type string
+	// LastPrice/PreviousClose back Alerts' "Today" column — the live price vs. the prior
+	// session's close (see internal/app/alerts_loop.go's refreshWatchlistQuotes), independent of
+	// whether an hourly bar has closed yet today. Zero PreviousClose means no quote has been
+	// fetched for this symbol yet (see HasQuote).
+	LastPrice     float64
+	PreviousClose float64
+}
+
+// HasQuote reports whether a live quote has been fetched for this symbol yet (see
+// refreshWatchlistQuotes) — false right after a symbol is added, until the next poll cycle.
+func (s SymbolInfo) HasQuote() bool {
+	return s.PreviousClose > 0
+}
+
+// ChangePercent is today's move — LastPrice against the prior session's close — as a percentage
+// (e.g. -2.94, not -0.0294). Meaningless when HasQuote is false; callers must check that first.
+func (s SymbolInfo) ChangePercent() float64 {
+	return (s.LastPrice/s.PreviousClose - 1) * 100
 }
 
 // AccountPage is the view model for templates/account.html.

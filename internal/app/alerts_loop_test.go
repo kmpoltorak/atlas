@@ -32,6 +32,10 @@ func (loopStubProvider) FetchInstrumentInfo(symbol string) (market.InstrumentInf
 	return market.InstrumentInfo{Symbol: symbol}, nil
 }
 
+func (loopStubProvider) FetchQuote(symbol string) (market.Quote, error) {
+	return market.Quote{Symbol: symbol}, nil
+}
+
 // A rising series long enough for the decision engine's momentum term to have a reading: it
 // needs more than that term's lookback window, and the per-bar returns must vary, since a
 // perfectly uniform climb has zero realized volatility to normalize against and reads as no

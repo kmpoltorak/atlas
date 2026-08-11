@@ -133,6 +133,7 @@ func (a *Application) pollAlertsOnce(lastAction map[string]string) {
 		a.Logger.Warn("alert evaluation completed with per-symbol errors", zap.Error(err))
 		a.Metrics.AlertPollErrors.Inc()
 	}
+	a.refreshWatchlistQuotes()
 
 	for _, alert := range result {
 		a.persistRecommendation(alert.Recommendation)
@@ -161,6 +162,32 @@ func (a *Application) pollAlertsOnce(lastAction map[string]string) {
 		lastAction[symbol] = action
 		a.Metrics.AlertsSent.WithLabelValues(action).Inc()
 		a.Logger.Info("discord alert sent", zap.String("symbol", symbol), zap.String("action", action))
+	}
+}
+
+// refreshWatchlistQuotes fetches and persists market.Quote (current live price + prior close)
+// for every current watchlist symbol — called once per poll cycle (see pollAlertsOnce),
+// independent of alert evaluation, so the Watchlist page's "today" column stays current without
+// waiting for an hourly bar to close (see providers.dropUnclosedBars). Best-effort per symbol:
+// one provider failure just logs and moves on, matching Evaluate's own per-symbol handling.
+func (a *Application) refreshWatchlistQuotes() {
+	if a.Collector == nil || a.Collector.Provider == nil || a.Storage == nil {
+		return
+	}
+	items, err := a.Watchlist.List()
+	if err != nil {
+		a.Logger.Warn("could not list watchlist for quote refresh", zap.Error(err))
+		return
+	}
+	for _, item := range items {
+		quote, err := a.Collector.Provider.FetchQuote(item.Symbol)
+		if err != nil {
+			a.Logger.Warn("failed to fetch quote", zap.String("symbol", item.Symbol), zap.Error(err))
+			continue
+		}
+		if err := a.Storage.UpsertSymbolQuote(item.Symbol, quote); err != nil {
+			a.Logger.Warn("failed to persist quote", zap.String("symbol", item.Symbol), zap.Error(err))
+		}
 	}
 }
 

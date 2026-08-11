@@ -122,59 +122,77 @@ func (p *YahooFinanceProvider) FetchBars(symbol string, window int) ([]market.Ba
 	return dropUnclosedBars(bars, p.now()), nil
 }
 
-// FetchInstrumentInfo reports what symbol actually is — its display name and instrument type —
-// read off the same chart endpoint FetchBars already uses, but with a minimal one-day/daily
-// request rather than a full bars window: the "meta" object it's after (symbol, instrumentType,
-// shortName/longName, fullExchangeName) is identical regardless of range/interval, and this is
-// called far less often than FetchBars (once per symbol, at watchlist-add time or from the
-// Watchlist page's "Refresh info" button — see internal/app/web_handlers.go — not on every
-// poll), so there's no reason to pay for hourly history just to read four metadata fields.
-func (p *YahooFinanceProvider) FetchInstrumentInfo(symbol string) (market.InstrumentInfo, error) {
+// chartMeta is the chart endpoint's "meta" object, shared by everything below that only needs
+// metadata, not the bars series itself.
+type chartMeta struct {
+	InstrumentType     string  `json:"instrumentType"`
+	ShortName          string  `json:"shortName"`
+	LongName           string  `json:"longName"`
+	FullExchangeName   string  `json:"fullExchangeName"`
+	RegularMarketPrice float64 `json:"regularMarketPrice"`
+	// ChartPreviousClose is relative to the *requested chart window*, not necessarily "yesterday's
+	// close" — e.g. a 5-day request returns the close from before that whole window. It only means
+	// "the previous session's close" when the request is range=1d, which is all fetchChartMeta
+	// ever asks for (see its callers below).
+	ChartPreviousClose float64 `json:"chartPreviousClose"`
+}
+
+// fetchChartMeta reads the chart endpoint's "meta" object for symbol via a minimal one-day/daily
+// request — no bars, no window — shared by FetchInstrumentInfo (name/type, fetched rarely) and
+// FetchQuote (live price, fetched every poll): both want fields from the same small response,
+// just at different cadences, so there's no reason to duplicate the request/parse plumbing.
+func (p *YahooFinanceProvider) fetchChartMeta(symbol string) (chartMeta, error) {
 	url := fmt.Sprintf("%s/%s?interval=1d&range=1d", p.BaseURL, symbol)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return market.InstrumentInfo{}, err
+		return chartMeta{}, err
 	}
 	req.Header.Set("User-Agent", yahooUserAgent)
 
 	resp, err := p.Client.Do(req)
 	if err != nil {
-		return market.InstrumentInfo{}, err
+		return chartMeta{}, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return market.InstrumentInfo{}, fmt.Errorf("unexpected provider status: %d", resp.StatusCode)
+		return chartMeta{}, fmt.Errorf("unexpected provider status: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return market.InstrumentInfo{}, err
+		return chartMeta{}, err
 	}
 
 	var payload struct {
 		Chart struct {
 			Result []struct {
-				Meta struct {
-					InstrumentType   string `json:"instrumentType"`
-					ShortName        string `json:"shortName"`
-					LongName         string `json:"longName"`
-					FullExchangeName string `json:"fullExchangeName"`
-				} `json:"meta"`
+				Meta chartMeta `json:"meta"`
 			} `json:"result"`
 		} `json:"chart"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return market.InstrumentInfo{}, err
+		return chartMeta{}, err
 	}
 	if len(payload.Chart.Result) == 0 {
-		return market.InstrumentInfo{}, fmt.Errorf("no result returned for symbol %s", symbol)
+		return chartMeta{}, fmt.Errorf("no result returned for symbol %s", symbol)
+	}
+	return payload.Chart.Result[0].Meta, nil
+}
+
+// FetchInstrumentInfo reports what symbol actually is — its display name and instrument type —
+// called far less often than FetchBars (once per symbol, at watchlist-add time or from the
+// Watchlist page's "Refresh info" button — see internal/app/web_handlers.go — not on every
+// poll), so there's no reason to pay for hourly history just to read a few metadata fields.
+func (p *YahooFinanceProvider) FetchInstrumentInfo(symbol string) (market.InstrumentInfo, error) {
+	meta, err := p.fetchChartMeta(symbol)
+	if err != nil {
+		return market.InstrumentInfo{}, err
 	}
 
 	// longName is the fuller form ("Apple Inc." vs. "Apple"-ish shortName) but Yahoo leaves it
 	// empty for some instrument types (e.g. futures contracts) that do set shortName.
-	meta := payload.Chart.Result[0].Meta
 	name := meta.LongName
 	if name == "" {
 		name = meta.ShortName
@@ -184,6 +202,22 @@ func (p *YahooFinanceProvider) FetchInstrumentInfo(symbol string) (market.Instru
 		Name:     name,
 		Type:     meta.InstrumentType,
 		Exchange: meta.FullExchangeName,
+	}, nil
+}
+
+// FetchQuote reports symbol's current live price and the prior session's close (see
+// market.Quote) — called once per alert-poll cycle for every watchlist symbol (see
+// internal/app/alerts_loop.go), independent of and much cheaper than FetchBars' full window, so
+// "how is this doing today" stays current without waiting for an hourly candle to close.
+func (p *YahooFinanceProvider) FetchQuote(symbol string) (market.Quote, error) {
+	meta, err := p.fetchChartMeta(symbol)
+	if err != nil {
+		return market.Quote{}, err
+	}
+	return market.Quote{
+		Symbol:        symbol,
+		Price:         meta.RegularMarketPrice,
+		PreviousClose: meta.ChartPreviousClose,
 	}, nil
 }
 

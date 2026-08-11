@@ -55,6 +55,10 @@ func (s stubProvider) FetchInstrumentInfo(symbol string) (market.InstrumentInfo,
 	return market.InstrumentInfo{Symbol: symbol}, nil
 }
 
+func (s stubProvider) FetchQuote(symbol string) (market.Quote, error) {
+	return market.Quote{Symbol: symbol}, nil
+}
+
 func (s stubProvider) FetchBars(symbol string, window int) ([]market.Bar, error) {
 	if s.callCount != nil {
 		*s.callCount++

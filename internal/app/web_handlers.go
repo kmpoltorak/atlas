@@ -431,7 +431,7 @@ func (a *Application) alertsPageHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	result, err := a.currentAlerts()
 	lang := a.resolveLang(r)
-	data := web.AlertsPage{Lang: lang, Alerts: result, ActiveFor: a.activeAlertDurations(lang, result)}
+	data := web.AlertsPage{Lang: lang, Alerts: result, ActiveFor: a.activeAlertDurations(lang, result), Info: a.loadSymbolInfo()}
 	if err != nil {
 		data.Warning = err.Error()
 	}
@@ -665,25 +665,31 @@ func (a *Application) renderWatchlistPage(w http.ResponseWriter, r *http.Request
 		return
 	}
 	web.Render(w, "watchlist", web.WatchlistPage{
-		Lang: a.resolveLang(r), Items: items, Info: a.watchlistSymbolInfo(), Error: errMsg, Success: successMsg,
+		Lang: a.resolveLang(r), Items: items, Info: a.loadSymbolInfo(), Error: errMsg, Success: successMsg,
 	})
 }
 
-// watchlistSymbolInfo reads what each symbol actually is (see fetchAndSaveSymbolInfo) for the
-// Watchlist page's Name/Type columns. Best-effort like modelOptions above: a failed query costs
-// those two columns and nothing else, since the watchlist itself doesn't depend on this.
-func (a *Application) watchlistSymbolInfo() map[string]web.SymbolInfo {
+// loadSymbolInfo reads one symbols row per ticker (see fetchAndSaveSymbolInfo/
+// refreshWatchlistQuotes) — Name/Type for the Watchlist page, LastPrice/PreviousClose for the
+// Alerts page's "Today" column (see alertsPageHandler); each page's template only reads the
+// fields it renders. One query serves both since it's the same underlying row. Best-effort like
+// modelOptions above: a failed query costs those columns and nothing else, since neither page's
+// core function depends on this.
+func (a *Application) loadSymbolInfo() map[string]web.SymbolInfo {
 	if a.Storage == nil {
 		return nil
 	}
 	stored, err := a.Storage.SymbolInfoByTicker()
 	if err != nil {
-		a.Logger.Warn("failed to load symbol info for the watchlist page", zap.Error(err))
+		a.Logger.Warn("failed to load symbol info", zap.Error(err))
 		return nil
 	}
 	info := make(map[string]web.SymbolInfo, len(stored))
 	for ticker, symbolInfo := range stored {
-		info[ticker] = web.SymbolInfo{Name: symbolInfo.Name, Type: symbolInfo.AssetClass}
+		info[ticker] = web.SymbolInfo{
+			Name: symbolInfo.Name, Type: symbolInfo.AssetClass,
+			LastPrice: symbolInfo.LastPrice, PreviousClose: symbolInfo.PreviousClose,
+		}
 	}
 	return info
 }
