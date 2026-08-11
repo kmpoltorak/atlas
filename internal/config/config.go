@@ -20,6 +20,7 @@ type Config struct {
 	DiscordWebhookURL  string
 	CollectorWindow    int
 	AlertPollSeconds   int
+	MLEnabled          bool
 	ModelPath          string
 	RecoveryModelPath  string
 	LibOnnxRuntimePath string
@@ -56,6 +57,14 @@ func Load() Config {
 		// providers/yahoo.go's User-Agent workaround for why that's a real concern here).
 		// internal/app/alerts_loop.go duplicates this as a fallback for the same reason.
 		AlertPollSeconds: envOrDefaultInt("ALERT_POLL_INTERVAL_SECONDS", 300),
+		// True by default (unchanged behavior). Set ML_ENABLED=false to make the decision engine
+		// score BUY/SELL/HOLD from the technical term alone (RSI/MACD/Bollinger/momentum, see
+		// decision.Orchestrator.buildTechnicalScore) — skipping the ML+Portfolio+Risk blend
+		// entirely (see NewOrchestrator vs NewOrchestratorWithML in internal/app/app.go), not just
+		// falling back to the RSI-derived ML stub, which still applies even with no model file
+		// loaded. Model files, if configured, still load and stay usable via /predict and the
+		// Account page — this only stops the decision engine from factoring them in.
+		MLEnabled: envOrDefault("ML_ENABLED", "true") == "true",
 		// All three default to "": absent means "no trained model available", which is a normal,
 		// non-fatal startup state (see internal/application/ml) — Atlas falls back to the
 		// deterministic RSI-derived stub (correction) / stays 0 (recovery) rather than failing

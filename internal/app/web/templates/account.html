@@ -46,6 +46,23 @@
       </div>
     </div>
 
+    <h2 class="h4 mt-5 mb-2">{{T .Lang "account.ml_engine_heading"}}</h2>
+    <p class="text-body-secondary small">{{T .Lang "account.ml_engine_hint"}}</p>
+    <div class="card card-md">
+      <div class="card-body d-flex align-items-center gap-3">
+        {{if .MLEnabled}}<span class="badge text-bg-success">{{T .Lang "common.enabled"}}</span>{{else}}<span class="badge text-bg-secondary">{{T .Lang "common.disabled"}}</span>{{end}}
+        <form method="post" action="/dashboard/account/ml/toggle" class="mb-0">
+          {{if .MLEnabled}}
+          <input type="hidden" name="enabled" value="false">
+          <button type="submit" class="btn btn-outline-danger btn-sm">{{T .Lang "account.ml_engine_disable_submit"}}</button>
+          {{else}}
+          <input type="hidden" name="enabled" value="true">
+          <button type="submit" class="btn btn-primary btn-sm">{{T .Lang "account.ml_engine_enable_submit"}}</button>
+          {{end}}
+        </form>
+      </div>
+    </div>
+
     <h2 class="h4 mt-5 mb-2">{{T .Lang "account.ml_models_heading"}}</h2>
     <p class="text-body-secondary small">{{T .Lang "account.ml_models_hint"}}</p>
 

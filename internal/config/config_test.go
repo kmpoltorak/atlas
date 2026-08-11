@@ -11,7 +11,7 @@ func clearEnv(t *testing.T) {
 		"SERVER_PORT", "LOG_LEVEL", "DATABASE_HOST", "DATABASE_PORT", "DATABASE_NAME",
 		"DATABASE_USER", "DATABASE_PASSWORD", "REDIS_HOST", "REDIS_PORT", "PROMETHEUS_ENABLED",
 		"MARKET_PROVIDER", "DISCORD_WEBHOOK_URL", "COLLECTOR_WINDOW_DAYS",
-		"ALERT_POLL_INTERVAL_SECONDS", "MODEL_PATH", "RECOVERY_MODEL_PATH",
+		"ALERT_POLL_INTERVAL_SECONDS", "ML_ENABLED", "MODEL_PATH", "RECOVERY_MODEL_PATH",
 		"LIBONNXRUNTIME_PATH", "ML_MODELS_DIR", "TRAINER_URL", "ADMIN_USERNAME",
 		"ADMIN_PASSWORD_HASH", "COOKIE_SECURE", "PROMETHEUS_URL", "ALERTMANAGER_URL",
 		"GRAFANA_URL",
@@ -39,6 +39,7 @@ func TestLoadDefaults(t *testing.T) {
 		DiscordWebhookURL:  "",
 		CollectorWindow:    30,
 		AlertPollSeconds:   300,
+		MLEnabled:          true,
 		ModelPath:          "",
 		RecoveryModelPath:  "",
 		LibOnnxRuntimePath: "",
@@ -63,6 +64,7 @@ func TestLoadReadsEnvOverrides(t *testing.T) {
 	t.Setenv("PROMETHEUS_ENABLED", "false")
 	t.Setenv("COLLECTOR_WINDOW_DAYS", "45")
 	t.Setenv("ALERT_POLL_INTERVAL_SECONDS", "60")
+	t.Setenv("ML_ENABLED", "false")
 	t.Setenv("ADMIN_USERNAME", "admin")
 	t.Setenv("COOKIE_SECURE", "true")
 
@@ -82,6 +84,9 @@ func TestLoadReadsEnvOverrides(t *testing.T) {
 	}
 	if cfg.AlertPollSeconds != 60 {
 		t.Errorf("AlertPollSeconds = %d, want 60", cfg.AlertPollSeconds)
+	}
+	if cfg.MLEnabled {
+		t.Errorf("MLEnabled = true, want false")
 	}
 	if cfg.AdminUsername != "admin" {
 		t.Errorf("AdminUsername = %q, want %q", cfg.AdminUsername, "admin")

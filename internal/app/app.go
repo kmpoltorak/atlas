@@ -37,10 +37,14 @@ import (
 // survive restarts (see handlers.go's persistRecommendation/persistPrediction); indicators
 // are still computed fresh per request — nothing persists the intermediate indicator series
 // itself. Backtesting's simulated recommendations are deliberately excluded from persistence
-// since they're hypothetical, not real, decisions. The Orchestrator is wired via
+// since they're hypothetical, not real, decisions. The Orchestrator is always wired via
 // NewOrchestratorWithML, so recommendations genuinely blend technical + ML + portfolio-risk
 // signals (see decision.Orchestrator.blendMLAndPortfolio) — not just technical score, even
-// though the ML component is still a deterministic stub. Auth (see internal/application/auth)
+// though the ML component is still a deterministic stub absent a loaded model. Whether that
+// blend is actually applied is a separate runtime toggle (Orchestrator.SetMLEnabled), seeded
+// from ML_ENABLED (config.Config.MLEnabled) and overridable live from the Account dashboard
+// page (resolveMLEnabled, migrations/015) — switched off, scoring uses the technical term alone.
+// Auth (see internal/application/auth)
 // is optional, same non-fatal pattern as ML/Discord: unset ADMIN_USERNAME/ADMIN_PASSWORD_HASH
 // means Auth.Enabled() is false and every route is reachable with no login gate, exactly as
 // before this feature existed — see authMiddleware.
@@ -154,7 +158,13 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 	}
 	portfolioUseCase.ExchangeRates = exchangeRates
 	decisionUseCase := decisionUC.NewUseCase()
+	// Always wired with ML (NewOrchestratorWithML) so the Account page's toggle can flip
+	// Orchestrator.SetMLEnabled live, with no restart — see decision.Orchestrator.mlEnabled's
+	// doc comment. ML_ENABLED (config.Config.MLEnabled) only sets the *initial* value below; a
+	// durable Account-page choice (migrations/015) overrides it, same override-after-fallback
+	// pattern as the ML model selection right below this.
 	orchestrator := decisionUC.NewOrchestratorWithML(analyzer, portfolioUseCase, decisionUseCase, mlUseCase)
+	orchestrator.SetMLEnabled(resolveMLEnabled(storage, logger, cfg.MLEnabled))
 
 	watchlist, err := watchlistUC.NewUseCaseWithRepository(storage)
 	if err != nil {
@@ -218,6 +228,23 @@ func overrideWithSelectedModel(storage *persistence.TimescaleDB, logger *zap.Log
 	}
 	logger.Info("loaded ML model from Account-page selection", zap.String("role", string(role)), zap.String("version", model.Version))
 	return model
+}
+
+// resolveMLEnabled checks migrations/015's engine_settings table for a durable Account-page
+// toggle and, if one exists, returns it in place of fallback (config.Config.MLEnabled, the
+// ML_ENABLED env var). A read failure just logs and returns fallback unchanged — the Account
+// page toggle is an enhancement over the env-var default, never a new way to fail startup, same
+// stance as overrideWithSelectedModel below.
+func resolveMLEnabled(storage *persistence.TimescaleDB, logger *zap.Logger, fallback bool) bool {
+	enabled, ok, err := storage.GetMLEnabled()
+	if err != nil {
+		logger.Warn("failed to read ML-enabled setting; keeping ML_ENABLED default", zap.Error(err))
+		return fallback
+	}
+	if !ok {
+		return fallback
+	}
+	return enabled
 }
 
 // Close releases the database, cache, and (if loaded) ML model resources. Call it during

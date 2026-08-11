@@ -32,6 +32,12 @@ services:
       MARKET_PROVIDER: yahoo
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
       ALERT_POLL_INTERVAL_SECONDS: "300"
+      # True by default (unchanged behavior). Set to "false" to make BUY/SELL/HOLD scoring use
+      # the technical term alone (RSI/MACD/Bollinger/momentum), skipping the ML+Portfolio+Risk
+      # blend entirely — MODEL_PATH/RECOVERY_MODEL_PATH below still load and stay usable via
+      # /predict and the Account page either way, this only stops the decision engine from
+      # factoring them in. See internal/config.Config.MLEnabled.
+      ML_ENABLED: ${ML_ENABLED:-true}
       # Empty by default: no model loaded, Atlas falls back to the deterministic RSI stub
       # (non-fatal — see internal/application/ml). Set MODEL_PATH in the shell/.env before
       # `docker compose up` to enable real inference, e.g.:

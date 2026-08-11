@@ -266,6 +266,14 @@ var translations = map[string]map[Lang]string{
 	},
 	"account.setup_submit": {LangEN: "Set up 2FA", LangPL: "Skonfiguruj 2FA"},
 
+	"account.ml_engine_heading": {LangEN: "ML in recommendations", LangPL: "ML w rekomendacjach"},
+	"account.ml_engine_hint": {
+		LangEN: "Master switch for whether BUY/SELL/HOLD scoring factors in ML/portfolio/risk at all, on top of the technical score. Takes effect immediately, no restart needed. Model files below stay loaded and usable via /predict either way.",
+		LangPL: "Główny przełącznik decydujący, czy ocena BUY/SELL/HOLD w ogóle uwzględnia ML/portfel/ryzyko, poza wynikiem technicznym. Działa natychmiast, bez restartu. Pliki modeli poniżej zostają załadowane i dostępne przez /predict niezależnie od tego ustawienia.",
+	},
+	"account.ml_engine_enable_submit":  {LangEN: "Enable ML blend", LangPL: "Włącz blend ML"},
+	"account.ml_engine_disable_submit": {LangEN: "Disable ML blend", LangPL: "Wyłącz blend ML"},
+
 	"account.ml_models_heading": {LangEN: "ML models", LangPL: "Modele ML"},
 	"account.ml_models_hint": {
 		LangEN: "Pick which trained model is active for each prediction. Takes effect immediately, no restart needed.",
