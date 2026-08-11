@@ -122,6 +122,71 @@ func (p *YahooFinanceProvider) FetchBars(symbol string, window int) ([]market.Ba
 	return dropUnclosedBars(bars, p.now()), nil
 }
 
+// FetchInstrumentInfo reports what symbol actually is — its display name and instrument type —
+// read off the same chart endpoint FetchBars already uses, but with a minimal one-day/daily
+// request rather than a full bars window: the "meta" object it's after (symbol, instrumentType,
+// shortName/longName, fullExchangeName) is identical regardless of range/interval, and this is
+// called far less often than FetchBars (once per symbol, at watchlist-add time or from the
+// Watchlist page's "Refresh info" button — see internal/app/web_handlers.go — not on every
+// poll), so there's no reason to pay for hourly history just to read four metadata fields.
+func (p *YahooFinanceProvider) FetchInstrumentInfo(symbol string) (market.InstrumentInfo, error) {
+	url := fmt.Sprintf("%s/%s?interval=1d&range=1d", p.BaseURL, symbol)
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return market.InstrumentInfo{}, err
+	}
+	req.Header.Set("User-Agent", yahooUserAgent)
+
+	resp, err := p.Client.Do(req)
+	if err != nil {
+		return market.InstrumentInfo{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return market.InstrumentInfo{}, fmt.Errorf("unexpected provider status: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return market.InstrumentInfo{}, err
+	}
+
+	var payload struct {
+		Chart struct {
+			Result []struct {
+				Meta struct {
+					InstrumentType   string `json:"instrumentType"`
+					ShortName        string `json:"shortName"`
+					LongName         string `json:"longName"`
+					FullExchangeName string `json:"fullExchangeName"`
+				} `json:"meta"`
+			} `json:"result"`
+		} `json:"chart"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return market.InstrumentInfo{}, err
+	}
+	if len(payload.Chart.Result) == 0 {
+		return market.InstrumentInfo{}, fmt.Errorf("no result returned for symbol %s", symbol)
+	}
+
+	// longName is the fuller form ("Apple Inc." vs. "Apple"-ish shortName) but Yahoo leaves it
+	// empty for some instrument types (e.g. futures contracts) that do set shortName.
+	meta := payload.Chart.Result[0].Meta
+	name := meta.LongName
+	if name == "" {
+		name = meta.ShortName
+	}
+	return market.InstrumentInfo{
+		Symbol:   symbol,
+		Name:     name,
+		Type:     meta.InstrumentType,
+		Exchange: meta.FullExchangeName,
+	}, nil
+}
+
 // yahooIntervalDuration is yahooInterval expressed as a Duration. Kept next to it so the two
 // cannot drift: dropUnclosedBars needs to know when a candle closes, which the query string's
 // "1h" only states as text.

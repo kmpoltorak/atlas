@@ -27,6 +27,27 @@ func TestFilterCurrentAlertsSkipsHoldAndUntrackedSymbols(t *testing.T) {
 	}
 }
 
+func TestSymbolsMissingInfoSkipsSymbolsAlreadyRecorded(t *testing.T) {
+	items := []watchlist.Item{{Symbol: "AAPL"}, {Symbol: "MSFT"}, {Symbol: "SPY"}}
+	existing := map[string]persistence.SymbolInfo{
+		"AAPL": {Name: "Apple Inc.", AssetClass: "EQUITY"},
+	}
+
+	missing := symbolsMissingInfo(items, existing)
+	if len(missing) != 2 || missing[0] != "MSFT" || missing[1] != "SPY" {
+		t.Fatalf("expected [MSFT SPY], got %v", missing)
+	}
+}
+
+func TestSymbolsMissingInfoReturnsEmptyWhenEverythingIsRecorded(t *testing.T) {
+	items := []watchlist.Item{{Symbol: "AAPL"}}
+	existing := map[string]persistence.SymbolInfo{"AAPL": {Name: "Apple Inc.", AssetClass: "EQUITY"}}
+
+	if missing := symbolsMissingInfo(items, existing); len(missing) != 0 {
+		t.Fatalf("expected no missing symbols, got %v", missing)
+	}
+}
+
 func TestFilterCurrentAlertsReturnsEmptyWhenNothingIsActionable(t *testing.T) {
 	recommendations := map[string]persistence.LatestRecommendation{
 		"AAPL": {Recommendation: decision.Recommendation{Symbol: "AAPL", Action: "HOLD"}},

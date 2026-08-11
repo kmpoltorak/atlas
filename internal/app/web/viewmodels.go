@@ -150,10 +150,22 @@ type BacktestsPage struct {
 
 // WatchlistPage is the view model for templates/watchlist.html.
 type WatchlistPage struct {
-	Lang    Lang
-	Items   []watchlist.Item
+	Lang  Lang
+	Items []watchlist.Item
+	// Info is what each symbol actually is (see market.InstrumentInfo), keyed by ticker, for
+	// the Name/Type columns — a symbol absent from this map simply has none fetched yet (added
+	// before this feature existed, or the "Refresh info" button hasn't run), and its row renders
+	// those columns blank rather than the page failing.
+	Info    map[string]SymbolInfo
 	Error   string
 	Success string
+}
+
+// SymbolInfo is the Watchlist page's rendering of persistence.SymbolInfo — just the two fields
+// the table shows (see WatchlistPage.Info).
+type SymbolInfo struct {
+	Name string
+	Type string
 }
 
 // AccountPage is the view model for templates/account.html.

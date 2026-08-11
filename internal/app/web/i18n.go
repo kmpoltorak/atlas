@@ -46,6 +46,7 @@ var translations = map[string]map[Lang]string{
 
 	// Shared table headers/labels, reused across multiple pages
 	"table.symbol": {LangEN: "Symbol", LangPL: "Symbol"},
+	"table.name":   {LangEN: "Name", LangPL: "Nazwa"},
 	// Announced on every symbol link. It names the destination and the new tab, because a link
 	// that opens elsewhere without saying so is disorienting for anyone not watching the viewport.
 	"table.open_in_yahoo": {LangEN: "Open on Yahoo Finance in a new tab", LangPL: "Otwórz w Yahoo Finance w nowej karcie"},
@@ -216,6 +217,11 @@ var translations = map[string]map[Lang]string{
 	"watchlist.add_submit":    {LangEN: "Add", LangPL: "Dodaj"},
 	"watchlist.manage":        {LangEN: "Manage watchlist", LangPL: "Zarządzanie listą"},
 	"watchlist.manage_hint":   {LangEN: "Add one symbol, or move the whole list between environments.", LangPL: "Dodaj pojedynczy symbol albo przenieś całą listę między środowiskami."},
+	"watchlist.refresh_info": {LangEN: "Refresh info", LangPL: "Odśwież info"},
+	"watchlist.refresh_info_hint": {
+		LangEN: "Fetches the display name and instrument type (stock, ETF, future, …) for every symbol that doesn't have one yet, from the market data provider.",
+		LangPL: "Pobiera nazwę i typ instrumentu (akcja, ETF, kontrakt terminowy, …) dla każdego symbolu, który jeszcze go nie ma, od dostawcy danych rynkowych.",
+	},
 	"watchlist.export":        {LangEN: "Export", LangPL: "Eksport"},
 	"watchlist.export_submit": {LangEN: "Download JSON", LangPL: "Pobierz JSON"},
 	"watchlist.export_hint": {
