@@ -423,16 +423,13 @@ func (a *Application) recommendationsPageHandler(w http.ResponseWriter, r *http.
 	web.Render(w, "recommendations", data)
 }
 
-// alertsPageHandler mirrors alertsHandler (GET /alerts) — same evaluation, same persistence.
+// alertsPageHandler mirrors alertsHandler (GET /alerts) — same data source (currentAlerts).
 func (a *Application) alertsPageHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
 		return
 	}
-	result, err := a.Alerts.Evaluate()
-	for _, alert := range result {
-		a.persistRecommendation(alert.Recommendation)
-	}
+	result, err := a.currentAlerts()
 	lang := a.resolveLang(r)
 	data := web.AlertsPage{Lang: lang, Alerts: result, ActiveFor: a.activeAlertDurations(lang, result)}
 	if err != nil {
@@ -446,11 +443,11 @@ func (a *Application) alertsPageHandler(w http.ResponseWriter, r *http.Request) 
 // action — the one thing the alerts themselves cannot say, since every recommendation is stamped
 // with the moment it was computed rather than the moment the signal appeared.
 //
-// The streak is only reported when the stored action still matches the action just evaluated. The
-// two can disagree by one poll: this page evaluates live and persists as it renders, so a symbol
-// that flipped moments ago has a streak row describing the action it held until now. Showing that
-// span next to the new action would state the opposite of the truth, so the cell stays blank
-// until the next write establishes the new streak.
+// The streak is only reported when the stored action still matches the action currentAlerts just
+// read. Both now come from the same recommendations table (currentAlerts's LatestRecommendations,
+// this function's CurrentActionStreaks), so the two disagreeing takes a poll writing between the
+// two queries — rare, but the guard costs nothing and a wrong duration next to the wrong action
+// would be worse than a blank cell.
 //
 // Best-effort by design: no storage, or a failed query, costs the duration column and nothing
 // else. Alerts are the point of the page and must still render.
