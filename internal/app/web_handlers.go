@@ -818,6 +818,7 @@ func (a *Application) modelOptions(role mlUC.Role, active *mlUC.OnnxModel) []web
 	for i, info := range infos {
 		options[i] = web.ModelOption{
 			Filename:    info.Filename,
+			Label:       info.ShortLabel(),
 			Description: info.Description(),
 			Active:      active != nil && info.Version == active.Version,
 		}

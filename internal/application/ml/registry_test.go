@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeTrainingMetadataFixture(t *testing.T, dir, name string, meta trainingMetadata) {
@@ -68,6 +69,22 @@ func TestListModelsSkipsMalformedSidecarsWithoutFailing(t *testing.T) {
 	}
 	if len(infos) != 1 || infos[0].Version != "v1" {
 		t.Fatalf("expected only the valid model, got %+v", infos)
+	}
+}
+
+// ShortLabel is what actually renders as a <select> option's visible text (see
+// web.ModelOption.Label) — it has to stay short and it has to omit the metrics Description
+// carries, since those moved to the option's title attribute instead (a real bug report: the
+// full Description as the option text overflowed the dropdown).
+func TestModelInfoShortLabelOmitsMetrics(t *testing.T) {
+	trainedAt := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
+	info := ModelInfo{Version: "v20260808120000", TrainedAt: trainedAt, HoldoutAUC: 0.83, HoldoutAveragePrecision: 0.65}
+	label := info.ShortLabel()
+	if !strings.Contains(label, "v20260808120000") || !strings.Contains(label, "2026-08-08") {
+		t.Fatalf("expected label %q to contain the version and trained date", label)
+	}
+	if strings.Contains(label, "0.83") || strings.Contains(label, "PR AUC") {
+		t.Fatalf("expected label %q to omit the metrics Description carries", label)
 	}
 }
 

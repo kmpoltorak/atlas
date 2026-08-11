@@ -72,18 +72,21 @@
           <div class="card-body">
             <h3 class="h6 card-title">{{T .Lang "account.ml_correction_heading"}}</h3>
             {{if .CorrectionModels}}
-            <form method="post" action="/dashboard/account/ml/activate" class="d-flex gap-2">
+            <form method="post" action="/dashboard/account/ml/activate">
               <input type="hidden" name="role" value="correction">
-              <select name="filename" class="form-select form-select-sm">
-                {{if not .CorrectionModelActive}}<option value="" selected>{{T .Lang "account.ml_none_active"}}</option>{{end}}
-                {{range .CorrectionModels}}
-                <option value="{{.Filename}}" {{if .Active}}selected{{end}}>{{.Description}}{{if .Active}} ({{T $.Lang "account.ml_active_badge"}}){{end}}</option>
-                {{end}}
-              </select>
-              <button type="submit" class="btn btn-sm btn-primary text-nowrap">{{T .Lang "account.ml_activate_submit"}}</button>
-              <button type="submit" formaction="/dashboard/account/ml/delete" class="btn btn-sm btn-outline-danger text-nowrap"
-                      data-confirm-template="{{T .Lang "confirm.remove_model"}}"
-                      onclick="return confirm(this.dataset.confirmTemplate.replace('%s', this.form.filename.value));">{{T .Lang "account.ml_delete_submit"}}</button>
+              <div class="d-flex gap-2">
+                <select name="filename" id="correctionModelSelect" class="form-select form-select-sm">
+                  {{if not .CorrectionModelActive}}<option value="" selected>{{T .Lang "account.ml_none_active"}}</option>{{end}}
+                  {{range .CorrectionModels}}
+                  <option value="{{.Filename}}" title="{{.Description}}" {{if .Active}}selected{{end}}>{{.Label}}{{if .Active}} ({{T $.Lang "account.ml_active_badge"}}){{end}}</option>
+                  {{end}}
+                </select>
+                <button type="submit" class="btn btn-sm btn-primary text-nowrap">{{T .Lang "account.ml_activate_submit"}}</button>
+                <button type="submit" formaction="/dashboard/account/ml/delete" class="btn btn-sm btn-outline-danger text-nowrap"
+                        data-confirm-template="{{T .Lang "confirm.remove_model"}}"
+                        onclick="return confirm(this.dataset.confirmTemplate.replace('%s', this.form.filename.value));">{{T .Lang "account.ml_delete_submit"}}</button>
+              </div>
+              <p class="text-body-secondary small mb-0 mt-1" id="correctionModelDetails"></p>
             </form>
             {{else}}
             <p class="text-body-secondary small mb-0">{{T .Lang "account.ml_no_models"}}</p>
@@ -96,18 +99,21 @@
           <div class="card-body">
             <h3 class="h6 card-title">{{T .Lang "account.ml_recovery_heading"}}</h3>
             {{if .RecoveryModels}}
-            <form method="post" action="/dashboard/account/ml/activate" class="d-flex gap-2">
+            <form method="post" action="/dashboard/account/ml/activate">
               <input type="hidden" name="role" value="recovery">
-              <select name="filename" class="form-select form-select-sm">
-                {{if not .RecoveryModelActive}}<option value="" selected>{{T .Lang "account.ml_none_active"}}</option>{{end}}
-                {{range .RecoveryModels}}
-                <option value="{{.Filename}}" {{if .Active}}selected{{end}}>{{.Description}}{{if .Active}} ({{T $.Lang "account.ml_active_badge"}}){{end}}</option>
-                {{end}}
-              </select>
-              <button type="submit" class="btn btn-sm btn-primary text-nowrap">{{T .Lang "account.ml_activate_submit"}}</button>
-              <button type="submit" formaction="/dashboard/account/ml/delete" class="btn btn-sm btn-outline-danger text-nowrap"
-                      data-confirm-template="{{T .Lang "confirm.remove_model"}}"
-                      onclick="return confirm(this.dataset.confirmTemplate.replace('%s', this.form.filename.value));">{{T .Lang "account.ml_delete_submit"}}</button>
+              <div class="d-flex gap-2">
+                <select name="filename" id="recoveryModelSelect" class="form-select form-select-sm">
+                  {{if not .RecoveryModelActive}}<option value="" selected>{{T .Lang "account.ml_none_active"}}</option>{{end}}
+                  {{range .RecoveryModels}}
+                  <option value="{{.Filename}}" title="{{.Description}}" {{if .Active}}selected{{end}}>{{.Label}}{{if .Active}} ({{T $.Lang "account.ml_active_badge"}}){{end}}</option>
+                  {{end}}
+                </select>
+                <button type="submit" class="btn btn-sm btn-primary text-nowrap">{{T .Lang "account.ml_activate_submit"}}</button>
+                <button type="submit" formaction="/dashboard/account/ml/delete" class="btn btn-sm btn-outline-danger text-nowrap"
+                        data-confirm-template="{{T .Lang "confirm.remove_model"}}"
+                        onclick="return confirm(this.dataset.confirmTemplate.replace('%s', this.form.filename.value));">{{T .Lang "account.ml_delete_submit"}}</button>
+              </div>
+              <p class="text-body-secondary small mb-0 mt-1" id="recoveryModelDetails"></p>
             </form>
             {{else}}
             <p class="text-body-secondary small mb-0">{{T .Lang "account.ml_no_models"}}</p>
@@ -192,6 +198,12 @@
     </div>
   </main>
   {{template "scripts" .}}
+  {{if .CorrectionModels}}
+  <script>atlasSetupModelDetails('correctionModelSelect', 'correctionModelDetails')</script>
+  {{end}}
+  {{if .RecoveryModels}}
+  <script>atlasSetupModelDetails('recoveryModelSelect', 'recoveryModelDetails')</script>
+  {{end}}
 </body>
 </html>
 {{end}}

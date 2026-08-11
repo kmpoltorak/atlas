@@ -58,6 +58,15 @@ type ModelInfo struct {
 	UnseenSymbolAUC *float64
 }
 
+// ShortLabel renders just enough to identify a model at a glance in a narrow UI control (the
+// Account page's <select>, which can't wrap or scroll a single <option>'s text) — Version plus
+// when it was trained. The full metrics Description carries (PR AUC, ROC AUC, sample sizes,
+// baseline verdict) still matter for the actual promotion decision, so callers pair this with
+// Description as a title/tooltip rather than dropping that information.
+func (m ModelInfo) ShortLabel() string {
+	return fmt.Sprintf("%s (%s)", m.Version, m.TrainedAt.Format("2006-01-02 15:04"))
+}
+
 // Description renders a short, human-readable summary for a dropdown/list UI — every figure in
 // it comes straight from the metadata sidecar train.py wrote at training time.
 //

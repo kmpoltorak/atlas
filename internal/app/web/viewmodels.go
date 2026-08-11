@@ -264,7 +264,13 @@ type TrainerStatus struct {
 // a fabricated or hand-edited string. Active marks whichever option (if any) is the model
 // currently loaded for that role, pre-selected in the dropdown.
 type ModelOption struct {
-	Filename    string
+	Filename string
+	// Label is what actually renders as the <option> text — short enough to fit a narrow
+	// <select>, which (unlike a table cell) can't wrap or truncate a single option's text.
+	// Description carries the full metrics (PR AUC, ROC AUC, sample sizes, baseline verdict)
+	// that actually matter for the promotion decision — nothing lost, just moved to the
+	// option's title/tooltip instead of squeezed into the visible label.
+	Label       string
 	Description string
 	Active      bool
 }
