@@ -3,6 +3,7 @@ package portfolio
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"atlas/internal/domain/currency"
 	"atlas/internal/domain/portfolio"
@@ -81,6 +82,19 @@ func TestRecordTransactionDefaultsToPLNAndNeedsNoExchangeRates(t *testing.T) {
 	}
 	if uc.Transactions[0].PriceInPLN != 100 {
 		t.Fatalf("expected PriceInPLN to equal Price for PLN, got %v", uc.Transactions[0].PriceInPLN)
+	}
+}
+
+func TestRecordTransactionDefaultsTimestampWhenEmpty(t *testing.T) {
+	uc := NewUseCase()
+	tx := portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100}
+	if err := uc.RecordTransaction(tx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := uc.Transactions[0].Timestamp; got == "" {
+		t.Fatal("expected a non-empty default Timestamp")
+	} else if _, err := time.Parse(time.RFC3339, got); err != nil {
+		t.Fatalf("expected default Timestamp to be RFC3339, got %q: %v", got, err)
 	}
 }
 
