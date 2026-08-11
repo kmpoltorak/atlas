@@ -210,13 +210,13 @@ var translations = map[string]map[Lang]string{
 	"backtests.no_trades":     {LangEN: "No trades over this window.", LangPL: "Brak transakcji w tym oknie."},
 
 	// Watchlist (watchlist.html)
-	"watchlist.title":         {LangEN: "Atlas — Watchlist", LangPL: "Atlas — Obserwowane"},
-	"watchlist.heading":       {LangEN: "Watchlist", LangPL: "Obserwowane"},
-	"watchlist.empty":         {LangEN: "Watchlist is empty.", LangPL: "Lista obserwowanych jest pusta."},
-	"watchlist.add_symbol":    {LangEN: "Add a symbol", LangPL: "Dodaj symbol"},
-	"watchlist.add_submit":    {LangEN: "Add", LangPL: "Dodaj"},
-	"watchlist.manage":        {LangEN: "Manage watchlist", LangPL: "Zarządzanie listą"},
-	"watchlist.manage_hint":   {LangEN: "Add one symbol, or move the whole list between environments.", LangPL: "Dodaj pojedynczy symbol albo przenieś całą listę między środowiskami."},
+	"watchlist.title":        {LangEN: "Atlas — Watchlist", LangPL: "Atlas — Obserwowane"},
+	"watchlist.heading":      {LangEN: "Watchlist", LangPL: "Obserwowane"},
+	"watchlist.empty":        {LangEN: "Watchlist is empty.", LangPL: "Lista obserwowanych jest pusta."},
+	"watchlist.add_symbol":   {LangEN: "Add a symbol", LangPL: "Dodaj symbol"},
+	"watchlist.add_submit":   {LangEN: "Add", LangPL: "Dodaj"},
+	"watchlist.manage":       {LangEN: "Manage watchlist", LangPL: "Zarządzanie listą"},
+	"watchlist.manage_hint":  {LangEN: "Add one symbol, or move the whole list between environments.", LangPL: "Dodaj pojedynczy symbol albo przenieś całą listę między środowiskami."},
 	"watchlist.refresh_info": {LangEN: "Refresh info", LangPL: "Odśwież info"},
 	"watchlist.refresh_info_hint": {
 		LangEN: "Fetches the display name and instrument type (stock, ETF, future, …) for every symbol that doesn't have one yet, from the market data provider.",
