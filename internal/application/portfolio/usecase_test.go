@@ -61,6 +61,29 @@ func TestRecordTransactionUpdatesPositionsAndROI(t *testing.T) {
 	}
 }
 
+// TestRecordTransactionRemovesPositionWhenSoldToZero covers a real bug report: selling an entire
+// holding left the position row visible with Quantity 0 instead of disappearing, forcing a
+// separate manual "Remove" click even though nothing is actually held anymore — the transaction
+// history (the audit trail) is what should stay, not a zeroed-out position row.
+func TestRecordTransactionRemovesPositionWhenSoldToZero(t *testing.T) {
+	uc := NewUseCase()
+	if err := uc.RecordTransaction(portfolio.Transaction{Symbol: "SPCX", Type: "BUY", Quantity: 10, Price: 130.20, Timestamp: "2026-01-01T00:00:00Z"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := uc.RecordTransaction(portfolio.Transaction{Symbol: "SPCX", Type: "SELL", Quantity: 10, Price: 131.28, Timestamp: "2026-01-02T00:00:00Z"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	positions, _ := uc.GetPositions()
+	if len(positions) != 0 {
+		t.Fatalf("expected the fully-sold position to be removed, got %+v", positions)
+	}
+	transactions, _ := uc.GetTransactions()
+	if len(transactions) != 2 {
+		t.Fatalf("expected both transactions to remain in history, got %+v", transactions)
+	}
+}
+
 func TestRecordTransactionRejectsInvalidInput(t *testing.T) {
 	uc := NewUseCase()
 	if err := uc.RecordTransaction(portfolio.Transaction{Symbol: "", Type: "BUY", Quantity: 1, Price: 1}); err == nil {
@@ -381,19 +404,15 @@ func TestRemoveTransactionsDeletesAcrossSymbols(t *testing.T) {
 		t.Fatalf("expected only the first AAPL BUY left, got %+v", uc.Transactions)
 	}
 	positions, _ := uc.GetPositions()
-	if len(positions) != 2 {
-		t.Fatalf("expected both positions to still be present rows, got %+v", positions)
+	if len(positions) != 1 {
+		// recomputePosition rebuilding a symbol down to zero quantity is dropped entirely (see
+		// applyPositionUpdate), the same rule a real SELL-to-zero follows — MSFT's only
+		// transaction is gone, so its position row shouldn't linger either.
+		t.Fatalf("expected only AAPL left (MSFT's last transaction was removed), got %+v", positions)
 	}
 	aapl := positions[findPositionIndex(positions, "AAPL")]
 	if aapl.Quantity != 10 || aapl.AverageCost != 100 {
 		t.Fatalf("expected AAPL 10@100 (as if the second BUY never happened), got %+v", aapl)
-	}
-	msft := positions[findPositionIndex(positions, "MSFT")]
-	if msft.Quantity != 0 {
-		// recomputePosition zeroes out (rather than removes) a position once its last
-		// transaction is gone — the same behavior a single RemoveTransaction already has;
-		// RemovePosition is the separate explicit action that actually drops the row.
-		t.Fatalf("expected MSFT zeroed out (its only transaction was removed), got %+v", msft)
 	}
 }
 

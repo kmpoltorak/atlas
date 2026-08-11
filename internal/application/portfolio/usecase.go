@@ -48,20 +48,32 @@ func NewUseCase() *UseCase {
 // app's "no silent degraded mode" stance.
 func NewUseCaseWithRepository(repo Repository) (*UseCase, error) {
 	uc := &UseCase{Repository: repo}
-	if repo == nil {
-		return uc, nil
-	}
-	positions, err := repo.GetPositions()
-	if err != nil {
+	if err := uc.Reload(); err != nil {
 		return nil, err
 	}
-	uc.Positions = positions
-	transactions, err := repo.GetTransactions()
-	if err != nil {
-		return nil, err
-	}
-	uc.Transactions = transactions
 	return uc, nil
+}
+
+// Reload re-reads Positions/Transactions from Repository, discarding whatever the in-memory
+// working copy currently holds — used after an out-of-band bulk change to the underlying data
+// (persistence.TimescaleDB's FlushAll/RestoreAll, wired up from the Account page's Backup/
+// Restore/Flush buttons) that per-mutation methods like RecordTransaction can't express. A nil
+// Repository just clears the in-memory copy, matching NewUseCase's zero-value state.
+func (u *UseCase) Reload() error {
+	if u.Repository == nil {
+		u.Positions, u.Transactions = nil, nil
+		return nil
+	}
+	positions, err := u.Repository.GetPositions()
+	if err != nil {
+		return err
+	}
+	transactions, err := u.Repository.GetTransactions()
+	if err != nil {
+		return err
+	}
+	u.Positions, u.Transactions = positions, transactions
+	return nil
 }
 
 // GetPositions returns the current snapshot held by the use case.
@@ -132,16 +144,26 @@ func (u *UseCase) RecordTransaction(tx portfolio.Transaction) error {
 	u.Transactions = append(u.Transactions, tx)
 
 	position := applyTransaction(findPosition(u.Positions, tx.Symbol), tx)
-	if index := findPositionIndex(u.Positions, tx.Symbol); index >= 0 {
+	return u.applyPositionUpdate(position)
+}
+
+// applyPositionUpdate folds a freshly computed position into u.Positions and the repository: a
+// position that still holds a nonzero quantity is upserted, one that's back to zero (a symbol
+// fully sold) is dropped entirely — a closed position lives on only in transaction history, not
+// as a lingering zero-quantity row someone has to notice and delete by hand. Shared by
+// RecordTransaction (append path) and recomputePosition (replay-after-delete path) so the two
+// can't drift on this rule.
+func (u *UseCase) applyPositionUpdate(position portfolio.Position) error {
+	if position.Quantity == 0 {
+		return u.RemovePosition(position.Symbol)
+	}
+	if index := findPositionIndex(u.Positions, position.Symbol); index >= 0 {
 		u.Positions[index] = position
 	} else {
 		u.Positions = append(u.Positions, position)
 	}
-
 	if u.Repository != nil {
-		if err := u.Repository.SavePositions(u.Positions); err != nil {
-			return err
-		}
+		return u.Repository.SavePositions(u.Positions)
 	}
 	return nil
 }
@@ -213,12 +235,7 @@ func (u *UseCase) RemoveTransaction(id string) error {
 		}
 	}
 
-	u.recomputePosition(symbol)
-
-	if u.Repository != nil {
-		return u.Repository.SavePositions(u.Positions)
-	}
-	return nil
+	return u.applyPositionUpdate(u.recomputePosition(symbol))
 }
 
 // RemoveTransactions deletes several historical transactions by id (bulk delete from the
@@ -239,11 +256,14 @@ func (u *UseCase) RemoveTransactions(ids []string) error {
 }
 
 // recomputePosition rebuilds a symbol's position from scratch by replaying every remaining
-// transaction for that symbol in chronological order. Transactions with an unparseable
-// timestamp keep their existing relative order (stable sort) rather than being dropped or
-// erroring — the same "don't fail a trade record over a cosmetic field" stance RecordTransaction
-// already takes for persistence.
-func (u *UseCase) recomputePosition(symbol string) {
+// transaction for that symbol in chronological order — pure and side-effect free; callers pass
+// the result to applyPositionUpdate to fold it back into u.Positions/the repository. Transactions
+// with an unparseable timestamp keep their existing relative order (stable sort) rather than
+// being dropped or erroring — the same "don't fail a trade record over a cosmetic field" stance
+// RecordTransaction already takes for persistence. A symbol with no transactions left at all
+// naturally comes back as the zero-quantity Position{Symbol: symbol}, which applyPositionUpdate
+// treats as "remove it" — the same rule a real SELL-to-zero follows.
+func (u *UseCase) recomputePosition(symbol string) portfolio.Position {
 	var symbolTx []portfolio.Transaction
 	for _, t := range u.Transactions {
 		if t.Symbol == symbol {
@@ -263,12 +283,7 @@ func (u *UseCase) recomputePosition(symbol string) {
 	for _, t := range symbolTx {
 		position = applyTransaction(position, t)
 	}
-
-	if index := findPositionIndex(u.Positions, symbol); index >= 0 {
-		u.Positions[index] = position
-	} else if len(symbolTx) > 0 {
-		u.Positions = append(u.Positions, position)
-	}
+	return position
 }
 
 // applyTransaction folds one transaction's effect into a position: weighted-average cost on
