@@ -30,6 +30,11 @@ type DashboardPage struct {
 	Lang      Lang
 	Positions []portfolio.Position
 	Risk      portfolio.RiskSnapshot
+	// Portfolios/ActivePortfolioID drive the portfolio tabs above the position table — every
+	// figure on this page (Positions, Risk, ...) reflects ActivePortfolioID only, not every
+	// portfolio combined. See portfolio.UseCase.Portfolios/ActivePortfolioID.
+	Portfolios        []portfolio.Portfolio
+	ActivePortfolioID string
 	// Rates is today's PLN-per-unit exchange rate for EUR/USD (keys "EUR"/"USD"; see
 	// exchangerate.UseCase.Rates), used by the money template func to show every PLN-
 	// denominated figure in all three currencies. Empty when NBP is unreachable and nothing is
@@ -50,6 +55,9 @@ type PortfolioPage struct {
 	Lang         Lang
 	Positions    []portfolio.Position
 	Transactions []portfolio.Transaction
+	// Portfolios/ActivePortfolioID — see DashboardPage.
+	Portfolios        []portfolio.Portfolio
+	ActivePortfolioID string
 	// Rates — see DashboardPage.Rates.
 	Rates map[string]float64
 	// Currencies lists the currencies the record-transaction form's dropdown offers, e.g.
@@ -206,6 +214,12 @@ type AccountPage struct {
 	TOTPEnabled bool
 	Error       string
 	Success     string
+
+	// Portfolios/MaxPortfolios drive the "manage portfolios" section — create/rename/delete,
+	// capped at MaxPortfolios (see portfolio.MaxPortfolios). Switching which one is active
+	// happens via the dashboard's tabs, not here.
+	Portfolios    []portfolio.Portfolio
+	MaxPortfolios int
 
 	// CorrectionModels/RecoveryModels list every trained model file ML_MODELS_DIR currently
 	// has a metadata sidecar for (see ml.ListModels), newest first, for the model-picker

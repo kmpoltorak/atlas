@@ -60,6 +60,22 @@ func cleanupTestFixtures(t *testing.T, db *TimescaleDB) {
 	if _, err := db.db.ExecContext(ctx, "DELETE FROM ml_model_selection WHERE role LIKE '%-test'"); err != nil {
 		t.Logf("cleanupTestFixtures: delete from ml_model_selection failed: %v", err)
 	}
+	if _, err := db.db.ExecContext(ctx, "DELETE FROM portfolios WHERE name LIKE 'TEST%'"); err != nil {
+		t.Logf("cleanupTestFixtures: delete from portfolios failed: %v", err)
+	}
+}
+
+// testPortfolioID creates a fresh, uniquely-named portfolio for one test — position/transaction
+// tests need a real portfolio_id to scope against, and a dedicated one per test avoids leaking
+// state into (or reading state left behind by) any other test. Cleaned up by
+// cleanupTestFixtures's "TEST%" portfolio-name sweep.
+func testPortfolioID(t *testing.T, db *TimescaleDB) string {
+	t.Helper()
+	p, err := db.CreatePortfolio("TEST-" + t.Name())
+	if err != nil {
+		t.Fatalf("failed to create test portfolio: %v", err)
+	}
+	return p.ID
 }
 
 func TestDSNIncludesConnectionParameters(t *testing.T) {

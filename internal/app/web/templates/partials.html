@@ -106,6 +106,22 @@
 </nav>
 {{end}}
 
+{{/* portfolioTabs shows nothing when there's only one portfolio (the common case) — a single
+     inert tab would just be clutter. Expects .Portfolios and .ActivePortfolioID (DashboardPage/
+     PortfolioPage). */}}
+{{define "portfolioTabs"}}
+{{if gt (len .Portfolios) 1}}
+<ul class="nav nav-tabs mb-3">
+  {{$active := .ActivePortfolioID}}
+  {{range .Portfolios}}
+  <li class="nav-item">
+    <a class="nav-link{{if eq .ID $active}} active{{end}}" href="/dashboard/portfolio/select?id={{.ID}}">{{.Name}}</a>
+  </li>
+  {{end}}
+</ul>
+{{end}}
+{{end}}
+
 {{define "scripts"}}
 <script src="/static/js/bootstrap.bundle.min.js"></script>
 <script src="/static/js/atlas.js"></script>

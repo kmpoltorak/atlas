@@ -1,5 +1,13 @@
 package portfolio
 
+// Portfolio is a named bucket of positions/transactions — e.g. "Main", "Safe", "Speculative".
+// Every Atlas install starts with exactly one (auto-created on first boot); up to
+// MaxPortfolios may exist at once (see application/portfolio.UseCase.CreatePortfolio).
+type Portfolio struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 // Position's AverageCost/CurrentPrice are always denominated in currency.Base (PLN) — see
 // UseCase.applyTransaction — regardless of what currency the underlying transactions were
 // recorded in. Everything downstream (risk, ROI, decision-engine scoring, backtesting) reads

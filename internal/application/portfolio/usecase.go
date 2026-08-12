@@ -7,11 +7,17 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"atlas/internal/domain/currency"
 	"atlas/internal/domain/portfolio"
 )
+
+// MaxPortfolios caps how many portfolios one Atlas install may have at once (see
+// UseCase.CreatePortfolio) — enough to separate "main/safe/speculative"-style buckets without
+// the dashboard's portfolio tabs needing to scroll.
+const MaxPortfolios = 5
 
 // ExchangeRateSource converts an amount in a non-base currency to currency.Base (PLN) — see
 // exchangerate.UseCase.ToBase, which satisfies this. Kept as a small interface here (rather than
@@ -22,12 +28,26 @@ type ExchangeRateSource interface {
 }
 
 // UseCase keeps portfolio logic deterministic and testable. Positions/Transactions are an
-// in-memory working copy; when Repository is set, it's hydrated from persisted state on
-// construction and written through on every mutation, so state survives restarts.
+// in-memory working copy of ActivePortfolioID's data; when Repository is set, it's hydrated from
+// persisted state on construction and written through on every mutation, so state survives
+// restarts.
+//
+// ponytail: ActivePortfolioID/Positions/Transactions are shared mutable state on one UseCase
+// instance, switched in place by SwitchPortfolio — there is no per-request isolation. Two browser
+// tabs switching portfolios at the same moment can race and see each other's selection. Fine for
+// a single-user tool clicking around; give each request its own scoped read (or add a mutex) if
+// concurrent multi-tab use ever makes that visible.
 type UseCase struct {
 	Positions    []portfolio.Position
 	Transactions []portfolio.Transaction
 	Repository   Repository
+
+	// ActivePortfolioID selects which portfolio Positions/Transactions/RecordTransaction/etc.
+	// read and write — see SwitchPortfolio. Portfolios caches Repository.ListPortfolios() so
+	// callers (e.g. the dashboard's portfolio tabs) don't need their own round-trip just to
+	// render the tab list.
+	ActivePortfolioID string
+	Portfolios        []portfolio.Portfolio
 
 	// ExchangeRates converts a non-PLN transaction's Price into PriceInPLN at record time (see
 	// RecordTransaction). A PLN transaction (the default when Currency is left empty) never
@@ -54,26 +74,131 @@ func NewUseCaseWithRepository(repo Repository) (*UseCase, error) {
 	return uc, nil
 }
 
-// Reload re-reads Positions/Transactions from Repository, discarding whatever the in-memory
-// working copy currently holds — used after an out-of-band bulk change to the underlying data
-// (persistence.TimescaleDB's FlushAll/RestoreAll, wired up from the Account page's Backup/
-// Restore/Flush buttons) that per-mutation methods like RecordTransaction can't express. A nil
-// Repository just clears the in-memory copy, matching NewUseCase's zero-value state.
+// Reload re-reads Portfolios and ActivePortfolioID's Positions/Transactions from Repository,
+// discarding whatever the in-memory working copy currently holds — used after an out-of-band bulk
+// change to the underlying data (persistence.TimescaleDB's FlushAll/RestoreAll, wired up from the
+// Account page's Backup/Restore/Flush buttons) that per-mutation methods like RecordTransaction
+// can't express, as well as by SwitchPortfolio and NewUseCaseWithRepository. A nil Repository just
+// clears the in-memory copy, matching NewUseCase's zero-value state.
+//
+// If ActivePortfolioID is empty or no longer among Portfolios (e.g. Flush wiped every portfolio,
+// or SwitchPortfolio was given an unknown id), it falls back to the first portfolio —
+// Repository.ListPortfolios guarantees at least one exists, bootstrapping it if needed.
 func (u *UseCase) Reload() error {
 	if u.Repository == nil {
 		u.Positions, u.Transactions = nil, nil
 		return nil
 	}
-	positions, err := u.Repository.GetPositions()
+	portfolios, err := u.Repository.ListPortfolios()
 	if err != nil {
 		return err
 	}
-	transactions, err := u.Repository.GetTransactions()
+	u.Portfolios = portfolios
+	if !portfolioIDExists(portfolios, u.ActivePortfolioID) {
+		u.ActivePortfolioID = portfolios[0].ID
+	}
+
+	positions, err := u.Repository.GetPositions(u.ActivePortfolioID)
+	if err != nil {
+		return err
+	}
+	transactions, err := u.Repository.GetTransactions(u.ActivePortfolioID)
 	if err != nil {
 		return err
 	}
 	u.Positions, u.Transactions = positions, transactions
 	return nil
+}
+
+func portfolioIDExists(portfolios []portfolio.Portfolio, id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, p := range portfolios {
+		if p.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// SwitchPortfolio makes id the active portfolio and reloads Positions/Transactions for it — the
+// dashboard's portfolio tabs call this before rendering. An unknown id falls back to the first
+// portfolio (see Reload) rather than erroring, so a stale cookie never breaks the page.
+func (u *UseCase) SwitchPortfolio(id string) error {
+	u.ActivePortfolioID = id
+	return u.Reload()
+}
+
+// CreatePortfolio adds a new, empty portfolio — up to MaxPortfolios total — without switching to
+// it. The caller (e.g. portfolioSelectHandler) decides whether to switch afterward.
+func (u *UseCase) CreatePortfolio(name string) (portfolio.Portfolio, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return portfolio.Portfolio{}, errors.New("name is required")
+	}
+	if u.Repository == nil {
+		return portfolio.Portfolio{}, errors.New("no repository configured")
+	}
+	if len(u.Portfolios) >= MaxPortfolios {
+		return portfolio.Portfolio{}, fmt.Errorf("a maximum of %d portfolios is allowed", MaxPortfolios)
+	}
+	created, err := u.Repository.CreatePortfolio(name)
+	if err != nil {
+		return portfolio.Portfolio{}, err
+	}
+	u.Portfolios = append(u.Portfolios, created)
+	return created, nil
+}
+
+func (u *UseCase) RenamePortfolio(id, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("name is required")
+	}
+	if u.Repository == nil {
+		return errors.New("no repository configured")
+	}
+	if err := u.Repository.RenamePortfolio(id, name); err != nil {
+		return err
+	}
+	for i := range u.Portfolios {
+		if u.Portfolios[i].ID == id {
+			u.Portfolios[i].Name = name
+		}
+	}
+	return nil
+}
+
+// DeletePortfolio removes a portfolio and everything in it. Refuses to delete the last remaining
+// one — Atlas always has somewhere to record a transaction. Deleting the active portfolio falls
+// back to whatever Reload picks next (the new first portfolio).
+func (u *UseCase) DeletePortfolio(id string) error {
+	if u.Repository == nil {
+		return errors.New("no repository configured")
+	}
+	if len(u.Portfolios) <= 1 {
+		return errors.New("cannot delete the only remaining portfolio")
+	}
+	if err := u.Repository.DeletePortfolio(id); err != nil {
+		return err
+	}
+	wasActive := id == u.ActivePortfolioID
+	if wasActive {
+		u.ActivePortfolioID = ""
+	}
+	return u.Reload()
+}
+
+// GetAllPositions aggregates positions across every portfolio (see
+// Repository.GetAllPositions) — used by the decision engine, not by anything that renders a
+// single portfolio's own page. Falls back to the active portfolio's Positions when Repository is
+// nil (test-only in-memory mode never has more than one portfolio anyway).
+func (u *UseCase) GetAllPositions() ([]portfolio.Position, error) {
+	if u.Repository == nil {
+		return u.Positions, nil
+	}
+	return u.Repository.GetAllPositions()
 }
 
 // GetPositions returns the current snapshot held by the use case.
@@ -129,7 +254,7 @@ func (u *UseCase) RecordTransaction(tx portfolio.Transaction) error {
 	}
 
 	if u.Repository != nil {
-		id, err := u.Repository.SaveTransaction(tx)
+		id, err := u.Repository.SaveTransaction(u.ActivePortfolioID, tx)
 		if err != nil {
 			return err
 		}
@@ -163,7 +288,7 @@ func (u *UseCase) applyPositionUpdate(position portfolio.Position) error {
 		u.Positions = append(u.Positions, position)
 	}
 	if u.Repository != nil {
-		return u.Repository.SavePositions(u.Positions)
+		return u.Repository.SavePositions(u.ActivePortfolioID, u.Positions)
 	}
 	return nil
 }
@@ -186,7 +311,7 @@ func (u *UseCase) RemovePosition(symbol string) error {
 	}
 	u.Positions = kept
 	if u.Repository != nil {
-		return u.Repository.DeletePosition(symbol)
+		return u.Repository.DeletePosition(u.ActivePortfolioID, symbol)
 	}
 	return nil
 }

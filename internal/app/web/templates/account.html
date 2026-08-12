@@ -46,6 +46,48 @@
       </div>
     </div>
 
+    <h2 class="h4 mt-5 mb-2">{{T .Lang "account.portfolios_heading"}}</h2>
+    <p class="text-body-secondary small">{{T .Lang "account.portfolios_hint"}}</p>
+    <div class="card card-md">
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-sm mb-3">
+            <tbody>
+              {{range .Portfolios}}
+              <tr>
+                <td>
+                  <form method="post" action="/dashboard/portfolios/rename" class="d-flex gap-2 align-items-center mb-0">
+                    <input type="hidden" name="id" value="{{.ID}}">
+                    <input type="text" name="name" value="{{.Name}}" class="form-control form-control-sm" style="max-width: 220px;">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary text-nowrap">{{T $.Lang "account.portfolio_rename_submit"}}</button>
+                  </form>
+                </td>
+                <td class="text-end">
+                  <form method="post" action="/dashboard/portfolios/remove" class="mb-0">
+                    <input type="hidden" name="id" value="{{.ID}}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger" {{if le (len $.Portfolios) 1}}disabled{{end}}
+                            onclick="return confirm('{{T $.Lang "confirm.remove_portfolio"}}');">{{T $.Lang "account.portfolio_remove_submit"}}</button>
+                  </form>
+                </td>
+              </tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+        {{if lt (len .Portfolios) .MaxPortfolios}}
+        <form method="post" action="/dashboard/portfolios/create" class="d-flex gap-2 align-items-end mb-0">
+          <div>
+            <label class="form-label small mb-1">{{T .Lang "account.portfolio_new_name"}}</label>
+            <input type="text" name="name" class="form-control form-control-sm" required>
+          </div>
+          <button type="submit" class="btn btn-sm btn-primary text-nowrap">{{T .Lang "account.portfolio_create_submit"}}</button>
+        </form>
+        {{else}}
+        <p class="text-body-secondary small mb-0">{{T .Lang "account.portfolios_max_reached"}}</p>
+        {{end}}
+      </div>
+    </div>
+
     <h2 class="h4 mt-5 mb-2">{{T .Lang "account.ml_engine_heading"}}</h2>
     <p class="text-body-secondary small">{{T .Lang "account.ml_engine_hint"}}</p>
     <div class="card card-md">

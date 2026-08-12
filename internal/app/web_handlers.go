@@ -141,6 +141,10 @@ func (a *Application) dashboardPageHandler(w http.ResponseWriter, r *http.Reques
 		methodNotAllowed(w)
 		return
 	}
+	if err := a.syncActivePortfolio(r); err != nil {
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
 	positions, err := a.Portfolio.GetPositions()
 	if err != nil {
 		a.renderError(w, r, http.StatusInternalServerError, err.Error())
@@ -154,9 +158,11 @@ func (a *Application) dashboardPageHandler(w http.ResponseWriter, r *http.Reques
 	livePositions, asOf := a.livePricedPositions(positions, priceAsOf(transactions))
 	web.Render(w, "dashboard", web.DashboardPage{
 		Lang: a.resolveLang(r), Positions: livePositions, Risk: portfolioUC.ComputeRiskSnapshot(livePositions),
-		Rates:       a.exchangeRatesForDisplay(),
-		PriceAsOf:   asOf,
-		AlertCounts: a.alertCountsByAction(),
+		Rates:             a.exchangeRatesForDisplay(),
+		PriceAsOf:         asOf,
+		AlertCounts:       a.alertCountsByAction(),
+		Portfolios:        a.Portfolio.Portfolios,
+		ActivePortfolioID: a.Portfolio.ActivePortfolioID,
 	})
 }
 
@@ -217,6 +223,10 @@ func (a *Application) portfolioPageHandler(w http.ResponseWriter, r *http.Reques
 	case http.MethodGet:
 		a.renderPortfolioPage(w, r, "", "")
 	case http.MethodPost:
+		if err := a.syncActivePortfolio(r); err != nil {
+			a.renderError(w, r, http.StatusInternalServerError, err.Error())
+			return
+		}
 		if err := r.ParseForm(); err != nil {
 			a.renderPortfolioPage(w, r, "Invalid form submission.", "")
 			return
@@ -254,6 +264,10 @@ func (a *Application) portfolioDeleteHandler(w http.ResponseWriter, r *http.Requ
 		methodNotAllowed(w)
 		return
 	}
+	if err := a.syncActivePortfolio(r); err != nil {
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		a.renderPortfolioPage(w, r, "Invalid form submission.", "")
 		return
@@ -275,6 +289,10 @@ func (a *Application) portfolioDeleteHandler(w http.ResponseWriter, r *http.Requ
 func (a *Application) portfolioBulkDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
+		return
+	}
+	if err := a.syncActivePortfolio(r); err != nil {
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -301,6 +319,10 @@ func (a *Application) portfolioBulkDeleteHandler(w http.ResponseWriter, r *http.
 func (a *Application) portfolioTransactionDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
+		return
+	}
+	if err := a.syncActivePortfolio(r); err != nil {
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -330,6 +352,10 @@ func (a *Application) portfolioTransactionBulkDeleteHandler(w http.ResponseWrite
 		methodNotAllowed(w)
 		return
 	}
+	if err := a.syncActivePortfolio(r); err != nil {
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		a.renderPortfolioPage(w, r, "Invalid form submission.", "")
 		return
@@ -347,6 +373,10 @@ func (a *Application) portfolioTransactionBulkDeleteHandler(w http.ResponseWrite
 }
 
 func (a *Application) renderPortfolioPage(w http.ResponseWriter, r *http.Request, errMsg, successMsg string) {
+	if err := a.syncActivePortfolio(r); err != nil {
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
 	positions, err := a.Portfolio.GetPositions()
 	if err != nil {
 		a.renderError(w, r, http.StatusInternalServerError, err.Error())
@@ -363,6 +393,8 @@ func (a *Application) renderPortfolioPage(w http.ResponseWriter, r *http.Request
 		Rates: a.exchangeRatesForDisplay(), Currencies: currencyOptions(),
 		PriceAsOf: asOf,
 		Error:     errMsg, Success: successMsg,
+		Portfolios:        a.Portfolio.Portfolios,
+		ActivePortfolioID: a.Portfolio.ActivePortfolioID,
 	}
 	if symbols, err := a.watchlistSymbols(); err == nil {
 		data.Symbols = symbols
@@ -799,6 +831,8 @@ func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, 
 		HasBackup:             hasBackup,
 		BackupExists:          backupExists,
 		LastBackupAt:          lastBackupAt,
+		Portfolios:            a.Portfolio.Portfolios,
+		MaxPortfolios:         portfolioUC.MaxPortfolios,
 	})
 }
 
