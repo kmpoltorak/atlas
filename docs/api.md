@@ -18,6 +18,12 @@ GET /backtests
 GET /backtests/history
 GET /backtests/walkforward
 
+Interactive, always-current documentation for every route above — request/response schemas,
+"Try it out" against the real running instance — is served at `/swagger/index.html`
+(`swaggo/swag` annotations on each handler, see `internal/app/handlers.go`). It's not in
+`publicPaths`, so it needs the same session as the API itself when auth is enabled; log into the
+dashboard first and "Try it out" reuses that session's cookie automatically.
+
 **Implementation status**: this list covers the raw JSON API only (`internal/app/handlers.go`) —
 see `internal/app/http_handler.go` for the full route table including the server-rendered
 dashboard (`/dashboard/*`) and its form-submitted bulk-delete actions, which have no JSON API

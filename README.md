@@ -8,6 +8,10 @@ recommendation — with a confidence score and a human-readable reason every tim
 **Atlas never places trades.** It has no brokerage integration and no execution path. It is an
 analytical assistant, not a trading bot.
 
+**New to Atlas and just want to use the dashboard?** See
+[GETTING_STARTED.md](GETTING_STARTED.md) — a plain-language walkthrough with no technical
+background assumed. Everything below this point is the technical/developer README.
+
 This README gives a full tour of what the project actually does today. For a phase-by-phase,
 continuously-updated account of what's implemented vs. explicitly out of scope, see
 [implementation-plan.md](implementation-plan.md) and [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) —

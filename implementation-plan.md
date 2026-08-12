@@ -664,6 +664,100 @@ the list down to 2 symbols via replace, then restored from the export file and d
 surviving a container restart. Malformed payloads (junk, wrong object shape, empty symbol,
 duplicate symbol, unknown mode) each rejected with a specific message and no partial mutation.
 
+**Live portfolio pricing, built after live testing surfaced how stale it was**:
+`Position.CurrentPrice` was set once, at the moment of the trade, and never refreshed —
+so a position bought weeks ago still showed that day's price forever, and P&L was silently wrong
+for anyone actually checking it. The alert-poll loop's existing per-symbol quote fetch
+(`refreshWatchlistQuotes`) was extended to also cover every symbol currently held (not just the
+watchlist), and the Dashboard/Portfolio pages now overlay that live quote onto `CurrentPrice` at
+render time — `Position.CurrentPrice` itself, and the decision engine's own use of it, were
+deliberately left untouched at the Author's explicit call, scoped to display only for this pass.
+
+This surfaced a real bug before it shipped fully: the live quote is in the instrument's own
+currency (USD for a US stock), but portfolio math is always PLN — the first version of the
+overlay pasted raw USD numbers in where PLN was expected, a 3-4x distortion caught live
+(a USD position briefly showing an impossible drawdown). Fixed at the point the quote enters the
+system (`quoteToPLN`, converting once via the existing NBP exchange-rate use case), not at every
+display call site. Verified live on a real USD position (SPCX): stored quote corrected from raw
+130.20/131.28 USD to 485.26/488.88 PLN at the day's real rate, WSE (native-PLN) symbols confirmed
+unaffected by the same deploy.
+
+**Portfolio form and data-correctness fixes, built after live use surfaced them**: four small,
+independent bugs found by the Author actually using the Portfolio page. The record-transaction
+symbol field was free text with no validation — retyped to a dropdown sourced from the watchlist
+(matching the pattern Recommendations/Backtests already used), so a typo can't silently create an
+untracked position. "Price" was renamed to "Unit Price" everywhere it appears (the form and the
+transaction history table) — it was always per-unit, multiplied by quantity downstream, but read
+ambiguously as the trade's total cost. A transaction recorded with no explicit timestamp (both the
+dashboard form and the JSON API omit it) stored the Go zero time, rendering as `0001-01-01 00:00`
+in the UI — `RecordTransaction` now defaults it once, for every caller, rather than relying on a
+persistence-layer fallback that never made it back into the in-memory copy the page actually
+reads. And selling a position down to exactly zero left a zeroed-out row sitting in the Positions
+table requiring a manual "Remove" click — `applyPositionUpdate` now drops it automatically,
+transaction history untouched either way; verified live by buying and fully selling SPCX and
+watching the position disappear on its own.
+
+**Database backup/restore and a safety-gated Flush, built after the Author asked for a way to
+reset Atlas to a clean slate**: the Account page grew three actions. Backup dumps every table
+(positions, transactions, watchlist, price/indicator history, recommendations, ML/2FA settings —
+everything except `schema_migrations`, which is Atlas's own bookkeeping, not user data) to one
+downloadable JSON file; `row_to_json`/`json_agg` do the type encoding inside Postgres itself, so
+this needed no per-table Go struct that could drift from the schema. Restore does the reverse via
+`json_populate_recordset`, replacing everything inside one transaction. Flush wipes the same
+tables back to a freshly-installed state — login is unaffected, since credentials come from
+`ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH`, never the database.
+
+Flush is deliberately hard to misuse: a new `backup_log` table (migration 017) tracks when a
+backup was last taken, and `FlushAll` refuses outright — not just a disabled button, a real
+server-side check a direct `POST` can't bypass — unless one exists **and** is less than five
+minutes old (`FlushBackupFreshness`), independent of the alert-poll interval. An old backup no
+longer reflects "right before this wipe" once more trades have happened since, so it doesn't
+count as a safety net for a wipe happening now. The Account page shows which of the three states
+applies (never backed up / backup too old / ready) with a specific explanation for each, and
+auto-reloads itself shortly after a Backup download completes — a plain download link never
+navigates the browser away, so without that the page kept showing the old locked state even
+though the backup had already unlocked it server-side.
+
+Verified live end to end, more than once: Backup → Flush (DB and UI both empty immediately, no
+restart needed) → Restore brought back 46 watchlist items, 47 symbols, transactions, 46k+ price
+rows, 48k+ indicator rows and 6k+ recommendations exactly matching the pre-flush snapshot. A real
+`pg_dump` was taken as an outside safety net before the live Flush test, on top of the app's own
+backup. Direct `POST /dashboard/account/flush` confirmed refused (with the specific reason) both
+with no backup ever taken and with one older than five minutes.
+
+**Recommendation staleness after a transaction, fixed after live testing surfaced it**: a real bug
+report — selling a position to zero left its last-computed recommendation (e.g. "REDUCE") showing
+until the next alert-poll cycle recomputed it, up to `ALERT_POLL_INTERVAL_SECONDS` (five minutes)
+later, because `BuildRecommendation`'s `HasPosition` gate (BUY vs ACCUMULATE, SELL vs REDUCE) is
+only re-evaluated when a recommendation actually gets recomputed. The decision logic itself was
+already correct throughout — an on-demand recompute always respected current position state — the
+bug was purely in how long the *cached* value stayed stale. Every mutation that can flip
+`HasPosition` (recording a transaction, removing a position, deleting a symbol's last transaction)
+now triggers an async recompute immediately instead of waiting on the poll loop. Verified live on
+SPCX: BUY correctly produced REDUCE and SELL correctly produced HOLD, each within about a second
+of the transaction, not five minutes.
+
+**Interactive API docs, built in a later pass**: `swaggo/swag` annotations over every JSON API
+handler (portfolio, transactions, watchlist, recommendations, predictions, backtests, prices,
+symbols, alerts, health), served at `/swagger/index.html` via `swaggo/http-swagger`. Not in
+`publicPaths`, so it needs the same session as the rest of the API when auth is enabled — logging
+into the dashboard once lets "Try it out" reuse that session's cookie automatically. The generated
+spec (`docs/docs.go`/`swagger.json`/`swagger.yaml`) is committed, the same stance this repo
+already takes toward any build artifact `go:embed`/`go build` need on disk (see the vendored
+frontend assets); the Dockerfile's builder stage now copies `docs/` alongside `cmd/`/`internal/`.
+Verified live: `/swagger/index.html` and `/swagger/doc.json` both 200, all 14 documented paths
+present with the correct HTTP methods.
+
+**ML model picker legibility, fixed after live testing surfaced it**: the Account page's model
+`<select>` rendered `ModelInfo.Description()` in full as each option's visible text — version,
+trained date, PR AUC, ROC AUC, baseline verdict, sample sizes — and a native `<option>` can't wrap
+or truncate its own text, so it overflowed the dropdown. The visible label is now
+`ModelInfo.ShortLabel()` (version and trained date only); the full metrics move to the option's
+`title` attribute and are mirrored into a line below the select on load/change
+(`atlasSetupModelDetails`) — nothing lost, since those figures are exactly what the promotion
+decision this screen exists for actually turns on, just relocated out of a control that was never
+able to display them.
+
 ## 11. Acceptance Criteria
 
 A phase is considered complete only if:
