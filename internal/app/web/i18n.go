@@ -93,6 +93,8 @@ var translations = map[string]map[Lang]string{
 	"table.ml":                 {LangEN: "ML", LangPL: "ML"},
 	"table.portfolio":          {LangEN: "Portfolio", LangPL: "Portfel"},
 	"table.risk":               {LangEN: "Risk", LangPL: "Ryzyko"},
+	"table.risk_na":            {LangEN: "n/a", LangPL: "brak danych"},
+	"table.risk_na_hint":       {LangEN: "No drawdown or price deviation observed yet — nothing to score.", LangPL: "Nie zaobserwowano jeszcze straty ani odchylenia ceny — nie ma czego ocenić."},
 	"table.market_condition":   {LangEN: "Market Condition", LangPL: "Stan rynku"},
 	"table.model":              {LangEN: "Engine", LangPL: "Silnik"},
 	"table.ml_model":           {LangEN: "ML model", LangPL: "Model ML"},

@@ -99,6 +99,7 @@ func (o *Orchestrator) BuildRecommendationFromBars(symbol string, bars []market.
 	recommendation.MLScore = blend.MLScore
 	recommendation.PortfolioScore = blend.PortfolioScore
 	recommendation.RiskScore = blend.RiskScore
+	recommendation.RiskDataAvailable = blend.RiskDataAvailable
 	recommendation.MarketCondition = mlUC.ClassifyMarketCondition(o.Analyzer, symbol, bars)
 	recommendation.ModelVersion = EngineVersion
 	recommendation.MLModelVersion = blend.MLModelVersion
@@ -231,7 +232,11 @@ type blendResult struct {
 	MLScore        float64
 	PortfolioScore float64
 	RiskScore      float64
-	MLConfidence   float64
+	// RiskDataAvailable is false when RiskScore is 1.0 only because there was no exposure to
+	// measure (empty portfolio), not because the portfolio was checked and found low-risk — see
+	// computeRiskScore.
+	RiskDataAvailable bool
+	MLConfidence      float64
 	// MLModelVersion is ml.Prediction.ModelVersion — carried through to Recommendation.
 	// MLModelVersion so a caller can see which real model (or the stub) actually produced
 	// MLScore, distinct from Recommendation.ModelVersion (the decision engine's own tag).
@@ -337,6 +342,7 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 		if risk, err := o.Portfolio.ComputeRisk(); err == nil {
 			positions, _ := o.Portfolio.GetPositions()
 			result.RiskScore = computeRiskScore(risk, positions)
+			result.RiskDataAvailable = risk.Exposure > 0
 		}
 	}
 
