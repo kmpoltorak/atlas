@@ -43,7 +43,7 @@
           <tr><th scope="row">{{T .Lang "table.technical"}}</th><td class="tabular-nums">{{printf "%.3f" .Recommendation.TechnicalScore}}</td></tr>
           <tr><th scope="row">{{T .Lang "table.ml"}}</th><td class="tabular-nums">{{printf "%.3f" .Recommendation.MLScore}}</td></tr>
           <tr><th scope="row">{{T .Lang "table.portfolio"}}</th><td class="tabular-nums">{{printf "%.3f" .Recommendation.PortfolioScore}}</td></tr>
-          <tr><th scope="row">{{T .Lang "table.risk"}}</th><td class="tabular-nums">{{printf "%.3f" .Recommendation.RiskScore}}</td></tr>
+          <tr><th scope="row">{{T .Lang "table.risk"}}</th><td class="tabular-nums">{{if .Recommendation.RiskDataAvailable}}{{printf "%.3f" .Recommendation.RiskScore}}{{else}}<span class="text-body-secondary" title="{{T .Lang "table.risk_na_hint"}}">{{T .Lang "table.risk_na"}}</span>{{end}}</td></tr>
           {{if .Recommendation.MarketCondition}}<tr><th scope="row">{{T .Lang "table.market_condition"}}</th><td>{{.Recommendation.MarketCondition}}</td></tr>{{end}}
           <tr><th scope="row">{{T .Lang "table.model"}}</th><td>{{.Recommendation.ModelVersion}}</td></tr>
           <tr><th scope="row">{{T .Lang "table.ml_model"}}</th><td>{{if .Recommendation.MLModelVersion}}{{.Recommendation.MLModelVersion}}{{else}}{{T .Lang "table.ml_model_none"}}{{end}}</td></tr>

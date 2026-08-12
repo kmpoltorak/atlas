@@ -103,6 +103,11 @@ type Recommendation struct {
 	// a portfolio-wide concept. On the same [0,1] scale as the other components (higher = more
 	// supportive of buying).
 	RiskScore float64 `json:"risk_score"`
+	// RiskDataAvailable is false when RiskScore sits at its neutral 1.0 ceiling only because the
+	// portfolio has no exposure to measure yet (empty, or every position's price still equals its
+	// cost basis) — see Orchestrator.computeRiskScore. Callers should render "n/a" rather than the
+	// raw score in that case, since 1.0 there means "nothing observed," not "no risk found."
+	RiskDataAvailable bool `json:"risk_data_available"`
 
 	// MarketCondition is BULL/BEAR/SIDEWAYS (see ml.ClassifyMarketCondition) — a deterministic
 	// ADX+EMA technical rule, not a trained model. Empty string when there isn't enough history
