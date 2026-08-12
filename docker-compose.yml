@@ -110,6 +110,15 @@ services:
       # read from (./training/models:/models:ro above). training/.venv (gitignored) persists
       # across restarts here exactly like it would running retrain.sh on the host directly.
       - .:/app
+      # This service runs via `go run` (see training/Dockerfile), not a prebuilt binary, so
+      # without a persistent module cache every container recreation (an image rebuild, or any
+      # `docker compose up` after one) re-downloads the same ~15 Go dependencies from scratch —
+      # confirmed live: ~25-30s of "go: downloading ..." on every fresh container, easy to mistake
+      # for the service being stuck. /go/pkg/mod (not /root/go/pkg/mod — the golang:* base image
+      # sets GOPATH=/go, confirmed via `go env GOMODCACHE` inside the container) lives outside the
+      # /app bind mount above, so a named volume here persists across recreation with nothing
+      # needed in Dockerfile.
+      - trainer-gomod-cache:/go/pkg/mod
     environment:
       DATABASE_HOST: timescaledb
       DATABASE_PORT: "5432"
@@ -240,3 +249,4 @@ volumes:
   prometheus-data:
   grafana-data:
   alertmanager-data:
+  trainer-gomod-cache:
