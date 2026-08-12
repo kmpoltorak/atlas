@@ -166,7 +166,8 @@ var translations = map[string]map[Lang]string{
 		LangEN: `The only real portfolio-write path — matches <code>POST /portfolio</code>.`,
 		LangPL: `Jedyna rzeczywista ścieżka zapisu do portfela — odpowiada <code>POST /portfolio</code>.`,
 	},
-	"portfolio.record_submit": {LangEN: "Record transaction", LangPL: "Zapisz transakcję"},
+	"portfolio.record_submit":    {LangEN: "Record transaction", LangPL: "Zapisz transakcję"},
+	"portfolio.record_portfolio": {LangEN: "Portfolio", LangPL: "Portfel"},
 	"confirm.remove_position": {
 		LangEN: "Remove %s entirely? Transaction history is kept, only the current position is cleared.",
 		LangPL: "Usunąć %s całkowicie? Historia transakcji zostaje zachowana, czyszczona jest tylko bieżąca pozycja.",
