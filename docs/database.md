@@ -1,9 +1,13 @@
 # Database
 
 Tables (see `migrations/*.sql` for the authoritative schema — this list is current as of
-migrations/001-012):
+migrations/001-017):
 
 - `symbols` — ticker registry, upserted on demand by every write path that needs a symbol_id.
+  `name`/`exchange`/`asset_class` (migrations/016) hold what the symbol actually is (fetched once,
+  rarely); `last_price`/`previous_close`/`quote_updated_at` (migrations/016) hold a live quote
+  refreshed every alert-poll cycle — see the Watchlist/Alerts pages' "Today" column and the
+  Dashboard/Portfolio pages' live P&L overlay.
 - `prices` — OHLCV bars, a real TimescaleDB hypertable (`create_hypertable`, migrations/001).
 - `indicators` — one row per computed indicator value.
 - `predictions` — ML output: `score`/`confidence`/`model_version` always populated;
@@ -29,6 +33,15 @@ migrations/001-012):
   (correction/recovery), set from the Account dashboard page — see docs/ml.md.
 - `schema_migrations` (migrations/013) — which migration versions have actually been applied to
   this database; see the "Migrations" note below.
+- `engine_settings` (migrations/015) — a single-row durable override for whether the ML+Portfolio+
+  Risk blend is active, set from the Account dashboard page; no row means it's never been toggled
+  there, and the composition root falls back to the `ML_ENABLED` env var.
+- `backup_log` (migrations/017) — a single row recording when a full-database backup
+  (`persistence.TimescaleDB.BackupAll`, the Account page's "Backup" button) was last taken. Purely
+  a safety gate for the "Flush all data" button, not user data: `FlushAll` refuses outright unless
+  this row exists and is less than five minutes old, so it's deliberately excluded from the
+  backup/restore/flush cycle itself (see `internal/infrastructure/persistence/backup.go`) — a
+  Flush doesn't erase the fact that a backup was once taken, and a Restore doesn't overwrite it.
 
 There is no `alerts` table — alerts are computed live from the watchlist on every request, not
 persisted (see `internal/application/alerts`).
