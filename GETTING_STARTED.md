@@ -12,6 +12,11 @@ reason why.
 place trades. It only gives you information to help you decide. You always click the button in
 your own broker's app yourself.
 
+**Important:** Atlas is a hobby/research project, not a financial product. It is not financial
+advice, and any decision you make based on it is entirely your own responsibility. Its prices come
+from Yahoo Finance's public data, which is not an official or guaranteed source and can occasionally
+be wrong, delayed, or unavailable. The project's code is open and free to inspect or reuse.
+
 ## Logging in
 
 Open the web address your administrator gave you in any browser (Chrome, Safari, Firefox, Edge —

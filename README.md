@@ -8,6 +8,11 @@ recommendation — with a confidence score and a human-readable reason every tim
 **Atlas never places trades.** It has no brokerage integration and no execution path. It is an
 analytical assistant, not a trading bot.
 
+> **Disclaimer.** Atlas was built for research and educational purposes. It is not financial
+> advice, and using it — or acting on anything it recommends — is entirely at your own risk. Market
+> data comes from Yahoo Finance's unofficial, unsupported API, which can be delayed, incomplete, or
+> wrong. This project is open source under the [MIT License](LICENSE).
+
 **New to Atlas and just want to use the dashboard?** See
 [GETTING_STARTED.md](GETTING_STARTED.md) — a plain-language walkthrough with no technical
 background assumed. Everything below this point is the technical/developer README.
