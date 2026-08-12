@@ -127,13 +127,12 @@ func main() {
 	}
 	defer logger.Sync() //nolint:errcheck
 
-	// training/retrain.sh already posts its own Discord notification on *success*
-	// (TRAINING_DISCORD_WEBHOOK_URL, inherited by the child process below since cmd.Env is
-	// left unset) — see training/README.md's "Regenerating candidates on a schedule". It can
-	// never do the same for a *failure*, though: `set -euo pipefail` makes the script exit
-	// before ever reaching that notification code. This client fills exactly that gap — see
-	// runRetrain — using the identical env var so there's still only one training-notification
-	// webhook concept, not two. Empty by default (non-fatal, like every optional dependency).
+	// training/retrain.sh only logs on success now (a "new candidates ready" ping fired on every
+	// run regardless of whether the candidate was any good, which made it noise) — a *failure*
+	// is the outcome actually worth a push, and retrain.sh can't notify its own failure anyway:
+	// `set -euo pipefail` makes it exit before reaching any notification code it might have.
+	// This client covers exactly that gap — see runRetrain. Empty by default (non-fatal, like
+	// every optional dependency).
 	discordClient := notifications.NewDiscordClient(envOrDefault("TRAINING_DISCORD_WEBHOOK_URL", ""))
 	metrics := newTrainerMetrics()
 
@@ -252,9 +251,9 @@ func runRetrain(s *state, logger *zap.Logger, discord *notifications.DiscordClie
 		return
 	}
 	metrics.runsTotal.WithLabelValues("success").Inc()
-	// Success is intentionally not notified here — retrain.sh already did it (see discord's
-	// doc comment above) with better information (which model files were actually written)
-	// than this process has any visibility into.
+	// Success is deliberately not notified — see discord's doc comment above. retrain.sh already
+	// logs which model files were written; that's enough to check from /status or the container
+	// logs without a push for something that isn't necessarily good news yet.
 	logger.Info("training run finished")
 }
 

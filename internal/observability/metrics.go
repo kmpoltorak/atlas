@@ -12,8 +12,11 @@ type Metrics struct {
 	RequestCounter  *prometheus.CounterVec
 	RequestDuration *prometheus.HistogramVec
 
-	// ProviderRequests counts market data provider calls, labeled by provider name and
-	// outcome (success/error), satisfying PROJECT_CONTEXT.md's "provider metrics" requirement.
+	// ProviderRequests counts market data provider calls, labeled by provider name, outcome
+	// (success/error), and kind ("bars": historical OHLCV via Collector.Collect, "quote": a live
+	// price via Provider.FetchQuote directly — see alerts_loop.go's refreshWatchlistQuotes) so a
+	// provider outage shows which call shape is actually failing, satisfying PROJECT_CONTEXT.md's
+	// "provider metrics" requirement.
 	ProviderRequests *prometheus.CounterVec
 	// RecommendationsTotal counts recommendations issued by the decision engine, labeled by
 	// action (BUY/SELL/HOLD/...), satisfying the "decision metrics" requirement.
@@ -57,9 +60,9 @@ func NewMetrics() *Metrics {
 	providerRequests := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "atlas_provider_requests_total",
-			Help: "Total number of market data provider requests, by provider and outcome.",
+			Help: "Total number of market data provider requests, by provider, outcome, and kind (bars/quote).",
 		},
-		[]string{"provider", "outcome"},
+		[]string{"provider", "outcome", "kind"},
 	)
 	recommendationsTotal := prometheus.NewCounterVec(
 		prometheus.CounterOpts{

@@ -17,6 +17,15 @@ type UseCase struct {
 	Collector    *collectorUC.UseCase
 	Orchestrator *decisionUC.Orchestrator
 	Window       int
+
+	// OnProviderCall, when set, is called once per Evaluate loop iteration that actually reached
+	// the live provider (a cache hit doesn't count — see collectorUC.UseCase.Collect's fromCache),
+	// with "success" or "error". This is how the background alert-poll loop — the dominant real
+	// source of provider traffic — feeds the same atlas_provider_requests_total metric
+	// Application.collectBars already records for direct HTTP entry points; without it, every
+	// provider failure the poll loop hits was only ever visible in logs, never in Prometheus/
+	// Grafana. Nil-safe and optional so this package doesn't need to import internal/observability.
+	OnProviderCall func(outcome string)
 }
 
 func NewUseCase(watchlist *watchlistUC.UseCase, collector *collectorUC.UseCase, orchestrator *decisionUC.Orchestrator, window int) *UseCase {
@@ -35,7 +44,14 @@ func (u *UseCase) Evaluate() ([]alerts.Alert, error) {
 	result := make([]alerts.Alert, 0)
 	var collected error
 	for _, item := range items {
-		bars, _, err := u.Collector.Collect(item.Symbol, u.Window)
+		bars, fromCache, err := u.Collector.Collect(item.Symbol, u.Window)
+		if !fromCache && u.OnProviderCall != nil {
+			if err != nil {
+				u.OnProviderCall("error")
+			} else {
+				u.OnProviderCall("success")
+			}
+		}
 		if err != nil {
 			collected = errors.Join(collected, err)
 			continue
