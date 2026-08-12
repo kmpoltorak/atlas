@@ -2,7 +2,7 @@
 
 - Atlas **never executes trades** — no brokerage integration exists or should be added without
   an explicit, separate design conversation. It is decision support only; this is a hard
-  constraint, not a phrasing preference (see `PROMPT.md`, `VISION.md`).
+  constraint, not a phrasing preference (see `PROMPT.md`).
 - Six real actions, not five: `BUY`, `ACCUMULATE`, `HOLD`, `REDUCE`, `SELL`, `WAIT`
   (`internal/domain/decision`). `ACCUMULATE`/`REDUCE` vs `BUY`/`SELL` are gated on whether a real
   portfolio position already exists, not just score severity — see `docs/decision_engine.md`.
