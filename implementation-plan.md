@@ -469,7 +469,7 @@ denominated value, not just Portfolio; any currency allowed per transaction, not
 locked per symbol). `internal/domain/currency` defines the three supported codes and
 `currency.Base` (PLN) — the currency all internal portfolio math is done in, so the Decision
 Engine, risk calc, ROI, and backtesting never need to know multi-currency exists at all (see
-PROJECT_CONTEXT.md's Portfolio Engine section). `internal/application/exchangerate` +
+docs/architecture.md's Portfolio Engine section). `internal/application/exchangerate` +
 `internal/infrastructure/exchangerate` (a real NBP Table A client — `https://api.nbp.pl`, no API
 key needed, but requires a non-default User-Agent or it 403s, the same class of issue as the
 Yahoo provider's 429 — see PROJECT_CONTEXT.md's Market Data Providers section) fetch and

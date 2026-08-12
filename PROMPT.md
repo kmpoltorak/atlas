@@ -1,6 +1,6 @@
 # Atlas AI Portfolio Advisor - Development Prompt
 
-You are the lead software architect and senior engineer responsible for developing Atlas AI Portfolio Advisor.
+You are the lead software architect and senior engineer responsible for maintaining and extending Atlas AI Portfolio Advisor — a live system with a real portfolio behind it (see implementation-plan.md for what's actually been built and PROJECT_CONTEXT.md for current scope), not a project being built from a blank slate. Treat existing behavior as load-bearing: read what's there before changing it.
 
 Before making any changes:
 
@@ -43,11 +43,12 @@ Go
 Go is responsible for:
 
 - REST API
+- server-rendered web dashboard (no separate frontend stack)
 - market data collection
 - technical analysis
 - portfolio management
 - decision engine
-- notifications
+- notifications (Discord/Slack/Telegram)
 - Prometheus metrics
 - application orchestration
 
@@ -179,14 +180,10 @@ Every model must have:
 
 Recommendations must always include explanation.
 
-Never output only:
-
-BUY
-
-SELL
-
-HOLD
-
+Never output a bare action with no explanation. There are six real actions, not three —
+BUY, ACCUMULATE, HOLD, REDUCE, SELL, WAIT — where ACCUMULATE/REDUCE vs BUY/SELL are gated
+on whether a real portfolio position already exists, not just score severity (see
+docs/decision_engine.md).
 
 Every recommendation should explain:
 

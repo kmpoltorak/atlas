@@ -1,7 +1,8 @@
 # Architecture
 
-**Implementation status** (as of this pass — see PROJECT_CONTEXT.md for the up-to-date
-per-module breakdown): Collector, Analyzer (RSI/EMA/MACD/ATR/Volume/OBV/ADX/Bollinger Bands),
+**Implementation status** (as of this pass — this is the up-to-date per-module breakdown;
+PROJECT_CONTEXT.md keeps only a short summary pointing back here, to stop the two from drifting
+out of sync with each other): Collector, Analyzer (RSI/EMA/MACD/ATR/Volume/OBV/ADX/Bollinger Bands),
 Decision Engine (technical + ML + portfolio-risk + risk-engine blend, all six actions
 BUY/ACCUMULATE/HOLD/REDUCE/SELL/WAIT real and differentiated — see docs/decision_engine.md), ML
 Engine (real XGBoost→ONNX training pipeline and Go inference, falling back to a deterministic
