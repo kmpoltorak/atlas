@@ -53,6 +53,12 @@ This step matters: Atlas gives smarter advice when it knows what's actually in y
 (e.g. it can tell the difference between "worth buying for the first time" and "worth adding to
 what you already hold").
 
+You can keep more than one portfolio — e.g. "Main" and "Speculative" — and switch between them
+using the tabs at the top of the Dashboard and Portfolio pages. Everyone starts with one; add,
+rename, or delete portfolios from the bottom of the **Account** page (up to 5). Recommendations
+still consider anything you hold in *any* of your portfolios, so a stock you already own in one
+never gets suggested as a fresh buy just because a different portfolio tab is open.
+
 Go to **Portfolio** → scroll to **Record a transaction** → fill in:
 
 - **Symbol** — pick from the dropdown (only shows symbols you're already watching — add it to

@@ -11,6 +11,7 @@
   {{template "nav" .}}
   <main id="main-content" class="container pb-5">
     <h1 class="h3 mb-4">{{T .Lang "portfolio.heading"}}</h1>
+    {{template "portfolioTabs" .}}
 
     {{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
     {{if .Success}}<div class="alert alert-success">{{.Success}}</div>{{end}}
@@ -113,6 +114,17 @@
         <h2 class="h5 card-title">{{T .Lang "portfolio.record_transaction"}}</h2>
         <p class="text-body-secondary small">{{T .Lang "portfolio.record_transaction_hint" | safeHTML}}</p>
         <form method="post" action="/dashboard/portfolio">
+          {{if gt (len .Portfolios) 1}}
+          <div class="mb-3">
+            <label class="form-label">{{T .Lang "portfolio.record_portfolio"}}</label>
+            <select class="form-select" name="portfolio_id">
+              {{$active := .ActivePortfolioID}}
+              {{range .Portfolios}}
+              <option value="{{.ID}}"{{if eq .ID $active}} selected{{end}}>{{.Name}}</option>
+              {{end}}
+            </select>
+          </div>
+          {{end}}
           <div class="mb-3">
             <label class="form-label">{{T .Lang "table.symbol"}}</label>
             {{if .Symbols}}

@@ -11,6 +11,7 @@
   {{template "nav" .}}
   <main id="main-content" class="container pb-5">
     <h1 class="h3 mb-4">{{T .Lang "dashboard.heading"}}</h1>
+    {{template "portfolioTabs" .}}
 
     <h2 class="h5">{{T .Lang "dashboard.positions"}}</h2>
     {{if .Positions}}

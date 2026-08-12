@@ -787,6 +787,44 @@ so it no longer only recognizes Discord. Verified live: `docker compose build/up
 exactly one notifier with no behavior change. Go toolchain bumped to 1.26.1 in the same pass
 (`go.mod`, both Dockerfiles) — unrelated to notifications, just done together.
 
+**Multiple named portfolios, built on request**: up to `portfolio.MaxPortfolios` (5) separate
+buckets of positions/transactions — e.g. "Main", "Safe", "Speculative" — switchable via tabs on
+the Dashboard/Portfolio pages, managed (create/rename/delete) from a new section on the Account
+page. The schema already supported this (`positions`/`transactions.portfolio_id`, `portfolios`
+never actually a singleton) — the application layer had just hardcoded a single `"default"` row
+(`persistence.defaultPortfolioID`). That's replaced with real portfolio CRUD
+(`TimescaleDB.ListPortfolios`/`CreatePortfolio`/`RenamePortfolio`/`DeletePortfolio`, the last
+deleting its positions/transactions first in one transaction — no `ON DELETE CASCADE` on those
+FKs) and `portfolio.UseCase.ActivePortfolioID`/`SwitchPortfolio`, which reloads Positions/
+Transactions from the repository for whichever portfolio is now active — the same mechanism
+`Reload()` already used after Flush/Restore, extended rather than replaced.
+
+A deliberate design choice, confirmed with the Author before building: the decision engine treats
+"do I already hold this symbol" and "how risky is my overall exposure" as whole-account questions,
+not per-portfolio ones — `blendMLAndPortfolio` now reads `GetAllPositions` (every portfolio
+combined, quantity-weighted average cost per symbol computed in SQL) instead of the active
+portfolio's own `GetPositions`, so a symbol bought in one portfolio correctly reads ACCUMULATE, not
+BUY, while a different portfolio's tab happens to be on screen. The Dashboard/Portfolio pages
+themselves still show only the active portfolio's own data — the aggregation is internal to
+scoring only.
+
+`ponytail`-flagged known limitation: `ActivePortfolioID`/`Positions`/`Transactions` are shared
+mutable state on one `UseCase` instance, switched via a cookie read at the top of every relevant
+handler (`syncActivePortfolio`) — there is no per-request isolation, so two browser tabs switching
+portfolios at the same moment could race. Acceptable for a single-user tool; would need a mutex or
+per-request scoping if concurrent multi-tab use ever makes that visible.
+
+Verified live: created a second portfolio via the Account page, confirmed it started empty while
+the original portfolio's positions were untouched; bought AAPL in the new portfolio, confirmed
+`GET /recommendations?symbol=AAPL` returned ACCUMULATE/REDUCE-family scoring (not BUY) while the
+Dashboard's active tab was still the *other*, AAPL-less portfolio, and `risk_data_available: true`
+with the correct aggregate exposure; confirmed the dashboard's tabs disappear entirely with only
+one portfolio (no inert single tab) and reappear once a second exists; deleted the test portfolio
+through the same "manage portfolios" UI and confirmed its position/transaction rows were gone, not
+orphaned. Aggregation math and the delete-cascade transaction were also verified directly against
+the live TimescaleDB container with dedicated integration tests
+(`TestGetAllPositionsAggregatesAcrossPortfolios`, `TestDeletePortfolioAlsoDeletesItsPositionsAndTransactions`).
+
 ## 11. Acceptance Criteria
 
 A phase is considered complete only if:

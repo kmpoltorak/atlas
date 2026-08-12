@@ -334,13 +334,16 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 		}
 	}
 
+	// Deliberately GetAllPositions (every portfolio combined), not GetPositions (only the
+	// dashboard's currently active one): "do I already hold this symbol" and "how risky is my
+	// overall exposure" are whole-account questions. A symbol bought in one portfolio should
+	// still read as ACCUMULATE, not BUY, while a different portfolio tab happens to be active.
 	if o.Portfolio != nil {
-		if positions, err := o.Portfolio.GetPositions(); err == nil {
+		if positions, err := o.Portfolio.GetAllPositions(); err == nil {
 			result.PortfolioScore = portfolioRiskSignal(symbol, positions)
 			result.HasPosition = hasPosition(symbol, positions)
-		}
-		if risk, err := o.Portfolio.ComputeRisk(); err == nil {
-			positions, _ := o.Portfolio.GetPositions()
+
+			risk := portfolioUC.ComputeRiskSnapshot(positions)
 			result.RiskScore = computeRiskScore(risk, positions)
 			result.RiskDataAvailable = risk.Exposure > 0
 		}
@@ -381,7 +384,8 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 	return result
 }
 
-// computeRiskScore converts a portfolio-wide risk snapshot (portfolio.UseCase.ComputeRisk) into
+// computeRiskScore converts a portfolio-wide risk snapshot (portfolio.ComputeRiskSnapshot, fed
+// blendMLAndPortfolio's aggregate-across-portfolios positions, not any one portfolio's own) into
 // a [0,1] signal on the same scale as the other blend components (higher = more supportive of
 // buying, lower = more cautionary) — unlike portfolioRiskSignal (a single symbol's own P&L),
 // this reflects the whole portfolio's exposure, independent of which symbol is being scored,

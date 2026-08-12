@@ -15,9 +15,12 @@ migrations/001-017):
   deterministic stub); `recovery_probability`/`recovery_model_version` (migrations/010) follow
   the identical convention for the independent recovery model; `expected_duration`/
   `expected_strength` stay NULL regardless — no model produces those yet.
-- `portfolios` — a single bootstrap row (`name = "default"`), not a real multi-portfolio model —
-  see `positions`/`transactions` below.
-- `positions` — current position snapshot per symbol, foreign-keyed to the default portfolio.
+- `portfolios` — one row per named portfolio (up to `portfolio.MaxPortfolios`, currently 5); every
+  install starts with one, auto-created on first read (see `persistence.TimescaleDB.
+  ListPortfolios`) — not a single-row singleton like `watchlists` below. The dashboard's tabs
+  switch which one `portfolio.UseCase.ActivePortfolioID` points at (see docs/decision_engine.md
+  for how the decision engine deliberately reads across all of them instead).
+- `positions` — current position snapshot per symbol, foreign-keyed to a portfolio.
 - `transactions` — append-only trade history; `currency`/`price_in_pln` (migrations/009) support
   recording a transaction in PLN/EUR/USD while all internal math stays in PLN.
 - `watchlists` — a single bootstrap row, same pattern as `portfolios`.

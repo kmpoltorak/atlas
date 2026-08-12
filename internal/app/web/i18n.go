@@ -166,7 +166,8 @@ var translations = map[string]map[Lang]string{
 		LangEN: `The only real portfolio-write path — matches <code>POST /portfolio</code>.`,
 		LangPL: `Jedyna rzeczywista ścieżka zapisu do portfela — odpowiada <code>POST /portfolio</code>.`,
 	},
-	"portfolio.record_submit": {LangEN: "Record transaction", LangPL: "Zapisz transakcję"},
+	"portfolio.record_submit":    {LangEN: "Record transaction", LangPL: "Zapisz transakcję"},
+	"portfolio.record_portfolio": {LangEN: "Portfolio", LangPL: "Portfel"},
 	"confirm.remove_position": {
 		LangEN: "Remove %s entirely? Transaction history is kept, only the current position is cleared.",
 		LangPL: "Usunąć %s całkowicie? Historia transakcji zostaje zachowana, czyszczona jest tylko bieżąca pozycja.",
@@ -280,6 +281,24 @@ var translations = map[string]map[Lang]string{
 		LangPL: "Dodaje do każdego logowania kod weryfikacyjny z aplikacji uwierzytelniającej (Google Authenticator, Authy itp.).",
 	},
 	"account.setup_submit": {LangEN: "Set up 2FA", LangPL: "Skonfiguruj 2FA"},
+
+	"account.portfolios_heading": {LangEN: "Portfolios", LangPL: "Portfele"},
+	"account.portfolios_hint": {
+		LangEN: "Separate buckets of positions/transactions — e.g. \"Main\", \"Safe\", \"Speculative\". Switch which one the Dashboard/Portfolio pages show using the tabs there; manage the list itself here.",
+		LangPL: "Osobne zestawy pozycji/transakcji — np. \"Główny\", \"Bezpieczny\", \"Spekulacyjny\". Przełączaj, który z nich pokazują strony Dashboard/Portfel, tabami na tych stronach; samą listę zarządzasz tutaj.",
+	},
+	"account.portfolio_rename_submit": {LangEN: "Rename", LangPL: "Zmień nazwę"},
+	"account.portfolio_remove_submit": {LangEN: "Delete", LangPL: "Usuń"},
+	"account.portfolio_new_name":      {LangEN: "New portfolio name", LangPL: "Nazwa nowego portfela"},
+	"account.portfolio_create_submit": {LangEN: "Create portfolio", LangPL: "Utwórz portfel"},
+	"account.portfolios_max_reached": {
+		LangEN: "Maximum number of portfolios reached. Delete one to create another.",
+		LangPL: "Osiągnięto maksymalną liczbę portfeli. Usuń jeden, aby utworzyć kolejny.",
+	},
+	"confirm.remove_portfolio": {
+		LangEN: "Delete portfolio and everything in it — this cannot be undone. Continue?",
+		LangPL: "Usunąć portfel wraz z całą jego zawartością — nie da się tego cofnąć. Kontynuować?",
+	},
 
 	"account.ml_engine_heading": {LangEN: "ML in recommendations", LangPL: "ML w rekomendacjach"},
 	"account.ml_engine_hint": {

@@ -2,6 +2,7 @@ package portfolio
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -440,5 +441,189 @@ func TestRemoveTransactionsEmptyListIsANoop(t *testing.T) {
 	}
 	if len(uc.Transactions) != 1 {
 		t.Fatalf("expected the existing transaction untouched, got %+v", uc.Transactions)
+	}
+}
+
+// fakeRepository is a real, deterministic in-memory Repository — matching stubExchangeRates'
+// convention above, not a mock of business logic. Positions/transactions are keyed by
+// portfolioID, matching how TimescaleDB actually scopes them.
+type fakeRepository struct {
+	portfolios   []portfolio.Portfolio
+	nextID       int
+	positions    map[string][]portfolio.Position
+	transactions map[string][]portfolio.Transaction
+}
+
+func (f *fakeRepository) newID() string {
+	f.nextID++
+	return fmt.Sprintf("id-%d", f.nextID)
+}
+
+func (f *fakeRepository) ListPortfolios() ([]portfolio.Portfolio, error) {
+	if len(f.portfolios) == 0 {
+		if _, err := f.CreatePortfolio("Main Portfolio"); err != nil {
+			return nil, err
+		}
+	}
+	return f.portfolios, nil
+}
+
+func (f *fakeRepository) CreatePortfolio(name string) (portfolio.Portfolio, error) {
+	p := portfolio.Portfolio{ID: f.newID(), Name: name}
+	f.portfolios = append(f.portfolios, p)
+	return p, nil
+}
+
+func (f *fakeRepository) RenamePortfolio(id, name string) error {
+	for i := range f.portfolios {
+		if f.portfolios[i].ID == id {
+			f.portfolios[i].Name = name
+			return nil
+		}
+	}
+	return nil
+}
+
+func (f *fakeRepository) DeletePortfolio(id string) error {
+	kept := f.portfolios[:0:0]
+	for _, p := range f.portfolios {
+		if p.ID != id {
+			kept = append(kept, p)
+		}
+	}
+	f.portfolios = kept
+	delete(f.positions, id)
+	delete(f.transactions, id)
+	return nil
+}
+
+func (f *fakeRepository) GetPositions(portfolioID string) ([]portfolio.Position, error) {
+	return f.positions[portfolioID], nil
+}
+
+func (f *fakeRepository) SavePositions(portfolioID string, positions []portfolio.Position) error {
+	if f.positions == nil {
+		f.positions = make(map[string][]portfolio.Position)
+	}
+	f.positions[portfolioID] = positions
+	return nil
+}
+
+func (f *fakeRepository) DeletePosition(portfolioID, symbol string) error {
+	kept := f.positions[portfolioID][:0:0]
+	for _, p := range f.positions[portfolioID] {
+		if p.Symbol != symbol {
+			kept = append(kept, p)
+		}
+	}
+	f.positions[portfolioID] = kept
+	return nil
+}
+
+func (f *fakeRepository) GetAllPositions() ([]portfolio.Position, error) {
+	var all []portfolio.Position
+	for _, positions := range f.positions {
+		all = append(all, positions...)
+	}
+	return all, nil
+}
+
+func (f *fakeRepository) SaveTransaction(portfolioID string, tx portfolio.Transaction) (string, error) {
+	tx.ID = f.newID()
+	if f.transactions == nil {
+		f.transactions = make(map[string][]portfolio.Transaction)
+	}
+	f.transactions[portfolioID] = append(f.transactions[portfolioID], tx)
+	return tx.ID, nil
+}
+
+func (f *fakeRepository) GetTransactions(portfolioID string) ([]portfolio.Transaction, error) {
+	return f.transactions[portfolioID], nil
+}
+
+func (f *fakeRepository) DeleteTransaction(id string) error {
+	for portfolioID, txs := range f.transactions {
+		kept := txs[:0:0]
+		for _, tx := range txs {
+			if tx.ID != id {
+				kept = append(kept, tx)
+			}
+		}
+		f.transactions[portfolioID] = kept
+	}
+	return nil
+}
+
+func TestNewUseCaseWithRepositoryBootstrapsOnePortfolio(t *testing.T) {
+	uc, err := NewUseCaseWithRepository(&fakeRepository{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(uc.Portfolios) != 1 || uc.Portfolios[0].Name != "Main Portfolio" {
+		t.Fatalf("expected one bootstrapped portfolio, got %+v", uc.Portfolios)
+	}
+	if uc.ActivePortfolioID != uc.Portfolios[0].ID {
+		t.Fatalf("expected the bootstrapped portfolio to be active, got %q", uc.ActivePortfolioID)
+	}
+}
+
+func TestSwitchPortfolioScopesPositionsIndependently(t *testing.T) {
+	uc, err := NewUseCaseWithRepository(&fakeRepository{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	mainID := uc.ActivePortfolioID
+	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Timestamp: "2026-01-01T00:00:00Z"})
+
+	second, err := uc.CreatePortfolio("Speculative")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := uc.SwitchPortfolio(second.ID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(uc.Positions) != 0 {
+		t.Fatalf("expected the new portfolio to start empty, got %+v", uc.Positions)
+	}
+	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "MSFT", Type: "BUY", Quantity: 3, Price: 50, Timestamp: "2026-01-01T00:00:00Z"})
+
+	if err := uc.SwitchPortfolio(mainID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(uc.Positions) != 1 || uc.Positions[0].Symbol != "AAPL" {
+		t.Fatalf("expected switching back to restore AAPL only, got %+v", uc.Positions)
+	}
+
+	all, err := uc.GetAllPositions()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("expected GetAllPositions to combine both portfolios, got %+v", all)
+	}
+}
+
+func TestCreatePortfolioEnforcesMaxPortfolios(t *testing.T) {
+	uc, err := NewUseCaseWithRepository(&fakeRepository{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for i := 1; i < MaxPortfolios; i++ {
+		if _, err := uc.CreatePortfolio("Extra"); err != nil {
+			t.Fatalf("unexpected error creating portfolio %d: %v", i, err)
+		}
+	}
+	if _, err := uc.CreatePortfolio("One Too Many"); err == nil {
+		t.Fatal("expected creating beyond MaxPortfolios to fail")
+	}
+}
+
+func TestDeletePortfolioRefusesToDeleteTheLastOne(t *testing.T) {
+	uc, err := NewUseCaseWithRepository(&fakeRepository{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := uc.DeletePortfolio(uc.ActivePortfolioID); err == nil {
+		t.Fatal("expected deleting the only remaining portfolio to fail")
 	}
 }

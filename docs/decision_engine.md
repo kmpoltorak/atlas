@@ -167,6 +167,15 @@ MaxDrawdown (see docs/backtesting.md) keep the "real" names. Position size is im
 by Exposure (sum across positions) rather than surfaced per-position here. Market trend is not
 implemented — there's no trend/regime classifier (see PROJECT_CONTEXT.md's ML Engine section on
 market condition).
+
+Since multiple portfolios were added (see docs/database.md's `portfolios` table), Portfolio
+Context and Risk Context are deliberately whole-account, not scoped to whichever portfolio the
+dashboard's tabs currently show: `blendMLAndPortfolio` reads `portfolio.UseCase.GetAllPositions`
+(every portfolio's positions combined, quantity-weighted average cost per symbol — see
+`persistence.TimescaleDB.GetAllPositions`), not `GetPositions` (the active tab only). A symbol
+bought in one portfolio reads as ACCUMULATE, not BUY, regardless of which portfolio is on screen.
+The Dashboard/Portfolio pages themselves still show only the active portfolio's own Positions/Risk
+— this aggregation is internal to scoring, not something either page displays directly.
 ---
 # Recommendation Types
 The engine returns:

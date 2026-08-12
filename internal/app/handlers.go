@@ -290,6 +290,10 @@ func (a *Application) pricesHandler(w http.ResponseWriter, r *http.Request) {
 // @Router /portfolio [post]
 // @Router /portfolio [delete]
 func (a *Application) portfolioHandler(w http.ResponseWriter, r *http.Request) {
+	if err := a.syncActivePortfolio(r); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		positions, err := a.Portfolio.GetPositions()
@@ -349,6 +353,10 @@ func (a *Application) portfolioHandler(w http.ResponseWriter, r *http.Request) {
 // @Router /transactions [get]
 // @Router /transactions [delete]
 func (a *Application) transactionsHandler(w http.ResponseWriter, r *http.Request) {
+	if err := a.syncActivePortfolio(r); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		transactions, err := a.Portfolio.GetTransactions()

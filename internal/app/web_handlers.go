@@ -141,6 +141,10 @@ func (a *Application) dashboardPageHandler(w http.ResponseWriter, r *http.Reques
 		methodNotAllowed(w)
 		return
 	}
+	if err := a.syncActivePortfolio(r); err != nil {
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
 	positions, err := a.Portfolio.GetPositions()
 	if err != nil {
 		a.renderError(w, r, http.StatusInternalServerError, err.Error())
@@ -154,9 +158,11 @@ func (a *Application) dashboardPageHandler(w http.ResponseWriter, r *http.Reques
 	livePositions, asOf := a.livePricedPositions(positions, priceAsOf(transactions))
 	web.Render(w, "dashboard", web.DashboardPage{
 		Lang: a.resolveLang(r), Positions: livePositions, Risk: portfolioUC.ComputeRiskSnapshot(livePositions),
-		Rates:       a.exchangeRatesForDisplay(),
-		PriceAsOf:   asOf,
-		AlertCounts: a.alertCountsByAction(),
+		Rates:             a.exchangeRatesForDisplay(),
+		PriceAsOf:         asOf,
+		AlertCounts:       a.alertCountsByAction(),
+		Portfolios:        a.Portfolio.Portfolios,
+		ActivePortfolioID: a.Portfolio.ActivePortfolioID,
 	})
 }
 
@@ -217,9 +223,24 @@ func (a *Application) portfolioPageHandler(w http.ResponseWriter, r *http.Reques
 	case http.MethodGet:
 		a.renderPortfolioPage(w, r, "", "")
 	case http.MethodPost:
+		if err := a.syncActivePortfolio(r); err != nil {
+			a.renderError(w, r, http.StatusInternalServerError, err.Error())
+			return
+		}
 		if err := r.ParseForm(); err != nil {
 			a.renderPortfolioPage(w, r, "Invalid form submission.", "")
 			return
+		}
+		// The record-transaction form's own portfolio picker (only shown with >1 portfolio) can
+		// name a different portfolio than whatever tab is currently active — switch to it first
+		// so the transaction lands where the form actually said, and update the cookie so the
+		// page the user lands on after this keeps showing that same portfolio.
+		if portfolioID := r.FormValue("portfolio_id"); portfolioID != "" && portfolioID != a.Portfolio.ActivePortfolioID {
+			if err := a.Portfolio.SwitchPortfolio(portfolioID); err != nil {
+				a.renderPortfolioPage(w, r, err.Error(), "")
+				return
+			}
+			setActivePortfolioCookie(w, portfolioID)
 		}
 		quantity, qErr := strconv.ParseFloat(r.FormValue("quantity"), 64)
 		price, pErr := strconv.ParseFloat(r.FormValue("price"), 64)
@@ -239,7 +260,7 @@ func (a *Application) portfolioPageHandler(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		go a.refreshRecommendation(tx.Symbol)
-		a.renderPortfolioPage(w, r, "", "Transaction recorded.")
+		a.flashRedirect(w, r, "/dashboard/portfolio", "Transaction recorded.")
 	default:
 		methodNotAllowed(w)
 	}
@@ -252,6 +273,10 @@ func (a *Application) portfolioPageHandler(w http.ResponseWriter, r *http.Reques
 func (a *Application) portfolioDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
+		return
+	}
+	if err := a.syncActivePortfolio(r); err != nil {
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -275,6 +300,10 @@ func (a *Application) portfolioDeleteHandler(w http.ResponseWriter, r *http.Requ
 func (a *Application) portfolioBulkDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
+		return
+	}
+	if err := a.syncActivePortfolio(r); err != nil {
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -301,6 +330,10 @@ func (a *Application) portfolioBulkDeleteHandler(w http.ResponseWriter, r *http.
 func (a *Application) portfolioTransactionDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
+		return
+	}
+	if err := a.syncActivePortfolio(r); err != nil {
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -330,6 +363,10 @@ func (a *Application) portfolioTransactionBulkDeleteHandler(w http.ResponseWrite
 		methodNotAllowed(w)
 		return
 	}
+	if err := a.syncActivePortfolio(r); err != nil {
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		a.renderPortfolioPage(w, r, "Invalid form submission.", "")
 		return
@@ -347,6 +384,13 @@ func (a *Application) portfolioTransactionBulkDeleteHandler(w http.ResponseWrite
 }
 
 func (a *Application) renderPortfolioPage(w http.ResponseWriter, r *http.Request, errMsg, successMsg string) {
+	if successMsg == "" {
+		successMsg = readFlash(w, r)
+	}
+	if err := a.syncActivePortfolio(r); err != nil {
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
 	positions, err := a.Portfolio.GetPositions()
 	if err != nil {
 		a.renderError(w, r, http.StatusInternalServerError, err.Error())
@@ -363,6 +407,8 @@ func (a *Application) renderPortfolioPage(w http.ResponseWriter, r *http.Request
 		Rates: a.exchangeRatesForDisplay(), Currencies: currencyOptions(),
 		PriceAsOf: asOf,
 		Error:     errMsg, Success: successMsg,
+		Portfolios:        a.Portfolio.Portfolios,
+		ActivePortfolioID: a.Portfolio.ActivePortfolioID,
 	}
 	if symbols, err := a.watchlistSymbols(); err == nil {
 		data.Symbols = symbols
@@ -752,6 +798,9 @@ func (a *Application) accountPageHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, errMsg, successMsg string) {
+	if successMsg == "" {
+		successMsg = readFlash(w, r)
+	}
 	enabled, err := a.Auth.TOTPStatus()
 	if err != nil {
 		a.renderError(w, r, http.StatusInternalServerError, err.Error())
@@ -799,6 +848,8 @@ func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, 
 		HasBackup:             hasBackup,
 		BackupExists:          backupExists,
 		LastBackupAt:          lastBackupAt,
+		Portfolios:            a.Portfolio.Portfolios,
+		MaxPortfolios:         portfolioUC.MaxPortfolios,
 	})
 }
 
@@ -1013,7 +1064,8 @@ func (a *Application) mlTrainHandler(w http.ResponseWriter, r *http.Request) {
 		a.renderAccountPage(w, r, "Failed to start training: "+err.Error(), "")
 		return
 	}
-	a.renderAccountPage(w, r, "", "Training started — this can take a few minutes (longer on the very first run). Refresh this page to check progress.")
+	a.flashRedirect(w, r, "/dashboard/account",
+		"Training started — this can take a few minutes (longer on the very first run). Refresh this page to check progress.")
 }
 
 // backupOperationTimeout is how long accountBackupHandler/accountRestoreHandler/
