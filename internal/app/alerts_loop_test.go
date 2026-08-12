@@ -64,7 +64,7 @@ func newTestApplicationWithDiscord(discordURL string) *Application {
 	watchlist := watchlistUC.NewUseCase()
 	_ = watchlist.Add("AAPL", "2026-08-05T00:00:00Z")
 
-	collector := collectorUC.NewUseCase(loopStubProvider{})
+	collector := &collectorUC.UseCase{Provider: loopStubProvider{}}
 	orchestrator := decisionUC.NewOrchestrator(analyzerUC.NewUseCase(), portfolioUC.NewUseCase(), decisionUC.NewUseCase())
 
 	var notifiers []infraNotifications.Notifier

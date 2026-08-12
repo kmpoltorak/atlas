@@ -106,28 +106,6 @@ func (o *Orchestrator) BuildRecommendationFromBars(symbol string, bars []market.
 	return recommendation, nil
 }
 
-// BuildRecommendationForSymbol wraps the signal pipeline and returns an explainable recommendation object.
-func (o *Orchestrator) BuildRecommendationForSymbol(symbol string, signals []domainDecision.TechnicalScore) (domainDecision.Recommendation, error) {
-	if len(signals) == 0 {
-		return domainDecision.Recommendation{Symbol: symbol, Action: "HOLD", Confidence: 0.5, Reason: []string{"No signal data available"}}, nil
-	}
-	latest := signals[len(signals)-1]
-	if o.Decision == nil {
-		return domainDecision.Recommendation{Symbol: symbol, Action: "HOLD", Confidence: 0.5, Reason: []string{"Decision engine unavailable"}}, nil
-	}
-	// No bars/portfolio/ML context available from a bare signal slice — defaults preserve the
-	// original BUY/SELL/HOLD-only behavior (no known position, confidence high enough to never
-	// trigger WAIT). See BuildRecommendationFromBars for the full blend.
-	recommendation, err := o.Decision.BuildRecommendation(domainDecision.RecommendationInput{
-		Technical: latest, HasPosition: false, MLConfidence: 1.0,
-	})
-	if err != nil {
-		return domainDecision.Recommendation{}, err
-	}
-	recommendation.Symbol = symbol
-	return recommendation, nil
-}
-
 // buildTechnicalScore derives an explainable TechnicalScore from the real analyzer indicators.
 // RSI falls back to a neutral baseline only when there isn't enough history (< 15 bars) to
 // compute Wilder's RSI; every other field reflects the actual indicator series.

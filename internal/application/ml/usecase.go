@@ -72,24 +72,6 @@ func (u *UseCase) SetRecoveryModel(model *OnnxModel) *OnnxModel {
 	return u.recoveryModel.Swap(model)
 }
 
-// GenerateFeatures returns the provided feature vectors unchanged in the first milestone.
-func (u *UseCase) GenerateFeatures(rows []ml.FeatureVector) ([]ml.FeatureVector, error) {
-	return rows, nil
-}
-
-// BuildTrainingDataset creates a minimal deterministic training sample for the first prototype.
-func (u *UseCase) BuildTrainingDataset() ([]ml.FeatureVector, error) {
-	return []ml.FeatureVector{
-		{RSI: 62, EMADist: 0.05, MACDPct: 0.007, TRPct: 0.011, Volume: 1.2},
-		{RSI: 35, EMADist: -0.04, MACDPct: -0.002, TRPct: 0.009, Volume: 0.8},
-	}, nil
-}
-
-// Validate returns a placeholder validation score for the current model skeleton.
-func (u *UseCase) Validate() (float64, error) {
-	return 0.78, nil
-}
-
 // BuildFeatureVector derives a feature vector from an analyzer's latest indicator values for a
 // symbol. RSI falls back to a neutral 50 when there isn't enough history to compute it.
 //

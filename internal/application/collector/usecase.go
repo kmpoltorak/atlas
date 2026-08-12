@@ -14,14 +14,9 @@ type UseCase struct {
 	Cache    Cache
 }
 
-func NewUseCase(provider market.MarketProvider) *UseCase {
-	return NewUseCaseWithStorage(provider, nil)
-}
-
-func NewUseCaseWithStorage(provider market.MarketProvider, storage Storage) *UseCase {
-	return &UseCase{Provider: provider, Storage: storage}
-}
-
+// NewUseCaseWithStorageAndCache is the one constructor UseCase needs: Storage/Cache/Provider
+// are exported fields, so tests that only need a bare provider build a struct literal directly
+// instead of going through a narrower constructor.
 func NewUseCaseWithStorageAndCache(provider market.MarketProvider, storage Storage, cache Cache) *UseCase {
 	return &UseCase{Provider: provider, Storage: storage, Cache: cache}
 }
@@ -56,15 +51,4 @@ func (u *UseCase) Collect(symbol string, window int) (bars []market.Bar, fromCac
 		u.Cache.Set(symbol, window, bars)
 	}
 	return bars, false, nil
-}
-
-// GetStoredBars returns previously collected bars for a symbol without calling the live provider.
-func (u *UseCase) GetStoredBars(symbol string) ([]market.Bar, error) {
-	if symbol == "" {
-		return nil, errors.New("symbol is required")
-	}
-	if u.Storage == nil {
-		return nil, errors.New("storage is not configured")
-	}
-	return u.Storage.GetBars(symbol)
 }

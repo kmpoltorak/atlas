@@ -442,27 +442,6 @@ func randomTransactionID() (string, error) {
 	return hex.EncodeToString(raw), nil
 }
 
-// ComputeROI calculates the weighted ROI across positions.
-func (u *UseCase) ComputeROI() (float64, error) {
-	if len(u.Positions) == 0 {
-		return 0, nil
-	}
-	totalWeight := 0.0
-	totalQuantity := 0.0
-	for _, position := range u.Positions {
-		if position.AverageCost <= 0 || position.Quantity <= 0 {
-			continue
-		}
-		roi := ((position.CurrentPrice - position.AverageCost) / position.AverageCost) * 100.0
-		totalWeight += roi * position.Quantity
-		totalQuantity += position.Quantity
-	}
-	if totalQuantity == 0 {
-		return 0, nil
-	}
-	return totalWeight / totalQuantity, nil
-}
-
 // ComputeRisk returns a lightweight risk snapshot for the live portfolio state (u.Positions —
 // see applyTransaction's CurrentPrice, set from each symbol's last recorded trade, not a live
 // quote). See ComputeRiskSnapshot for what's actually computed; this method just supplies the

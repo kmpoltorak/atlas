@@ -13,7 +13,6 @@ data:
   REDIS_HOST: "redis"
   REDIS_PORT: "6379"
   PROMETHEUS_ENABLED: "true"
-  MARKET_PROVIDER: "yahoo"
   COLLECTOR_WINDOW_DAYS: "30"
   ALERT_POLL_INTERVAL_SECONDS: "300"
   # Both "": no trained model available is a normal, non-fatal startup state (see

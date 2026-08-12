@@ -24,24 +24,6 @@ func (u *UseCase) Configured() bool {
 	return len(u.Clients) > 0
 }
 
-// Send posts a message and nothing else — deliberately no action/trade path exists here.
-// PROMPT.md: "Atlas never executes trades automatically."
-func (u *UseCase) Send(message string) error {
-	if message == "" {
-		return errors.New("message is required")
-	}
-	if !u.Configured() {
-		return errors.New("no notification channel is configured")
-	}
-	var errs []error
-	for _, c := range u.Clients {
-		if err := c.Send(message); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
-}
-
 // SendEmbed posts a rich embed — the alert path uses this so a recommendation arrives as a
 // card with a coloured edge and labelled fields instead of one run-on line. Same deliberate
 // limitation as Send: this posts and nothing else, no action or trade path exists here.

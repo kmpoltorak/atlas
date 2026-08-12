@@ -25,13 +25,6 @@ func connectTestClient(t *testing.T) *RedisClient {
 	return client
 }
 
-func TestAddressReturnsHostPort(t *testing.T) {
-	client := NewRedisClient("localhost", "6379")
-	if got := client.Address(); got != "localhost:6379" {
-		t.Fatalf("expected localhost:6379, got %q", got)
-	}
-}
-
 func TestPingSucceedsAgainstLiveRedis(t *testing.T) {
 	client := connectTestClient(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
