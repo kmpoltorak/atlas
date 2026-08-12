@@ -66,7 +66,7 @@ func (a *Application) collectBars(symbol string, window int) ([]market.Bar, erro
 			zap.Error(err),
 		)
 	}
-	a.Metrics.ProviderRequests.WithLabelValues(a.Config.MarketProvider, outcome).Inc()
+	a.Metrics.ProviderRequests.WithLabelValues(a.Config.MarketProvider, outcome, "bars").Inc()
 	return bars, err
 }
 

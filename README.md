@@ -309,8 +309,9 @@ never auto-applied to the live decision engine. Full detail: [docs/backtesting.m
 
 ## Observability
 
-- `/metrics` exposes HTTP, provider, decision, ML, and Discord-alert counters (Prometheus format),
-  scraped by `prometheus/prometheus.yml` and visualized via `grafana/dashboards/`. Alongside them
+- `/metrics` exposes HTTP, provider (labeled by outcome and kind — historical bars vs. a live
+  quote), decision, ML, and alert-delivery counters (Prometheus format), scraped by
+  `prometheus/prometheus.yml` and visualized via `grafana/dashboards/`. Alongside them
   sits one gauge, `atlas_dependency_up{dependency="…"}`, refreshed every 15s from the same checks
   `/health` runs — so a dependency outage is graphable over time, not just visible in a
   point-in-time JSON response. atlas-api's own liveness is Prometheus' built-in
@@ -325,12 +326,11 @@ never auto-applied to the live decision engine. Full detail: [docs/backtesting.m
 - Infrastructure alerting rules (`prometheus/alerts.yml`: API down, crash-loop/flapping, high
   error rate, background alert-poll failures) route through Alertmanager to a Discord channel —
   deliberately separate from the business-alert webhook above, so infra noise never mixes with
-  investment notifications. Training run outcomes post to the same channel via
-  `TRAINING_DISCORD_WEBHOOK_URL` (sourced from the same `ALERTMANAGER_DISCORD_WEBHOOK_URL` value
-  in `.env` when using the dashboard trigger) — `training/retrain.sh` itself notifies on success,
-  `cmd/trainer` notifies on failure (the one outcome retrain.sh's `set -e` never lets it reach),
-  since a training outcome is the same "is Atlas itself working" category, not an investment
-  signal.
+  investment notifications. A *failed* dashboard-triggered training run posts to the same channel
+  via `TRAINING_DISCORD_WEBHOOK_URL` (sourced from `ALERTMANAGER_DISCORD_WEBHOOK_URL` in `.env`) —
+  `cmd/trainer` sends that, the one outcome retrain.sh's `set -e` never lets it reach itself. A
+  successful run only logs; it doesn't push anywhere (a "new candidates ready" ping used to fire
+  on every run regardless of whether the candidate was any good, which was noise, not signal).
 - Structured JSON logs throughout (zap).
 
 ## Kubernetes deployment

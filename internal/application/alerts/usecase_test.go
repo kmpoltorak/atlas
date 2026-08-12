@@ -1,6 +1,7 @@
 package alerts
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -25,6 +26,27 @@ func (s stubProvider) FetchInstrumentInfo(symbol string) (market.InstrumentInfo,
 }
 
 func (s stubProvider) FetchQuote(symbol string) (market.Quote, error) {
+	return market.Quote{Symbol: symbol}, nil
+}
+
+// failingProvider errors for any symbol in failFor, succeeds (with empty bars) otherwise — used
+// to exercise OnProviderCall's success/error branching.
+type failingProvider struct {
+	failFor map[string]bool
+}
+
+func (f failingProvider) FetchBars(symbol string, window int) ([]market.Bar, error) {
+	if f.failFor[symbol] {
+		return nil, errors.New("provider unavailable")
+	}
+	return flatBars(symbol), nil
+}
+
+func (f failingProvider) FetchInstrumentInfo(symbol string) (market.InstrumentInfo, error) {
+	return market.InstrumentInfo{Symbol: symbol}, nil
+}
+
+func (f failingProvider) FetchQuote(symbol string) (market.Quote, error) {
 	return market.Quote{Symbol: symbol}, nil
 }
 
@@ -104,5 +126,30 @@ func TestEvaluateReturnsEmptyWhenWatchlistIsEmpty(t *testing.T) {
 	}
 	if len(result) != 0 {
 		t.Fatalf("expected no alerts, got %d", len(result))
+	}
+}
+
+// TestEvaluateReportsProviderCallOutcomes confirms the fix for provider failures during the
+// background alert-poll loop being invisible outside logs: OnProviderCall must fire once per
+// symbol that actually reached the live provider, with the right success/error outcome.
+func TestEvaluateReportsProviderCallOutcomes(t *testing.T) {
+	provider := failingProvider{failFor: map[string]bool{"BAD": true}}
+
+	watchlist := watchlistUC.NewUseCase()
+	_ = watchlist.Add("GOOD", "2026-08-05T00:00:00Z")
+	_ = watchlist.Add("BAD", "2026-08-05T00:00:00Z")
+
+	collector := collectorUC.NewUseCase(provider)
+	orchestrator := decisionUC.NewOrchestrator(analyzerUC.NewUseCase(), portfolioUC.NewUseCase(), decisionUC.NewUseCase())
+
+	uc := NewUseCase(watchlist, collector, orchestrator, 30)
+	outcomes := map[string]int{}
+	uc.OnProviderCall = func(outcome string) { outcomes[outcome]++ }
+
+	if _, err := uc.Evaluate(); err == nil {
+		t.Fatal("expected an aggregated error from the BAD symbol's failed fetch")
+	}
+	if outcomes["success"] != 1 || outcomes["error"] != 1 {
+		t.Fatalf("expected exactly one success and one error, got %+v", outcomes)
 	}
 }

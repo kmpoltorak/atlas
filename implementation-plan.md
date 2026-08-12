@@ -825,6 +825,36 @@ orphaned. Aggregation math and the delete-cascade transaction were also verified
 the live TimescaleDB container with dedicated integration tests
 (`TestGetAllPositionsAggregatesAcrossPortfolios`, `TestDeletePortfolioAlsoDeletesItsPositionsAndTransactions`).
 
+**Provider metrics blind spot, found and fixed after a live provider failure went unseen in
+Grafana**: the Author saw `"unexpected provider status: 500"` in `docker logs atlas-api` but
+nothing on the "Provider Requests" panel. Root cause: `atlas_provider_requests_total` was only
+ever incremented by `Application.collectBars`, the wrapper used by direct HTTP entry points — the
+background alert-poll loop, by far the dominant real source of provider traffic (the whole
+watchlist, every `ALERT_POLL_INTERVAL_SECONDS`), called `collectorUC.UseCase.Collect` and
+`Provider.FetchQuote` directly, bypassing it entirely. Every poll-loop provider failure was only
+ever visible in logs. Fixed by adding `alerts.UseCase.OnProviderCall` (an optional callback, kept
+nil-safe so the package still doesn't depend on `internal/observability`) invoked once per symbol
+that reached the live provider, and by instrumenting `refreshWatchlistQuotes`'s `FetchQuote` call
+directly. The metric gained a third label, `kind` ("bars" vs "quote"), so a real outage shows which
+call shape is actually failing. Verified live: a manual `/recommendations` hit produced
+`atlas_provider_requests_total{kind="bars",outcome="success",provider="yahoo"} 1`, correctly
+scraped by Prometheus within one scrape interval.
+
+**Grafana dashboard pruned to debugging-relevant panels, on request**: removed "Recommendations
+Issued" (piechart), "Discord Alerts Sent" (title stale since Slack/Telegram — PR #76 — and not
+actually a debugging signal), and "ML Predictions Served by Model Version" — none of them help
+diagnose why something is broken, which is what a single-user ops dashboard is for. "Provider
+Requests" was renamed to reflect the new `kind` label and widened to full width as the most
+important panel now that it's actually fed correctly (see above).
+
+**Training-run notification noise removed, on request**: `training/retrain.sh` posted a Discord
+"new candidates ready for review" message on every successful run, regardless of whether the
+candidate actually beat its baseline — pure noise on a personal single-user setup where most runs
+don't produce anything worth activating. It now only logs
+(`New candidates: correction=... recovery=...`); `cmd/trainer`'s separate failure notification
+(the one outcome retrain.sh's own `set -euo pipefail` can never report) is unchanged — a failed run
+is still worth a push, a merely-finished one isn't.
+
 ## 11. Acceptance Criteria
 
 A phase is considered complete only if:

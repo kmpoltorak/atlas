@@ -2,7 +2,7 @@
   "title": "Atlas Overview",
   "uid": "atlas-overview",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "time": { "from": "now-6h", "to": "now" },
   "refresh": "30s",
   "panels": [
@@ -36,66 +36,25 @@
     },
     {
       "id": 3,
-      "title": "Provider Requests (Success vs Error)",
+      "title": "Provider Requests (Success vs Error, by Kind)",
+      "description": "kind=bars is the background alert-poll loop's historical-data fetch (Collector.Collect, ~every 5 minutes for the whole watchlist) and any /prices hit; kind=quote is the poll loop's live-price refresh (Provider.FetchQuote). Both feed the same atlas_provider_requests_total counter so a real provider outage (e.g. Yahoo Finance returning 5xx or timing out) shows up here, not just in logs.",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(atlas_provider_requests_total[5m])) by (provider, outcome)",
-          "legendFormat": "{{provider}} - {{outcome}}"
+          "expr": "sum(rate(atlas_provider_requests_total[5m])) by (provider, kind, outcome)",
+          "legendFormat": "{{provider}} - {{kind}} - {{outcome}}"
         }
       ]
     },
     {
       "id": 4,
-      "title": "Recommendations Issued (by Action)",
-      "type": "piechart",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(increase(atlas_recommendations_total[1h])) by (action)",
-          "legendFormat": "{{action}}"
-        }
-      ]
-    },
-    {
-      "id": 5,
-      "title": "ML Predictions Served (by Model Version)",
-      "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(atlas_predictions_total[5m])) by (model_version)",
-          "legendFormat": "{{model_version}}"
-        }
-      ]
-    },
-    {
-      "id": 6,
-      "title": "Discord Alerts Sent (by Action)",
-      "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(atlas_alerts_sent_total[5m])) by (action)",
-          "legendFormat": "{{action}}"
-        }
-      ]
-    },
-    {
-      "id": 7,
       "title": "Background Alert-Poll Failures",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -105,11 +64,11 @@
       ]
     },
     {
-      "id": 8,
+      "id": 5,
       "title": "Service Status",
       "type": "stat",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 32 },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 24 },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -153,11 +112,11 @@
       }
     },
     {
-      "id": 9,
+      "id": 6,
       "title": "Training Runs (by Outcome)",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 38 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 30 },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -167,11 +126,11 @@
       ]
     },
     {
-      "id": 10,
+      "id": 7,
       "title": "Time Since Last Training Run",
       "type": "stat",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 38 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 30 },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },

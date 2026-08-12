@@ -121,10 +121,10 @@ services:
       # resolve if a venv created on the host OS gets bind-mounted into this (Linux) container.
       # Gitignored, like training/.venv itself (see .gitignore).
       TRAINING_VENV_DIR: training/.venv-container
-      # training/retrain.sh already reads this itself for its own success notification (see
-      # training/README.md) — it's inherited automatically by the retrain.sh subprocess cmd/
-      # trainer execs, no extra plumbing needed. cmd/trainer also reads it directly for the one
-      # thing retrain.sh's own notification can't cover: a failure (see cmd/trainer/main.go).
+      # cmd/trainer reads this directly for the one outcome worth a push: a training run that
+      # failed (see cmd/trainer/main.go). A successful run only logs — training/retrain.sh used to
+      # also push a "new candidates ready" notification on success, but that fired on every run
+      # regardless of whether the candidate was any good, which made it noise rather than signal.
       # Deliberately reuses the *same* .env value as alertmanager's ALERTMANAGER_DISCORD_WEBHOOK_URL
       # below, not DISCORD_WEBHOOK_URL above (atlas-api's business-alert channel) — training
       # outcomes are an "is Atlas itself working" signal, same category as pod-down/error-rate

@@ -186,6 +186,13 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 		trainerClient = trainerInfra.NewClient(cfg.TrainerURL)
 	}
 
+	alertsUseCase := alertsUC.NewUseCase(watchlist, collector, orchestrator, cfg.CollectorWindow)
+	// Feeds atlas_provider_requests_total from the background alert-poll loop's own provider
+	// calls — see alerts.UseCase.OnProviderCall's doc comment for why this exists.
+	alertsUseCase.OnProviderCall = func(outcome string) {
+		metrics.ProviderRequests.WithLabelValues(cfg.MarketProvider, outcome, "bars").Inc()
+	}
+
 	return &Application{
 		Config:  cfg,
 		Metrics: metrics,
@@ -203,7 +210,7 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 		Notifications: notificationsUC.NewUseCase(notifiers...),
 		Backtesting:   backtestingUC.NewUseCase(orchestrator),
 		Watchlist:     watchlist,
-		Alerts:        alertsUC.NewUseCase(watchlist, collector, orchestrator, cfg.CollectorWindow),
+		Alerts:        alertsUseCase,
 		Auth:          authUC.NewUseCase(cfg.AdminUsername, cfg.AdminPasswordHash, redisCache, storage),
 		ExchangeRates: exchangeRates,
 		Trainer:       trainerClient,

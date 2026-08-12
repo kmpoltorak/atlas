@@ -55,11 +55,10 @@ echo "    learning price dynamics, however good its accuracy looks (on this targ
 echo "    'no correction' every time already scores ~0.94). Old candidates are never deleted or"
 echo "    overwritten automatically; prune training/models/ by hand once you no longer need them."
 
-if [ -n "${TRAINING_DISCORD_WEBHOOK_URL:-}" ]; then
-  latest_correction=$(ls -t training/models/atlas-ml-v*.json 2>/dev/null | head -n1 || true)
-  latest_recovery=$(ls -t training/models/atlas-ml-recovery-v*.json 2>/dev/null | head -n1 || true)
-  message="Atlas: new ML training candidates ready for review. correction=${latest_correction:-none} recovery=${latest_recovery:-none}. Activate from /dashboard/account if they look good."
-  curl -fsS -H "Content-Type: application/json" \
-    -d "$(printf '{"content": %s}' "$(printf '%s' "$message" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')")" \
-    "$TRAINING_DISCORD_WEBHOOK_URL" >/dev/null || echo "==> Discord notification failed (non-fatal)"
-fi
+# Log-only, deliberately not pushed to Discord/Slack/Telegram: a "new candidates ready" ping
+# fires on every single run whether or not the candidate is any good (see the baseline warning
+# above), which made it noise rather than signal — cmd/trainer's own failure notification is the
+# one that's actually worth a push (something broke, not "a run finished").
+latest_correction=$(ls -t training/models/atlas-ml-v*.json 2>/dev/null | head -n1 || true)
+latest_recovery=$(ls -t training/models/atlas-ml-recovery-v*.json 2>/dev/null | head -n1 || true)
+echo "==> New candidates: correction=${latest_correction:-none} recovery=${latest_recovery:-none}"

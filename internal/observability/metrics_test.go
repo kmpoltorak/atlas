@@ -13,7 +13,7 @@ func TestNewMetricsRegistersEveryCollector(t *testing.T) {
 
 	m.RequestCounter.WithLabelValues("/health", "GET", "200").Inc()
 	m.RequestDuration.WithLabelValues("/health", "GET").Observe(0.1)
-	m.ProviderRequests.WithLabelValues("yahoo", "success").Inc()
+	m.ProviderRequests.WithLabelValues("yahoo", "success", "bars").Inc()
 	m.RecommendationsTotal.WithLabelValues("BUY").Inc()
 	m.PredictionsTotal.WithLabelValues("v1").Inc()
 	m.AlertsSent.WithLabelValues("SELL").Inc()
