@@ -11,20 +11,12 @@ import (
 // API response caching, and rate limiting per docs/deployment.md's "redis" service scope.
 type RedisClient struct {
 	client *redis.Client
-	addr   string
 }
 
 func NewRedisClient(host, port string) *RedisClient {
-	addr := host + ":" + port
 	return &RedisClient{
-		client: redis.NewClient(&redis.Options{Addr: addr}),
-		addr:   addr,
+		client: redis.NewClient(&redis.Options{Addr: host + ":" + port}),
 	}
-}
-
-// Address returns the host:port address used by the cache client.
-func (c *RedisClient) Address() string {
-	return c.addr
 }
 
 func (c *RedisClient) Close() error {

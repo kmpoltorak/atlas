@@ -61,12 +61,12 @@ func (a *Application) collectBars(symbol string, window int) ([]market.Bar, erro
 	if err != nil {
 		outcome = "error"
 		a.Logger.Error("provider request failed",
-			zap.String("provider", a.Config.MarketProvider),
+			zap.String("provider", marketProviderLabel),
 			zap.String("symbol", symbol),
 			zap.Error(err),
 		)
 	}
-	a.Metrics.ProviderRequests.WithLabelValues(a.Config.MarketProvider, outcome, "bars").Inc()
+	a.Metrics.ProviderRequests.WithLabelValues(marketProviderLabel, outcome, "bars").Inc()
 	return bars, err
 }
 

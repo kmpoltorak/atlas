@@ -16,7 +16,6 @@ type Config struct {
 	RedisHost          string
 	RedisPort          string
 	PrometheusEnabled  bool
-	MarketProvider     string
 	DiscordWebhookURL  string
 	SlackWebhookURL    string
 	TelegramBotToken   string
@@ -49,7 +48,6 @@ func Load() Config {
 		RedisHost:         envOrDefault("REDIS_HOST", "redis"),
 		RedisPort:         envOrDefault("REDIS_PORT", "6379"),
 		PrometheusEnabled: envOrDefault("PROMETHEUS_ENABLED", "true") == "true",
-		MarketProvider:    envOrDefault("MARKET_PROVIDER", "yahoo"),
 		DiscordWebhookURL: envOrDefault("DISCORD_WEBHOOK_URL", ""),
 		SlackWebhookURL:   envOrDefault("SLACK_WEBHOOK_URL", ""),
 		TelegramBotToken:  envOrDefault("TELEGRAM_BOT_TOKEN", ""),

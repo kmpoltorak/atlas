@@ -71,7 +71,7 @@ func (s stubProvider) FetchBars(symbol string, window int) ([]market.Bar, error)
 
 func TestCollectReturnsBarsWhenProviderConfigured(t *testing.T) {
 	provider := stubProvider{bars: []market.Bar{{Symbol: "AAPL", Close: 100, Timestamp: time.Now()}}}
-	uc := NewUseCase(provider)
+	uc := &UseCase{Provider: provider}
 
 	bars, fromCache, err := uc.Collect("AAPL", 1)
 	if err != nil {
@@ -88,7 +88,7 @@ func TestCollectReturnsBarsWhenProviderConfigured(t *testing.T) {
 func TestCollectPersistsBarsWhenStorageEnabled(t *testing.T) {
 	provider := stubProvider{bars: []market.Bar{{Symbol: "AAPL", Close: 100, Timestamp: time.Now()}}}
 	storage := &stubStorage{}
-	uc := NewUseCaseWithStorage(provider, storage)
+	uc := &UseCase{Provider: provider, Storage: storage}
 
 	bars, _, err := uc.Collect("AAPL", 1)
 	if err != nil {
@@ -131,13 +131,13 @@ func TestCollectServesFromCacheWithoutCallingProviderAgain(t *testing.T) {
 }
 
 func TestCollectRejectsMissingProviderOrSymbol(t *testing.T) {
-	uc := NewUseCase(nil)
+	uc := &UseCase{}
 	if _, _, err := uc.Collect("AAPL", 1); err == nil {
 		t.Fatal("expected provider error")
 	}
 
 	provider := stubProvider{err: errors.New("boom")}
-	uc = NewUseCase(provider)
+	uc = &UseCase{Provider: provider}
 	if _, _, err := uc.Collect("", 1); err == nil {
 		t.Fatal("expected symbol validation error")
 	}

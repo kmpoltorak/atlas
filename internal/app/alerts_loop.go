@@ -207,7 +207,7 @@ func (a *Application) refreshWatchlistQuotes() {
 		if err != nil {
 			outcome = "error"
 		}
-		a.Metrics.ProviderRequests.WithLabelValues(a.Config.MarketProvider, outcome, "quote").Inc()
+		a.Metrics.ProviderRequests.WithLabelValues(marketProviderLabel, outcome, "quote").Inc()
 		if err != nil {
 			a.Logger.Warn("failed to fetch quote", zap.String("symbol", symbol), zap.Error(err))
 			continue

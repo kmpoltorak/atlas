@@ -10,7 +10,7 @@ func clearEnv(t *testing.T) {
 	for _, key := range []string{
 		"SERVER_PORT", "LOG_LEVEL", "DATABASE_HOST", "DATABASE_PORT", "DATABASE_NAME",
 		"DATABASE_USER", "DATABASE_PASSWORD", "REDIS_HOST", "REDIS_PORT", "PROMETHEUS_ENABLED",
-		"MARKET_PROVIDER", "DISCORD_WEBHOOK_URL", "COLLECTOR_WINDOW_DAYS",
+		"DISCORD_WEBHOOK_URL", "COLLECTOR_WINDOW_DAYS",
 		"ALERT_POLL_INTERVAL_SECONDS", "ML_ENABLED", "MODEL_PATH", "RECOVERY_MODEL_PATH",
 		"LIBONNXRUNTIME_PATH", "ML_MODELS_DIR", "TRAINER_URL", "ADMIN_USERNAME",
 		"ADMIN_PASSWORD_HASH", "COOKIE_SECURE", "PROMETHEUS_URL", "ALERTMANAGER_URL",
@@ -35,7 +35,6 @@ func TestLoadDefaults(t *testing.T) {
 		RedisHost:          "redis",
 		RedisPort:          "6379",
 		PrometheusEnabled:  true,
-		MarketProvider:     "yahoo",
 		DiscordWebhookURL:  "",
 		CollectorWindow:    30,
 		AlertPollSeconds:   300,

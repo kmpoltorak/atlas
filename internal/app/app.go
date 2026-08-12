@@ -190,7 +190,7 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 	// Feeds atlas_provider_requests_total from the background alert-poll loop's own provider
 	// calls — see alerts.UseCase.OnProviderCall's doc comment for why this exists.
 	alertsUseCase.OnProviderCall = func(outcome string) {
-		metrics.ProviderRequests.WithLabelValues(cfg.MarketProvider, outcome, "bars").Inc()
+		metrics.ProviderRequests.WithLabelValues(marketProviderLabel, outcome, "bars").Inc()
 	}
 
 	return &Application{
@@ -287,14 +287,17 @@ func (a *Application) Close() error {
 	return errors.Join(errs...)
 }
 
-// newProvider returns the market data provider. Yahoo Finance has no official, supported API
-// (see PROJECT_CONTEXT.md); its unofficial endpoint is the only provider now — confirmed
-// reachable with a browser-like User-Agent header and confirmed to support the hourly bars this
-// engine needs. Stooq was evaluated as a free alternative and removed: its free endpoint serves
-// a client-side JavaScript bot challenge instead of data from this environment, and even where
+// marketProviderLabel tags atlas_provider_requests_total and provider-failure log lines (see
+// handlers.go/alerts_loop.go). Yahoo Finance has no official, supported API (see
+// PROJECT_CONTEXT.md); its unofficial endpoint is the only provider now — confirmed reachable
+// with a browser-like User-Agent header and confirmed to support the hourly bars this engine
+// needs. Stooq was evaluated as a free alternative and removed: its free endpoint serves a
+// client-side JavaScript bot challenge instead of data from this environment, and even where
 // reachable its free CSV export is daily-only (no intraday), which wouldn't meet the
-// hourly-granularity requirement anyway. cfg.MarketProvider (MARKET_PROVIDER) still exists as a
-// metrics label (see handlers.go), just not as a selector, since there's nothing left to select.
+// hourly-granularity requirement anyway. A constant, not config, since there's nothing left to
+// select.
+const marketProviderLabel = "yahoo"
+
 func newProvider() market.MarketProvider {
 	return providers.NewYahooFinanceProvider()
 }

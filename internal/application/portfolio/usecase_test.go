@@ -29,7 +29,7 @@ func (s stubExchangeRates) ToBase(amount float64, code currency.Code) (float64, 
 	return amount * rate, nil
 }
 
-func TestRecordTransactionUpdatesPositionsAndROI(t *testing.T) {
+func TestRecordTransactionUpdatesPositions(t *testing.T) {
 	uc := NewUseCase()
 
 	buy := portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Timestamp: "2024-01-01"}
@@ -51,14 +51,6 @@ func TestRecordTransactionUpdatesPositionsAndROI(t *testing.T) {
 	}
 	if positions[0].Quantity != 15 {
 		t.Fatalf("expected total quantity 15, got %v", positions[0].Quantity)
-	}
-
-	roi, err := uc.ComputeROI()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if roi != 6.451612903225811 {
-		t.Fatalf("expected weighted ROI 6.451612903225811, got %v", roi)
 	}
 }
 

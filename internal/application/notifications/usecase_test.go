@@ -11,12 +11,12 @@ import (
 
 var errFakeSend = errors.New("fake send failure")
 
-func TestSendRequiresMessageAndClient(t *testing.T) {
+func TestSendEmbedRequiresContentAndClient(t *testing.T) {
 	uc := NewUseCase()
-	if err := uc.Send(""); err == nil {
-		t.Fatal("expected empty message to be rejected")
+	if err := uc.SendEmbed(notifications.Embed{}); err == nil {
+		t.Fatal("expected empty embed to be rejected")
 	}
-	if err := uc.Send("hello"); err == nil {
+	if err := uc.SendEmbed(notifications.Embed{Title: "hello"}); err == nil {
 		t.Fatal("expected missing client to be rejected")
 	}
 
@@ -28,8 +28,8 @@ func TestSendRequiresMessageAndClient(t *testing.T) {
 	client := notifications.NewDiscordClient(server.URL)
 	client.Client = server.Client()
 	uc = NewUseCase(client)
-	if err := uc.Send("hello"); err != nil {
-		t.Fatalf("expected informational message to be accepted, got %v", err)
+	if err := uc.SendEmbed(notifications.Embed{Title: "hello"}); err != nil {
+		t.Fatalf("expected informational embed to be accepted, got %v", err)
 	}
 }
 
@@ -50,12 +50,12 @@ func (f *fakeNotifier) SendEmbed(notifications.Embed) error {
 	return f.embedErr
 }
 
-func TestSendFansOutAndOneFailureDoesNotBlockAnother(t *testing.T) {
+func TestSendEmbedFansOutAndOneFailureDoesNotBlockAnother(t *testing.T) {
 	ok := &fakeNotifier{}
-	failing := &fakeNotifier{sendErr: errFakeSend}
+	failing := &fakeNotifier{embedErr: errFakeSend}
 	uc := NewUseCase(failing, ok)
 
-	err := uc.Send("hello")
+	err := uc.SendEmbed(notifications.Embed{Title: "hello"})
 	if err == nil {
 		t.Fatal("expected the failing client's error to surface")
 	}

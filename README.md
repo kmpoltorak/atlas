@@ -155,7 +155,6 @@ integration is non-fatal when unset — Atlas degrades gracefully instead of ref
 | `DATABASE_HOST`/`PORT`/`NAME`/`USER`/`PASSWORD` | `timescaledb`/`5432`/`atlas`/`atlas`/`atlas` | TimescaleDB connection |
 | `REDIS_HOST`/`PORT` | `redis`/`6379` | Redis connection |
 | `PROMETHEUS_ENABLED` | `true` | Toggle metrics exposition |
-| `MARKET_PROVIDER` | `yahoo` | Metrics/logging label only — Yahoo is the sole provider (see [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)'s Market Data Providers section for why Stooq was evaluated and dropped) |
 | `COLLECTOR_WINDOW_DAYS` | `30` | How much history to request per collection call |
 | `ALERT_POLL_INTERVAL_SECONDS` | `300` | Background watchlist-evaluation interval |
 | `DISCORD_WEBHOOK_URL` | *(empty → disabled)* | Business alerts: BUY/ACCUMULATE/REDUCE/SELL notifications, sent only when a symbol's action *changes* |

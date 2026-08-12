@@ -88,7 +88,7 @@ func TestEvaluateSurfacesNonHoldAlerts(t *testing.T) {
 	_ = watchlist.Add("AAPL", "2026-08-05T00:00:00Z")
 	_ = watchlist.Add("MSFT", "2026-08-05T00:00:00Z")
 
-	collector := collectorUC.NewUseCase(provider)
+	collector := &collectorUC.UseCase{Provider: provider}
 	orchestrator := decisionUC.NewOrchestrator(analyzerUC.NewUseCase(), portfolioUC.NewUseCase(), decisionUC.NewUseCase())
 
 	uc := NewUseCase(watchlist, collector, orchestrator, 30)
@@ -116,7 +116,7 @@ func TestEvaluateSurfacesNonHoldAlerts(t *testing.T) {
 
 func TestEvaluateReturnsEmptyWhenWatchlistIsEmpty(t *testing.T) {
 	watchlist := watchlistUC.NewUseCase()
-	collector := collectorUC.NewUseCase(stubProvider{})
+	collector := &collectorUC.UseCase{Provider: stubProvider{}}
 	orchestrator := decisionUC.NewOrchestrator(analyzerUC.NewUseCase(), portfolioUC.NewUseCase(), decisionUC.NewUseCase())
 
 	uc := NewUseCase(watchlist, collector, orchestrator, 30)
@@ -139,7 +139,7 @@ func TestEvaluateReportsProviderCallOutcomes(t *testing.T) {
 	_ = watchlist.Add("GOOD", "2026-08-05T00:00:00Z")
 	_ = watchlist.Add("BAD", "2026-08-05T00:00:00Z")
 
-	collector := collectorUC.NewUseCase(provider)
+	collector := &collectorUC.UseCase{Provider: provider}
 	orchestrator := decisionUC.NewOrchestrator(analyzerUC.NewUseCase(), portfolioUC.NewUseCase(), decisionUC.NewUseCase())
 
 	uc := NewUseCase(watchlist, collector, orchestrator, 30)

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"time"
 
 	"atlas/internal/domain/market"
@@ -283,12 +282,4 @@ func safeValue(values []float64, idx int) float64 {
 		return 0
 	}
 	return values[idx]
-}
-
-func mustFloat(s string) float64 {
-	v, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		return 0
-	}
-	return v
 }
