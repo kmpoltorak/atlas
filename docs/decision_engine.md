@@ -165,8 +165,7 @@ comment. The dashboard/portfolio pages label them "Unrealized Loss / Exposure" a
 Deviation from Cost" for this reason; only backtesting's genuinely statistical Volatility/
 MaxDrawdown (see docs/backtesting.md) keep the "real" names. Position size is implicitly covered
 by Exposure (sum across positions) rather than surfaced per-position here. Market trend is not
-implemented — there's no trend/regime classifier (see PROJECT_CONTEXT.md's ML Engine section on
-market condition).
+implemented — there's no trend/regime classifier (see docs/ml.md's market condition section).
 
 Since multiple portfolios were added (see docs/database.md's `portfolios` table), Portfolio
 Context and Risk Context are deliberately whole-account, not scoped to whichever portfolio the
