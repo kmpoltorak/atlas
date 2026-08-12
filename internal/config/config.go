@@ -18,6 +18,9 @@ type Config struct {
 	PrometheusEnabled  bool
 	MarketProvider     string
 	DiscordWebhookURL  string
+	SlackWebhookURL    string
+	TelegramBotToken   string
+	TelegramChatID     string
 	CollectorWindow    int
 	AlertPollSeconds   int
 	MLEnabled          bool
@@ -48,6 +51,9 @@ func Load() Config {
 		PrometheusEnabled: envOrDefault("PROMETHEUS_ENABLED", "true") == "true",
 		MarketProvider:    envOrDefault("MARKET_PROVIDER", "yahoo"),
 		DiscordWebhookURL: envOrDefault("DISCORD_WEBHOOK_URL", ""),
+		SlackWebhookURL:   envOrDefault("SLACK_WEBHOOK_URL", ""),
+		TelegramBotToken:  envOrDefault("TELEGRAM_BOT_TOKEN", ""),
+		TelegramChatID:    envOrDefault("TELEGRAM_CHAT_ID", ""),
 		// 30 days comfortably covers the 15-bar RSI warm-up (analyzer.ComputeRSI) with room
 		// left for the decision/backtesting pipeline. Providers also fall back to 30 when
 		// called directly with window<=0 (e.g. in tests) — kept in sync manually since

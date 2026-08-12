@@ -21,7 +21,7 @@
   showing a nonstop "unhealthy" status despite `/health` genuinely returning 200 (fixed by adding
   `curl` to the Dockerfile's package list). atlas-trainer's own healthcheck still uses
   `wget -qO- http://localhost:8091/health`, which is fine there: its image is the full
-  `golang:1.25-bookworm` (not `-slim`), which does ship `wget`.
+  `golang:1.26.1-bookworm` (not `-slim`), which does ship `wget`.
 - Volumes: `timescaledb-data`/`redis-data`/`prometheus-data`/`grafana-data`/`alertmanager-data`
   are named/persistent; `./training/models:/models:ro` is a read-only bind mount so
   `MODEL_PATH`/`RECOVERY_MODEL_PATH` (or the Account dashboard's model picker — see `ml.md`) can

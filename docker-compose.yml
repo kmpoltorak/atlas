@@ -31,6 +31,9 @@ services:
       GRAFANA_URL: http://grafana:3000
       MARKET_PROVIDER: yahoo
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       ALERT_POLL_INTERVAL_SECONDS: "300"
       # True by default (unchanged behavior). Set to "false" to make BUY/SELL/HOLD scoring use
       # the technical term alone (RSI/MACD/Bollinger/momentum), skipping the ML+Portfolio+Risk

@@ -62,8 +62,8 @@ func (a *Application) StartAlertPolling() func() {
 	if interval <= 0 {
 		interval = 5 * time.Minute // matches config.Load's ALERT_POLL_INTERVAL_SECONDS default
 	}
-	if a.Config.DiscordWebhookURL == "" {
-		a.Logger.Info("discord webhook not configured; alert polling will run without notifications")
+	if !a.Notifications.Configured() {
+		a.Logger.Info("no notification channel configured; alert polling will run without notifications")
 	}
 
 	ticker := time.NewTicker(interval)
@@ -148,7 +148,7 @@ func (a *Application) pollAlertsOnce(lastAction map[string]string) {
 
 		// Actions that never push anywhere are recorded straight away: they still have to be
 		// tracked, or a later change would be measured against a stale baseline.
-		if a.Config.DiscordWebhookURL == "" || !isHighPriorityAction(action) {
+		if !a.Notifications.Configured() || !isHighPriorityAction(action) {
 			lastAction[symbol] = action
 			continue
 		}
@@ -156,13 +156,17 @@ func (a *Application) pollAlertsOnce(lastAction map[string]string) {
 		if err := a.Notifications.SendEmbed(buildAlertEmbed(alert)); err != nil {
 			// Deliberately left unrecorded so the next poll retries. Marking it seen here — which
 			// is what this loop used to do, by recording before sending — turned a transient
-			// Discord failure into an alert the Author never saw and never would.
-			a.Logger.Error("failed to send discord alert", zap.String("symbol", symbol), zap.Error(err))
+			// delivery failure into an alert the Author never saw and never would.
+			// ponytail: with multiple channels configured, one failing still retries the whole
+			// alert next poll even if another channel already delivered it — no per-channel
+			// delivery tracking. Fine for a single-user tool with occasional duplicate pings;
+			// add per-channel state if a channel starts flapping enough to be annoying.
+			a.Logger.Error("failed to send alert notification", zap.String("symbol", symbol), zap.Error(err))
 			continue
 		}
 		lastAction[symbol] = action
 		a.Metrics.AlertsSent.WithLabelValues(action).Inc()
-		a.Logger.Info("discord alert sent", zap.String("symbol", symbol), zap.String("action", action))
+		a.Logger.Info("alert notification sent", zap.String("symbol", symbol), zap.String("action", action))
 	}
 }
 

@@ -163,7 +163,7 @@ Docker healthcheck must verify:
 health`, not `wget` — its runtime base (`debian:bookworm-slim`) doesn't ship `wget`, a real bug
 once (`docker inspect` showed a nonstop "unhealthy" status despite `/health` genuinely returning
 200) fixed by adding `curl` to the Dockerfile. `atlas-trainer` still uses `wget`, which is fine
-there: its image is the full `golang:1.25-bookworm`, which does ship it. See `skills/docker.md`.
+there: its image is the full `golang:1.26.1-bookworm`, which does ship it. See `skills/docker.md`.
 ---
 # Monitoring
 Every deployment must expose:
