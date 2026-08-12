@@ -55,7 +55,6 @@ type Application struct {
 
 	Storage *persistence.TimescaleDB
 	Cache   *cache.RedisClient
-	Discord *notifications.DiscordClient
 
 	Collector     *collectorUC.UseCase
 	Analyzer      *analyzerUC.UseCase
@@ -96,7 +95,16 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 		return nil, fmt.Errorf("connect to redis: %w", err)
 	}
 
-	discord := notifications.NewDiscordClient(cfg.DiscordWebhookURL)
+	var notifiers []notifications.Notifier
+	if cfg.DiscordWebhookURL != "" {
+		notifiers = append(notifiers, notifications.NewDiscordClient(cfg.DiscordWebhookURL))
+	}
+	if cfg.SlackWebhookURL != "" {
+		notifiers = append(notifiers, notifications.NewSlackClient(cfg.SlackWebhookURL))
+	}
+	if cfg.TelegramBotToken != "" && cfg.TelegramChatID != "" {
+		notifiers = append(notifiers, notifications.NewTelegramClient(cfg.TelegramBotToken, cfg.TelegramChatID))
+	}
 
 	provider := newProvider()
 	barsCache := &redisBarsCache{client: redisCache}
@@ -185,7 +193,6 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 
 		Storage: storage,
 		Cache:   redisCache,
-		Discord: discord,
 
 		Collector:     collector,
 		Analyzer:      analyzer,
@@ -193,7 +200,7 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 		Decision:      decisionUseCase,
 		Orchestrator:  orchestrator,
 		ML:            mlUseCase,
-		Notifications: notificationsUC.NewUseCase(discord),
+		Notifications: notificationsUC.NewUseCase(notifiers...),
 		Backtesting:   backtestingUC.NewUseCase(orchestrator),
 		Watchlist:     watchlist,
 		Alerts:        alertsUC.NewUseCase(watchlist, collector, orchestrator, cfg.CollectorWindow),

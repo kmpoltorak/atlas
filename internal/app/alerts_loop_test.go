@@ -66,13 +66,17 @@ func newTestApplicationWithDiscord(discordURL string) *Application {
 
 	collector := collectorUC.NewUseCase(loopStubProvider{})
 	orchestrator := decisionUC.NewOrchestrator(analyzerUC.NewUseCase(), portfolioUC.NewUseCase(), decisionUC.NewUseCase())
-	discord := infraNotifications.NewDiscordClient(discordURL)
+
+	var notifiers []infraNotifications.Notifier
+	if discordURL != "" {
+		notifiers = append(notifiers, infraNotifications.NewDiscordClient(discordURL))
+	}
 
 	return &Application{
 		Config:        config.Config{DiscordWebhookURL: discordURL},
 		Metrics:       observability.NewMetrics(),
 		Logger:        zap.NewNop(),
-		Notifications: notificationsUC.NewUseCase(discord),
+		Notifications: notificationsUC.NewUseCase(notifiers...),
 		Watchlist:     watchlist,
 		Alerts:        alertsUC.NewUseCase(watchlist, collector, orchestrator, 30),
 	}

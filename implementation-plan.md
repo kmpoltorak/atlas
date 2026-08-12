@@ -758,6 +758,35 @@ or truncate its own text, so it overflowed the dropdown. The visible label is no
 decision this screen exists for actually turns on, just relocated out of a control that was never
 able to display them.
 
+**Risk score misread as "safe" with an empty portfolio, fixed after live testing surfaced it**:
+`computeRiskScore` saturates at its neutral 1.0 ceiling both when the portfolio is genuinely
+low-risk and when there is simply no exposure to measure (no positions, or every position still at
+cost basis) — the two were indistinguishable in the UI, reading as "checked and found safe" when it
+actually meant "nothing observed yet." `Recommendation` now carries `RiskDataAvailable` (true only
+when `RiskSnapshot.Exposure > 0`), and the Recommendations page shows "n/a" with an explanatory
+tooltip instead of the raw score when it's false. Verified live: with a zero-position portfolio,
+`GET /recommendations` returned `risk_score: 1, risk_data_available: false`, and the rendered page
+showed "n/a" in place of "1.000".
+
+**MIT license and a research/educational-use disclaimer, added on request**: a `LICENSE` file (MIT)
+plus a disclaimer in README.md and GETTING_STARTED.md — research/educational purpose, use at your
+own risk, Yahoo Finance's unofficial API as the data source. No code changed.
+
+**Slack and Telegram as alternative notification channels, built after Discord had been the only
+option**: `internal/infrastructure/notifications` gained a `Notifier` interface (`Send`/
+`SendEmbed`) that `DiscordClient`, the new `SlackClient` (Incoming Webhook, `Embed` translated to a
+legacy attachment), and the new `TelegramClient` (Bot API `sendMessage`, `Embed` flattened to
+Markdown) all implement. `notifications.UseCase` now holds a slice of configured `Notifier`s
+instead of a single Discord client and fans every `Send`/`SendEmbed` out to all of them
+independently via `errors.Join` — one channel failing never blocks another. Any combination of
+`DISCORD_WEBHOOK_URL`/`SLACK_WEBHOOK_URL`/`TELEGRAM_BOT_TOKEN`+`TELEGRAM_CHAT_ID` may be set; all
+empty disables notifications exactly as before (alert polling still runs). `alerts_loop.go`'s
+gating switched from checking `Config.DiscordWebhookURL` directly to `Notifications.Configured()`,
+so it no longer only recognizes Discord. Verified live: `docker compose build/up` clean, `/health`
+200, existing Discord-only deployment (`DISCORD_WEBHOOK_URL` set, Slack/Telegram unset) still wires
+exactly one notifier with no behavior change. Go toolchain bumped to 1.26.1 in the same pass
+(`go.mod`, both Dockerfiles) — unrelated to notifications, just done together.
+
 ## 11. Acceptance Criteria
 
 A phase is considered complete only if:
