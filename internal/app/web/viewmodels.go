@@ -134,8 +134,13 @@ func FormatActiveDuration(lang Lang, since, now time.Time) ActiveDuration {
 	minutes := int(elapsed.Minutes()) % 60
 
 	unitDay, unitHour, unitMinute := "d", "h", "m"
-	if lang == LangPL {
+	switch lang {
+	case LangPL:
 		unitDay, unitHour, unitMinute = "d", "godz", "min"
+	case LangDE:
+		unitDay, unitHour, unitMinute = "T", "Std", "Min"
+	case LangFR:
+		unitDay, unitHour, unitMinute = "j", "h", "min"
 	}
 
 	var label string

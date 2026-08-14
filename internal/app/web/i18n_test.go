@@ -2,22 +2,21 @@ package web
 
 import "testing"
 
-// TestEveryTranslationKeyHasBothLanguages guards against a key added with only one language —
-// T's fallback-to-English behavior would hide that silently in the UI (a Polish page would just
+// TestEveryTranslationKeyHasAllLanguages guards against a key added with only some languages —
+// T's fallback-to-English behavior would hide that silently in the UI (a French page would just
 // quietly show English for that one string) rather than failing loudly.
-func TestEveryTranslationKeyHasBothLanguages(t *testing.T) {
+func TestEveryTranslationKeyHasAllLanguages(t *testing.T) {
 	for key, strs := range translations {
-		if _, ok := strs[LangEN]; !ok {
-			t.Errorf("translation key %q is missing an English (LangEN) entry", key)
-		}
-		if _, ok := strs[LangPL]; !ok {
-			t.Errorf("translation key %q is missing a Polish (LangPL) entry", key)
+		for _, lang := range []Lang{LangEN, LangPL, LangDE, LangFR} {
+			if _, ok := strs[lang]; !ok {
+				t.Errorf("translation key %q is missing a %q entry", key, lang)
+			}
 		}
 	}
 }
 
 func TestTFallsBackToEnglishForUnknownLanguage(t *testing.T) {
-	if got := T(Lang("fr"), "nav.dashboard"); got != "Dashboard" {
+	if got := T(Lang("es"), "nav.dashboard"); got != "Dashboard" {
 		t.Fatalf("expected an unrecognized language to fall back to English, got %q", got)
 	}
 }
@@ -34,12 +33,30 @@ func TestTReturnsPolishForKnownKey(t *testing.T) {
 	}
 }
 
+func TestTReturnsGermanForKnownKey(t *testing.T) {
+	if got := T(LangDE, "nav.dashboard"); got != "Übersicht" {
+		t.Fatalf("expected the German translation, got %q", got)
+	}
+}
+
+func TestTReturnsFrenchForKnownKey(t *testing.T) {
+	if got := T(LangFR, "nav.dashboard"); got != "Tableau de bord" {
+		t.Fatalf("expected the French translation, got %q", got)
+	}
+}
+
 func TestActionLabelTranslatesKnownActions(t *testing.T) {
 	if got := actionLabel(LangPL, "BUY"); got != "KUPNO" {
 		t.Fatalf("expected KUPNO, got %q", got)
 	}
 	if got := actionLabel(LangEN, "BUY"); got != "BUY" {
 		t.Fatalf("expected BUY, got %q", got)
+	}
+	if got := actionLabel(LangDE, "BUY"); got != "KAUFEN" {
+		t.Fatalf("expected KAUFEN, got %q", got)
+	}
+	if got := actionLabel(LangFR, "BUY"); got != "ACHETER" {
+		t.Fatalf("expected ACHETER, got %q", got)
 	}
 }
 
@@ -50,10 +67,10 @@ func TestActionLabelPassesThroughUnknownActions(t *testing.T) {
 }
 
 func TestValidLang(t *testing.T) {
-	if !ValidLang(LangEN) || !ValidLang(LangPL) {
-		t.Fatal("expected en and pl to both be valid")
+	if !ValidLang(LangEN) || !ValidLang(LangPL) || !ValidLang(LangDE) || !ValidLang(LangFR) {
+		t.Fatal("expected en, pl, de, and fr to all be valid")
 	}
-	if ValidLang(Lang("fr")) || ValidLang(Lang("")) {
+	if ValidLang(Lang("es")) || ValidLang(Lang("")) {
 		t.Fatal("expected an unsupported language to be invalid")
 	}
 }
