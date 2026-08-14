@@ -873,6 +873,19 @@ marked active; the same with `atlas_lang=fr` renders `<html lang="fr">`, "Tablea
 "Portefeuille" / "Recommandations" in the nav, and the portfolio page's "Quantité" field label and
 `POST /portfolio` hint text in French.
 
+**Installable as a home-screen app, on request**: added a Web App Manifest
+(`static/manifest.json` — name, `start_url: "/"`, `display: "standalone"`, `theme_color`
+matching the existing `<meta name="theme-color">`) plus `apple-touch-icon.png`, linked from the
+shared `head` template partial so every page (including login) has them. No new brand asset: the
+icons (`static/icons/icon-192.png`/`icon-512.png`/`apple-touch-icon.png`) are the existing navbar/
+favicon glyph (blue rounded square, white "A" — see partials.html's `brandmark`) rasterized, not a
+new design. No service worker — Atlas is a live-data dashboard, and caching it for offline use
+would risk serving stale positions/recommendations, the opposite of what this tool is for; without
+one, "Install app"/"Add to Home Screen" still works, it just always fetches fresh like a normal
+page load, only without the browser chrome. Verified live via Docker: `GET /static/manifest.json`
+and both icon files return `200` from the running container, and `GET /` (and `/login`) include
+`<link rel="manifest">` and `<link rel="apple-touch-icon">` in `<head>`.
+
 ## 11. Acceptance Criteria
 
 A phase is considered complete only if:
