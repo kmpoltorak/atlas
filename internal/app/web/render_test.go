@@ -102,8 +102,9 @@ func TestRenderNavLanguageSwitcherMarksActiveLanguage(t *testing.T) {
 	rec := httptest.NewRecorder()
 	Render(rec, "dashboard", DashboardPage{Lang: LangPL})
 	body := rec.Body.String()
-	if !strings.Contains(body, `value="pl"`) || !strings.Contains(body, `value="en"`) {
-		t.Fatalf("expected both language options in the nav switcher, got %s", body)
+	if !strings.Contains(body, `value="pl"`) || !strings.Contains(body, `value="en"`) ||
+		!strings.Contains(body, `value="de"`) || !strings.Contains(body, `value="fr"`) {
+		t.Fatalf("expected all four language options in the nav switcher, got %s", body)
 	}
 	if !strings.Contains(body, `dropdown-item active">Polski`) {
 		t.Fatalf("expected the Polish option to be marked active when Lang is pl, got %s", body)
@@ -343,6 +344,12 @@ func TestFormatActiveDuration(t *testing.T) {
 
 	if got := FormatActiveDuration(LangPL, now.Add(-(3*time.Hour + 20*time.Minute)), now).Label; got != "3godz 20min" {
 		t.Fatalf("Polish units: got %q", got)
+	}
+	if got := FormatActiveDuration(LangDE, now.Add(-(3*time.Hour + 20*time.Minute)), now).Label; got != "3Std 20Min" {
+		t.Fatalf("German units: got %q", got)
+	}
+	if got := FormatActiveDuration(LangFR, now.Add(-(3*time.Hour + 20*time.Minute)), now).Label; got != "3h 20min" {
+		t.Fatalf("French units: got %q", got)
 	}
 }
 

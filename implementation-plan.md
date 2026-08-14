@@ -855,6 +855,24 @@ don't produce anything worth activating. It now only logs
 (the one outcome retrain.sh's own `set -euo pipefail` can never report) is unchanged — a failed run
 is still worth a push, a merely-finished one isn't.
 
+**German and French added to the display-language switcher, on request**: the English/Polish
+switcher described above (`internal/app/web/i18n.go`) gained two more languages the same way —
+`LangDE`/`LangFR` added to `Lang`/`ValidLang`, and a German and French entry added to every one of
+the (now 231) keys in the `map[string]map[Lang]string` dictionary, including the `printf`-style
+`confirm()` dialogs and the closed set of decision-engine rationale strings. The nav's language
+dropdown (`templates/partials.html`) gained two more `POST /dashboard/lang` form entries to match.
+One non-text gap the same audit turned up: `FormatActiveDuration`'s compact unit abbreviations
+("2d 4h", "45m") were only ever special-cased for Polish ("d/godz/min"), so German and French would
+have silently fallen through to the English "d/h/m" units — given German ("T"/"Std"/"Min") and
+French ("j"/"h"/"min") ones instead, keyed the same way as Polish's. The completeness test was
+renamed `TestEveryTranslationKeyHasAllLanguages` (from `...HasBothLanguages`) and now checks all
+four languages per key, not just English/Polish. Verified live via Docker: `/dashboard` with an
+`atlas_lang=de` cookie renders `<html lang="de">`, a translated nav ("Übersicht", "Empfehlungen",
+"Beobachtungsliste", …), and the language switcher itself showing all four options with "Deutsch"
+marked active; the same with `atlas_lang=fr` renders `<html lang="fr">`, "Tableau de bord" /
+"Portefeuille" / "Recommandations" in the nav, and the portfolio page's "Quantité" field label and
+`POST /portfolio` hint text in French.
+
 ## 11. Acceptance Criteria
 
 A phase is considered complete only if:

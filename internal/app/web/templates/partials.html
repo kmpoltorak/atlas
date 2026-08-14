@@ -97,6 +97,18 @@
                 <button type="submit" class="dropdown-item{{if eq .Lang "pl"}} active{{end}}">{{T .Lang "nav.language_pl"}}</button>
               </form>
             </li>
+            <li>
+              <form method="post" action="/dashboard/lang" class="px-1">
+                <input type="hidden" name="lang" value="de">
+                <button type="submit" class="dropdown-item{{if eq .Lang "de"}} active{{end}}">{{T .Lang "nav.language_de"}}</button>
+              </form>
+            </li>
+            <li>
+              <form method="post" action="/dashboard/lang" class="px-1">
+                <input type="hidden" name="lang" value="fr">
+                <button type="submit" class="dropdown-item{{if eq .Lang "fr"}} active{{end}}">{{T .Lang "nav.language_fr"}}</button>
+              </form>
+            </li>
           </ul>
         </div>
         <form method="post" action="/logout" class="mb-0"><button class="btn btn-outline-secondary btn-sm" type="submit">{{T .Lang "nav.logout"}}</button></form>
