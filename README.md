@@ -183,7 +183,9 @@ itself — only in the `.env` file), e.g. `$2a$10$Slp...` becomes `$$2a$$10$$Slp
 ## Web dashboard
 
 A server-rendered dashboard at `/` (Bootstrap 5.3, light/dark/auto theme, no separate frontend
-build — one Go binary serves everything via `go:embed`):
+build — one Go binary serves everything via `go:embed`). Installable as a home-screen app on
+phones/desktop (a Web App Manifest + `apple-touch-icon`, no service worker — it always loads live,
+same as a normal page):
 
 - **Portfolio** — record BUY/SELL transactions, view positions/P&L/risk, delete individual
   positions/transactions or bulk-delete either via checkboxes (position cost basis is
