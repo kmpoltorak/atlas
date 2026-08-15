@@ -28,7 +28,7 @@ func TestResolveLangReadsAValidCookie(t *testing.T) {
 func TestResolveLangRejectsAnUnsupportedCookieValue(t *testing.T) {
 	a := &Application{}
 	r := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
-	r.AddCookie(&http.Cookie{Name: langCookieName, Value: "es"})
+	r.AddCookie(&http.Cookie{Name: langCookieName, Value: "it"})
 	if got := a.resolveLang(r); got != web.DefaultLang {
 		t.Fatalf("expected an unsupported cookie value to fall back to %q, got %q", web.DefaultLang, got)
 	}
@@ -64,7 +64,7 @@ func TestLangSetHandlerSetsCookieAndRedirectsToReferer(t *testing.T) {
 func TestLangSetHandlerRejectsAnUnsupportedLanguage(t *testing.T) {
 	a := &Application{}
 	req := httptest.NewRequest(http.MethodPost, "/dashboard/lang", nil)
-	req.Form = map[string][]string{"lang": {"es"}}
+	req.Form = map[string][]string{"lang": {"it"}}
 	rec := httptest.NewRecorder()
 
 	a.langSetHandler(rec, req)

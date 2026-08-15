@@ -24,21 +24,31 @@ func (u *UseCase) Configured() bool {
 	return len(u.Clients) > 0
 }
 
-// SendEmbed posts a rich embed — the alert path uses this so a recommendation arrives as a
-// card with a coloured edge and labelled fields instead of one run-on line. Same deliberate
-// limitation as Send: this posts and nothing else, no action or trade path exists here.
-func (u *UseCase) SendEmbed(embed notifications.Embed) error {
+// SendEmbed posts a rich embed to targets, or every configured channel when targets is empty —
+// the alert path uses this so a recommendation arrives as a card with a coloured edge and
+// labelled fields instead of one run-on line. No action or trade path exists here, only posting.
+//
+// Returns the subset of targets that failed, so a caller tracking per-symbol delivery state (see
+// alerts_loop.go's pendingAlert) can retry only those next time instead of re-sending to channels
+// that already succeeded — with multiple channels configured, a plain "did the whole send fail"
+// result would otherwise make a retry re-deliver to a channel that already got it.
+func (u *UseCase) SendEmbed(embed notifications.Embed, targets []notifications.Notifier) ([]notifications.Notifier, error) {
 	if embed.Title == "" && embed.Description == "" {
-		return errors.New("embed needs a title or description")
+		return nil, errors.New("embed needs a title or description")
 	}
-	if !u.Configured() {
-		return errors.New("no notification channel is configured")
+	if len(targets) == 0 {
+		targets = u.Clients
 	}
+	if len(targets) == 0 {
+		return nil, errors.New("no notification channel is configured")
+	}
+	var failed []notifications.Notifier
 	var errs []error
-	for _, c := range u.Clients {
+	for _, c := range targets {
 		if err := c.SendEmbed(embed); err != nil {
+			failed = append(failed, c)
 			errs = append(errs, err)
 		}
 	}
-	return errors.Join(errs...)
+	return failed, errors.Join(errs...)
 }

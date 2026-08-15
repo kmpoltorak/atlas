@@ -103,8 +103,9 @@ func TestRenderNavLanguageSwitcherMarksActiveLanguage(t *testing.T) {
 	Render(rec, "dashboard", DashboardPage{Lang: LangPL})
 	body := rec.Body.String()
 	if !strings.Contains(body, `value="pl"`) || !strings.Contains(body, `value="en"`) ||
-		!strings.Contains(body, `value="de"`) || !strings.Contains(body, `value="fr"`) {
-		t.Fatalf("expected all four language options in the nav switcher, got %s", body)
+		!strings.Contains(body, `value="de"`) || !strings.Contains(body, `value="fr"`) ||
+		!strings.Contains(body, `value="es"`) {
+		t.Fatalf("expected all five language options in the nav switcher, got %s", body)
 	}
 	if !strings.Contains(body, `dropdown-item active">Polski`) {
 		t.Fatalf("expected the Polish option to be marked active when Lang is pl, got %s", body)
@@ -350,6 +351,9 @@ func TestFormatActiveDuration(t *testing.T) {
 	}
 	if got := FormatActiveDuration(LangFR, now.Add(-(3*time.Hour + 20*time.Minute)), now).Label; got != "3h 20min" {
 		t.Fatalf("French units: got %q", got)
+	}
+	if got := FormatActiveDuration(LangES, now.Add(-(3*time.Hour + 20*time.Minute)), now).Label; got != "3h 20min" {
+		t.Fatalf("Spanish units: got %q", got)
 	}
 }
 

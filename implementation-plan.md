@@ -886,6 +886,61 @@ page load, only without the browser chrome. Verified live via Docker: `GET /stat
 and both icon files return `200` from the running container, and `GET /` (and `/login`) include
 `<link rel="manifest">` and `<link rel="apple-touch-icon">` in `<head>`.
 
+**Spanish added to the display-language switcher, on request**: the same mechanical extension as
+German/French above — `LangES` added to `Lang`/`ValidLang`, a Spanish entry added to every one of
+the 231 dictionary keys (`nav.language_es` included), a fifth `POST /dashboard/lang` entry in the
+nav dropdown, and `FormatActiveDuration` given Spanish unit abbreviations ("d"/"h"/"min", same as
+the English default except "min" instead of a bare "m", matching the French/German precedent of a
+clearer 3-letter minute). `TestEveryTranslationKeyHasAllLanguages` now checks all five languages;
+`TestTFallsBackToEnglishForUnknownLanguage`/`TestValidLang`'s "unsupported language" examples moved
+from `es` to `it`, for the same reason they'd already moved from `fr` to `es` when French shipped.
+Verified live via Docker: `atlas_lang=es` renders `<html lang="es">`, "Panel de control" / "Cartera"
+/ "Recomendaciones" in the nav, the portfolio page's "Cantidad" field label, and the switcher
+itself showing all five options with "Español" marked active.
+
+**Two ponytail-flagged gaps closed, on request**: both had sat as documented, deliberate
+trade-offs (see their `ponytail:` comments, now removed since the gaps they named are closed) —
+harmless for a single-user tool clicking around alone, but real correctness gaps once actually
+exercised concurrently.
+
+*Per-channel alert-notification retry* (`internal/app/alerts_loop.go`): with two or more
+notification channels configured, one failing used to retry the *whole* alert next poll, even
+though a sibling channel had already delivered it — `notifications.UseCase.SendEmbed` fanned out
+to every client and only reported success/failure as one bool for the batch. `SendEmbed` now takes
+an explicit `targets []notifications.Notifier` (empty means "every configured client," preserving
+the old behavior for its one production call site) and returns which targets failed. `pollAlertsOnce`
+tracks a `pendingAlert{action, targets}` per symbol — on partial failure, the next poll retries only
+the channels that actually failed, scoped to the same action so a fresh action change (superseding
+a still-undelivered older one) still reaches every channel. Verified with a new test,
+`TestPollAlertsOnceRetriesOnlyTheFailedChannel`: two Discord-shaped channels, one always succeeding
+and one failing once then succeeding — after the first poll both attempted once (1 call each);
+after the retry, the already-succeeded channel got zero further calls while the failed one got
+exactly one more, and only then was the action marked delivered.
+
+*portfolio.UseCase concurrency* (`internal/application/portfolio/usecase.go`): `Positions`/
+`Transactions`/`ActivePortfolioID`/`Portfolios` are shared mutable state on the one `UseCase`
+instance every concurrent HTTP request reads/writes (`internal/app.Application` wires up exactly
+one) — two browser tabs switching portfolios, or one switching while another records a
+transaction, could race in the full Go-memory-model sense, not just "might show stale data." Fixed
+with a plain `sync.Mutex` (not `RWMutex`: even a "read" needs the lock to hand back a defensive
+copy, since `SwitchPortfolio`/`RecordTransaction`/etc. mutate elements of the live backing array in
+place) — every exported method takes it, with lock-free unexported cores (`reload`, `removePosition`,
+`removeTransaction`) for the internal call nesting (`RecordTransaction` → `applyPositionUpdate` →
+`removePosition` on a SELL-to-zero, `RemovePositions`/`RemoveTransactions`' batch loops) so a plain
+mutex doesn't deadlock itself. A new `Snapshot()` reads Positions/Transactions/ActivePortfolioID/
+Portfolios together under one lock acquisition — added because `internal/app/web_handlers.go`'s
+dashboard/portfolio page handlers used to read those four via separate calls (`GetPositions()` then
+`GetTransactions()` then two raw field pokes), which a concurrent `SwitchPortfolio` could still
+interleave with even with every individual method now locked; `ActivePortfolio()`/`PortfolioList()`
+replaced the remaining raw `a.Portfolio.ActivePortfolioID`/`.Portfolios` reads in
+`portfolio_switch.go`/`web_handlers.go`. Verified with a new test run under `go test -race` (as
+CI does), `TestConcurrentAccessDoesNotRace`: 8 goroutines each hammering `SwitchPortfolio`,
+`RecordTransaction`, `RemovePosition`, and every read path at once — passes clean, where it would
+have failed loudly on the first unsynchronized access before this fix (and did, once, against a
+latent nil-map bug in the test fixture's own `DeletePosition` that nothing had exercised before).
+The full suite (`go test ./... -race`) passes clean; a live concurrent-request burst against the
+running container stayed healthy throughout.
+
 ## 11. Acceptance Criteria
 
 A phase is considered complete only if:

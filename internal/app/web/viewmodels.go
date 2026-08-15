@@ -141,6 +141,8 @@ func FormatActiveDuration(lang Lang, since, now time.Time) ActiveDuration {
 		unitDay, unitHour, unitMinute = "T", "Std", "Min"
 	case LangFR:
 		unitDay, unitHour, unitMinute = "j", "h", "min"
+	case LangES:
+		unitDay, unitHour, unitMinute = "d", "h", "min"
 	}
 
 	var label string

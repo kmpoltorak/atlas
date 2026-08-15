@@ -22,7 +22,7 @@ func (a *Application) syncActivePortfolio(r *http.Request) error {
 		return nil
 	}
 	cookie, err := r.Cookie(portfolioCookieName)
-	if err != nil || cookie.Value == a.Portfolio.ActivePortfolioID {
+	if err != nil || cookie.Value == a.Portfolio.ActivePortfolio() {
 		return nil
 	}
 	return a.Portfolio.SwitchPortfolio(cookie.Value)
