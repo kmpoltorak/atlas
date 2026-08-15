@@ -77,13 +77,6 @@ func DefaultCorrectionLabelParams() CorrectionLabelParams {
 	}
 }
 
-// FixedThresholdCorrectionLabelParams is the pre-volatility-scaling definition — a flat 5% drop
-// within 10 bars — kept so the two can be compared directly and so existing models trained
-// against it remain describable. Not the default; see DefaultCorrectionLabelParams for why.
-func FixedThresholdCorrectionLabelParams() CorrectionLabelParams {
-	return CorrectionLabelParams{HorizonBars: 10, ThresholdPct: 0.05}
-}
-
 // thresholdFraction resolves the drop fraction that counts as a correction at bars[i]. With
 // VolatilityMultiple unset this is simply ThresholdPct; otherwise it is the trailing realised
 // volatility at bars[i] scaled by VolatilityMultiple and floored at MinThresholdPct.

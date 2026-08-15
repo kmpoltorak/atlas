@@ -17,7 +17,7 @@
     {{if .Success}}<div class="alert alert-success">{{.Success}}</div>{{end}}
 
     {{if .Positions}}
-    <form method="post" action="/dashboard/portfolio/bulk-delete" id="positionsForm"
+    <form method="post" action="/dashboard/portfolio/delete" id="positionsForm"
           data-confirm-bulk="{{T .Lang "confirm.remove_positions_bulk"}}">
       <input type="text" class="form-control form-control-sm mb-2" id="positionsFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
       <div class="table-responsive">
@@ -39,7 +39,7 @@
             </td>
             <td class="text-end tabular-nums {{pnlClass (pnl .)}}">{{money (pnl .) $.Rates}}</td>
             <td class="text-end">
-              <button type="submit" formaction="/dashboard/portfolio/delete" name="symbol" value="{{.Symbol}}"
+              <button type="submit" name="symbol" value="{{.Symbol}}"
                       class="btn btn-outline-danger btn-sm"
                       onclick="return confirm('{{printf (T $.Lang "confirm.remove_position") .Symbol}}');">{{T $.Lang "common.remove"}}</button>
             </td>
@@ -65,7 +65,7 @@
 
     <h2 class="h4 mt-5">{{T .Lang "portfolio.transaction_history"}}</h2>
     {{if .Transactions}}
-    <form method="post" action="/dashboard/portfolio/transactions/bulk-delete" id="transactionsForm"
+    <form method="post" action="/dashboard/portfolio/transactions/delete" id="transactionsForm"
           data-confirm-bulk="{{T .Lang "confirm.remove_transactions_bulk"}}">
       <input type="text" class="form-control form-control-sm mb-2" id="transactionsFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
       <div class="table-responsive">
@@ -86,7 +86,7 @@
             <td class="text-end tabular-nums">{{printf "%.2f" .PriceInPLN}}</td>
             <td>{{(localTime .Timestamp).Format "2006-01-02 15:04"}}</td>
             <td class="text-end">
-              <button type="submit" formaction="/dashboard/portfolio/transactions/delete" name="id" value="{{.ID}}"
+              <button type="submit" name="id" value="{{.ID}}"
                       class="btn btn-outline-danger btn-sm"
                       onclick="return confirm('{{printf (T $.Lang "confirm.remove_transaction") .Symbol}}');">{{T $.Lang "common.remove"}}</button>
             </td>

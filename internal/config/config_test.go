@@ -9,7 +9,7 @@ func clearEnv(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
 		"SERVER_PORT", "LOG_LEVEL", "DATABASE_HOST", "DATABASE_PORT", "DATABASE_NAME",
-		"DATABASE_USER", "DATABASE_PASSWORD", "REDIS_HOST", "REDIS_PORT", "PROMETHEUS_ENABLED",
+		"DATABASE_USER", "DATABASE_PASSWORD", "REDIS_HOST", "REDIS_PORT",
 		"DISCORD_WEBHOOK_URL", "COLLECTOR_WINDOW_DAYS",
 		"ALERT_POLL_INTERVAL_SECONDS", "ML_ENABLED", "MODEL_PATH", "RECOVERY_MODEL_PATH",
 		"LIBONNXRUNTIME_PATH", "ML_MODELS_DIR", "TRAINER_URL", "ADMIN_USERNAME",
@@ -34,7 +34,6 @@ func TestLoadDefaults(t *testing.T) {
 		DatabasePassword:   "atlas",
 		RedisHost:          "redis",
 		RedisPort:          "6379",
-		PrometheusEnabled:  true,
 		DiscordWebhookURL:  "",
 		CollectorWindow:    30,
 		AlertPollSeconds:   300,
@@ -60,7 +59,6 @@ func TestLoadReadsEnvOverrides(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("SERVER_PORT", "9090")
 	t.Setenv("DATABASE_HOST", "db.internal")
-	t.Setenv("PROMETHEUS_ENABLED", "false")
 	t.Setenv("COLLECTOR_WINDOW_DAYS", "45")
 	t.Setenv("ALERT_POLL_INTERVAL_SECONDS", "60")
 	t.Setenv("ML_ENABLED", "false")
@@ -74,9 +72,6 @@ func TestLoadReadsEnvOverrides(t *testing.T) {
 	}
 	if cfg.DatabaseHost != "db.internal" {
 		t.Errorf("DatabaseHost = %q, want %q", cfg.DatabaseHost, "db.internal")
-	}
-	if cfg.PrometheusEnabled {
-		t.Errorf("PrometheusEnabled = true, want false")
 	}
 	if cfg.CollectorWindow != 45 {
 		t.Errorf("CollectorWindow = %d, want 45", cfg.CollectorWindow)
@@ -106,13 +101,16 @@ func TestEnvOrDefaultIntFallsBackOnUnparseableValue(t *testing.T) {
 	}
 }
 
-func TestPrometheusEnabledOnlyTrueOnExactMatch(t *testing.T) {
+// The boolean flags Load parses all use the same `== "true"` rule, so anything but that exact
+// literal reads as false rather than being coerced. Asserted on ML_ENABLED as the representative
+// case — it's the one whose value actually changes engine behavior.
+func TestBoolFlagOnlyTrueOnExactMatch(t *testing.T) {
 	clearEnv(t)
-	t.Setenv("PROMETHEUS_ENABLED", "yes")
+	t.Setenv("ML_ENABLED", "yes")
 
 	cfg := Load()
 
-	if cfg.PrometheusEnabled {
-		t.Errorf("PrometheusEnabled = true for PROMETHEUS_ENABLED=yes, want false (only the literal \"true\" enables it)")
+	if cfg.MLEnabled {
+		t.Errorf("MLEnabled = true for ML_ENABLED=yes, want false (only the literal \"true\" enables it)")
 	}
 }

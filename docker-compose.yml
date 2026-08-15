@@ -20,7 +20,6 @@ services:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-atlas}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      PROMETHEUS_ENABLED: "true"
       # /health reports these three as purely informational (never affects its own status/HTTP
       # code — see internal/app/http_handler.go's healthHandler) — hardcoded in-network Compose
       # service names, same as DATABASE_HOST/REDIS_HOST above, not a `${VAR:-default}` override

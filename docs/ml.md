@@ -143,8 +143,10 @@ also made ~6,500 more rows usable, since calm instruments now contribute example
 downstream metric improved: correction ROC AUC 0.710 to 0.785, PR AUC 0.264 to 0.297, unseen-
 symbol AUC 0.732 to 0.766, Brier 0.071 to 0.059.
 
-`FixedThresholdCorrectionLabelParams` keeps the old definition available for comparison and so
-models trained against it stay describable.
+The old definition — a flat 5% drop within 10 bars, `CorrectionLabelParams{HorizonBars: 10,
+ThresholdPct: 0.05}` — no longer has a named constructor in `labels.go`. Nothing in production
+built one, so it now lives only in `labels_test.go`, where it is what the volatility-scaled
+default gets contrasted against; models trained against it stay describable from that literal.
 
 Accuracy is reported but never used as a verdict. On a 6.5%-positive target it is close to
 meaningless, and it was the number that made the broken model look strong. Training also runs

@@ -54,7 +54,6 @@ DATABASE_PORT=5432
 REDIS_HOST=redis
 DISCORD_WEBHOOK_URL=
 LOG_LEVEL=info
-PROMETHEUS_ENABLED=true
 ```
 Secrets must never be stored in Git.
 Use:

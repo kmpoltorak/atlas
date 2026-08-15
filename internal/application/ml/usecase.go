@@ -14,7 +14,7 @@ import (
 // decision.Orchestrator's ML/Portfolio pattern): when unset, Predict falls back to the
 // deterministic RSI-derived stub for correction probability, and leaves RecoveryProbability at
 // 0, rather than failing to start — see training/README.md for how to produce a real model and
-// NewUseCaseWithModel(s) to wire one/both in.
+// NewUseCaseWithModels to wire either or both in.
 //
 // Both are held as atomic.Pointer, not plain fields: the Account dashboard page lets an admin
 // pick a different trained model at runtime (see SetModel/SetRecoveryModel), and Predict runs
@@ -29,17 +29,9 @@ func NewUseCase() *UseCase {
 	return &UseCase{}
 }
 
-// NewUseCaseWithModel wires a loaded correction-probability ONNX model in, enabling real
-// inference in Predict. Leaves the recovery model unset — see NewUseCaseWithModels to wire both.
-func NewUseCaseWithModel(model *OnnxModel) *UseCase {
-	u := &UseCase{}
-	u.model.Store(model)
-	return u
-}
-
-// NewUseCaseWithModels wires both the correction-probability and recovery-probability models
-// in. Either may be nil independently — a nil recoveryModel behaves exactly like
-// NewUseCaseWithModel(model) alone.
+// NewUseCaseWithModels wires the correction-probability and recovery-probability ONNX models in,
+// enabling real inference in Predict. Either may be nil independently: pass a nil recoveryModel
+// to wire the correction model alone, and NewUseCaseWithModels(nil, nil) is exactly NewUseCase().
 func NewUseCaseWithModels(model, recoveryModel *OnnxModel) *UseCase {
 	u := &UseCase{}
 	u.model.Store(model)

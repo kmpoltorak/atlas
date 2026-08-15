@@ -157,7 +157,9 @@ func TestVolatilityScaledLabelIsComparableAcrossVolatilityRegimes(t *testing.T) 
 	}
 
 	// The fixed-threshold rule is exactly what fails this: 3% never reaches a flat 5% barrier.
-	fixed := FixedThresholdCorrectionLabelParams()
+	// That pre-volatility-scaling definition lives here rather than in labels.go — nothing in
+	// production builds it any more, it only exists to be contrasted with the default.
+	fixed := CorrectionLabelParams{HorizonBars: 10, ThresholdPct: 0.05}
 	calmFixed, _ := ComputeCorrectionLabel(calm, 29, fixed)
 	wildFixed, _ := ComputeCorrectionLabel(wild, 29, fixed)
 	if calmFixed == wildFixed {
@@ -201,7 +203,7 @@ func TestVolatilityThresholdRespectsItsFloor(t *testing.T) {
 }
 
 func TestFixedThresholdParamsStillBehaveAsBefore(t *testing.T) {
-	params := FixedThresholdCorrectionLabelParams()
+	params := CorrectionLabelParams{HorizonBars: 10, ThresholdPct: 0.05}
 	if got := params.thresholdFraction(nil, 0); got != 0.05 {
 		t.Errorf("fixed params must ignore volatility entirely, got %v", got)
 	}

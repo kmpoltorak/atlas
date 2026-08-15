@@ -108,14 +108,13 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 
 	provider := newProvider()
 	barsCache := &redisBarsCache{client: redisCache}
-	collector := collectorUC.NewUseCaseWithStorageAndCache(provider, storage, barsCache)
+	collector := &collectorUC.UseCase{Provider: provider, Storage: storage, Cache: barsCache}
 	analyzer := analyzerUC.NewUseCase()
 
 	// A missing/unloadable model is non-fatal: Atlas falls back to the deterministic
 	// RSI-derived stub (see mlUC.UseCase.Predict) rather than refusing to start, unlike the
 	// TimescaleDB/Redis connections above — this is a genuinely optional enhancement, not a
 	// dependency the app can't function without. See training/README.md.
-	mlUseCase := mlUC.NewUseCase()
 	var mlModel, mlRecoveryModel *mlUC.OnnxModel
 	if cfg.ModelPath != "" {
 		model, err := mlUC.LoadOnnxModel(cfg.ModelPath, cfg.LibOnnxRuntimePath)
@@ -148,9 +147,9 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 	// start, same non-fatal stance as everything else in this block.
 	mlModel = overrideWithSelectedModel(storage, logger, mlUC.RoleCorrection, cfg, mlModel)
 	mlRecoveryModel = overrideWithSelectedModel(storage, logger, mlUC.RoleRecovery, cfg, mlRecoveryModel)
-	if mlModel != nil || mlRecoveryModel != nil {
-		mlUseCase = mlUC.NewUseCaseWithModels(mlModel, mlRecoveryModel)
-	}
+	// No "did either load" guard: NewUseCaseWithModels(nil, nil) is exactly NewUseCase(), so the
+	// both-nil case already lands on the deterministic-stub behavior described above.
+	mlUseCase := mlUC.NewUseCaseWithModels(mlModel, mlRecoveryModel)
 
 	// NBP being unreachable is non-fatal, same stance as the ML model above: a missing/failed
 	// rate fetch only blocks recording a *non-PLN* transaction (see portfolio.UseCase.

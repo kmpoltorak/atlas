@@ -35,14 +35,8 @@ func TestSendEmbedRequiresContentAndClient(t *testing.T) {
 
 // fakeNotifier lets a test control per-call success/failure without a real HTTP server.
 type fakeNotifier struct {
-	sendErr  error
 	embedErr error
 	sent     int
-}
-
-func (f *fakeNotifier) Send(string) error {
-	f.sent++
-	return f.sendErr
 }
 
 func (f *fakeNotifier) SendEmbed(notifications.Embed) error {

@@ -55,14 +55,15 @@ type webhookPayload struct {
 	Embeds  []Embed `json:"embeds,omitempty"`
 }
 
-// Send posts a plain-text message.
+// Send posts a plain-text message. Not part of the Notifier interface (see notifier.go) — the
+// one caller is cmd/trainer's training-failure notice, which holds a *DiscordClient directly and
+// has nothing card-shaped to say.
 func (c *DiscordClient) Send(message string) error {
 	return c.post(webhookPayload{Content: message})
 }
 
-// SendEmbed posts a single rich embed. Kept separate from Send rather than replacing it: Send is
-// still the right shape for anything that is genuinely one line, and collapsing the two would
-// force every caller to build an embed to say something simple.
+// SendEmbed posts a single rich embed — the shape every fan-out path in Atlas uses (see
+// application/notifications.UseCase.SendEmbed), across Discord, Slack and Telegram alike.
 func (c *DiscordClient) SendEmbed(embed Embed) error {
 	return c.post(webhookPayload{Embeds: []Embed{embed}})
 }
