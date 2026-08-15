@@ -42,10 +42,6 @@ type slackPayload struct {
 	Attachments []slackAttachment `json:"attachments,omitempty"`
 }
 
-func (c *SlackClient) Send(message string) error {
-	return c.post(slackPayload{Text: message})
-}
-
 func (c *SlackClient) SendEmbed(embed Embed) error {
 	fields := make([]slackField, len(embed.Fields))
 	for i, f := range embed.Fields {

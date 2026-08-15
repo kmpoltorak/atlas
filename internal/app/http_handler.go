@@ -43,10 +43,10 @@ func (a *Application) NewHandler() http.Handler {
 	mux.HandleFunc("/logout", a.logoutPageHandler)
 	mux.HandleFunc("/dashboard/lang", a.langSetHandler)
 	mux.HandleFunc("/dashboard/portfolio", a.portfolioPageHandler)
+	// One route per thing being deleted, not one per selection shape: each handler takes either
+	// the checkbox-select bulk field or a single per-row value (see web_handlers.go's formValues).
 	mux.HandleFunc("/dashboard/portfolio/delete", a.portfolioDeleteHandler)
-	mux.HandleFunc("/dashboard/portfolio/bulk-delete", a.portfolioBulkDeleteHandler)
 	mux.HandleFunc("/dashboard/portfolio/transactions/delete", a.portfolioTransactionDeleteHandler)
-	mux.HandleFunc("/dashboard/portfolio/transactions/bulk-delete", a.portfolioTransactionBulkDeleteHandler)
 	mux.HandleFunc("/dashboard/portfolio/select", a.portfolioSelectHandler)
 	mux.HandleFunc("/dashboard/portfolios/create", a.portfolioCreateHandler)
 	mux.HandleFunc("/dashboard/portfolios/rename", a.portfolioRenameHandler)
@@ -56,7 +56,6 @@ func (a *Application) NewHandler() http.Handler {
 	mux.HandleFunc("/dashboard/backtests", a.backtestsPageHandler)
 	mux.HandleFunc("/dashboard/watchlist", a.watchlistPageHandler)
 	mux.HandleFunc("/dashboard/watchlist/delete", a.watchlistDeleteHandler)
-	mux.HandleFunc("/dashboard/watchlist/bulk-delete", a.watchlistBulkDeleteHandler)
 	mux.HandleFunc("/dashboard/watchlist/import", a.watchlistImportPageHandler)
 	mux.HandleFunc("/dashboard/watchlist/refresh-info", a.watchlistRefreshInfoHandler)
 	mux.HandleFunc("/dashboard/account", a.accountPageHandler)

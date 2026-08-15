@@ -5,7 +5,7 @@ name: CI
 # real container registry and production cluster credentials. See deploy/README.md's
 # "Not yet done / out of scope" section.
 #
-# go-version is "stable" rather than pinned to go.mod's "go 1.23.0" on purpose: that
+# go-version is "stable" rather than pinned to go.mod's "go 1.26.1" on purpose: that
 # directive is a minimum language version, not a toolchain pin, and Go only backports
 # security fixes to its latest two major releases. Building/scanning with an old, unpatched
 # toolchain would make the vulnerability scan flag stdlib CVEs no one can actually fix here.

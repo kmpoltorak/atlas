@@ -21,7 +21,7 @@
         <button type="submit" class="btn btn-outline-secondary btn-sm" title="{{T .Lang "watchlist.refresh_info_hint"}}">{{T .Lang "watchlist.refresh_info"}}</button>
       </form>
     </div>
-    <form method="post" action="/dashboard/watchlist/bulk-delete" id="watchlistForm"
+    <form method="post" action="/dashboard/watchlist/delete" id="watchlistForm"
           data-confirm-bulk="{{T .Lang "confirm.remove_watchlist_bulk"}}">
       <input type="text" class="form-control form-control-sm mb-2" id="watchlistFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
       <div class="table-responsive">
@@ -40,7 +40,7 @@
             <td>{{$info.Type}}</td>
             <td>{{if .AddedAt}}{{(localTime .AddedAt).Format "2006-01-02 15:04"}}{{end}}</td>
             <td class="text-end">
-              <button type="submit" formaction="/dashboard/watchlist/delete" name="symbol" value="{{.Symbol}}"
+              <button type="submit" name="symbol" value="{{.Symbol}}"
                       class="btn btn-outline-danger btn-sm"
                       onclick="return confirm('{{printf (T $.Lang "confirm.remove_watchlist_item") .Symbol}}');">{{T $.Lang "common.remove"}}</button>
             </td>

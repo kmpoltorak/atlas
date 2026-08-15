@@ -154,13 +154,13 @@ integration is non-fatal when unset — Atlas degrades gracefully instead of ref
 | `LOG_LEVEL` | `info` | zap log level |
 | `DATABASE_HOST`/`PORT`/`NAME`/`USER`/`PASSWORD` | `timescaledb`/`5432`/`atlas`/`atlas`/`atlas` | TimescaleDB connection |
 | `REDIS_HOST`/`PORT` | `redis`/`6379` | Redis connection |
-| `PROMETHEUS_ENABLED` | `true` | Toggle metrics exposition |
 | `COLLECTOR_WINDOW_DAYS` | `30` | How much history to request per collection call |
 | `ALERT_POLL_INTERVAL_SECONDS` | `300` | Background watchlist-evaluation interval |
 | `DISCORD_WEBHOOK_URL` | *(empty → disabled)* | Business alerts: BUY/ACCUMULATE/REDUCE/SELL notifications, sent only when a symbol's action *changes* |
 | `SLACK_WEBHOOK_URL` | *(empty → disabled)* | Same business alerts as `DISCORD_WEBHOOK_URL`, delivered to a Slack Incoming Webhook instead/as well |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | *(empty → disabled)* | Same business alerts, delivered via a Telegram bot; both must be set |
 | `ALERTMANAGER_DISCORD_WEBHOOK_URL` | *(empty → disabled)* | Infra alerts: pod down/flapping/high error rate — deliberately a **separate** webhook/channel from the ones above |
+| `ML_ENABLED` | `true` | Seeds the decision engine's ML blend. Set to `false` and scoring uses the technical term alone (RSI/MACD/Bollinger/momentum), skipping the ML+Portfolio+Risk blend entirely rather than falling back to the RSI-derived stub. Only the *initial* value — the Account page toggles this live and its choice, once made, wins over this variable |
 | `MODEL_PATH` | *(empty → deterministic stub)* | Path to a trained correction-probability ONNX model |
 | `RECOVERY_MODEL_PATH` | *(empty → recovery probability stays 0)* | Path to a trained recovery-probability ONNX model, fully independent of `MODEL_PATH` |
 | `ML_MODELS_DIR` | `/models` | Directory the Account page's model picker scans for trained models + metadata sidecars |

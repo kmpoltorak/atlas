@@ -22,10 +22,11 @@ function atlasSetupModelDetails(selectId, detailsId) {
 // header, one checkbox per row (checkboxClass), and a bulk submit button (bulkBtnId) that stays
 // disabled until at least one row is checked. Shared across every dashboard page with this
 // pattern (Portfolio's Positions and Transaction History tables, Watchlist) so the wiring only
-// exists once. Per-row "Remove" buttons in the same form use their own formaction/onclick
-// confirm and submit unconditionally — only the bulk button's own submit is intercepted here to
-// show a count-aware confirm dialog (formId's data-confirm-bulk attribute, a %d-templated
-// translated string).
+// exists once. Per-row "Remove" buttons post to the same endpoint as the bulk button (they just
+// submit a single value instead of the checked set — see web_handlers.go's formValues) and carry
+// their own onclick confirm, so only the bulk button's own submit is intercepted here, to show a
+// count-aware confirm dialog (formId's data-confirm-bulk attribute, a %d-templated translated
+// string).
 // Returns the refresh function so a page that also wires up atlasSetupTableTools on the same
 // table can re-run it after a filter/page change — visibleBoxes() below depends on live
 // display:none state, which only atlasSetupTableTools's render() changes.

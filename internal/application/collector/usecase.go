@@ -14,13 +14,6 @@ type UseCase struct {
 	Cache    Cache
 }
 
-// NewUseCaseWithStorageAndCache is the one constructor UseCase needs: Storage/Cache/Provider
-// are exported fields, so tests that only need a bare provider build a struct literal directly
-// instead of going through a narrower constructor.
-func NewUseCaseWithStorageAndCache(provider market.MarketProvider, storage Storage, cache Cache) *UseCase {
-	return &UseCase{Provider: provider, Storage: storage, Cache: cache}
-}
-
 // Collect retrieves bars, preferring a cache hit over calling the live provider. fromCache
 // tells the caller whether a live provider call actually happened, so callers that track
 // provider-call metrics (rate-limit exposure, etc.) don't count cache hits as live requests.

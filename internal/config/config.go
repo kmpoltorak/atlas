@@ -15,7 +15,6 @@ type Config struct {
 	DatabasePassword   string
 	RedisHost          string
 	RedisPort          string
-	PrometheusEnabled  bool
 	DiscordWebhookURL  string
 	SlackWebhookURL    string
 	TelegramBotToken   string
@@ -47,7 +46,6 @@ func Load() Config {
 		DatabasePassword:  envOrDefault("DATABASE_PASSWORD", "atlas"),
 		RedisHost:         envOrDefault("REDIS_HOST", "redis"),
 		RedisPort:         envOrDefault("REDIS_PORT", "6379"),
-		PrometheusEnabled: envOrDefault("PROMETHEUS_ENABLED", "true") == "true",
 		DiscordWebhookURL: envOrDefault("DISCORD_WEBHOOK_URL", ""),
 		SlackWebhookURL:   envOrDefault("SLACK_WEBHOOK_URL", ""),
 		TelegramBotToken:  envOrDefault("TELEGRAM_BOT_TOKEN", ""),
@@ -64,7 +62,8 @@ func Load() Config {
 		// True by default (unchanged behavior). Set ML_ENABLED=false to make the decision engine
 		// score BUY/SELL/HOLD from the technical term alone (RSI/MACD/Bollinger/momentum, see
 		// decision.Orchestrator.buildTechnicalScore) — skipping the ML+Portfolio+Risk blend
-		// entirely (see NewOrchestrator vs NewOrchestratorWithML in internal/app/app.go), not just
+		// entirely (this is the initial value of the orchestrator's own MLEnabled flag; see
+		// decision.Orchestrator.SetMLEnabled, which the Account page toggles at runtime), not just
 		// falling back to the RSI-derived ML stub, which still applies even with no model file
 		// loaded. Model files, if configured, still load and stay usable via /predict and the
 		// Account page — this only stops the decision engine from factoring them in.

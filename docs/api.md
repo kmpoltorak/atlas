@@ -26,8 +26,11 @@ dashboard first and "Try it out" reuses that session's cookie automatically.
 
 **Implementation status**: this list covers the raw JSON API only (`internal/app/handlers.go`) —
 see `internal/app/http_handler.go` for the full route table including the server-rendered
-dashboard (`/dashboard/*`) and its form-submitted bulk-delete actions, which have no JSON API
-equivalent. `DELETE /portfolio` clears a symbol's current position aggregate (`?symbol=`);
+dashboard (`/dashboard/*`) and its form-submitted delete actions, which have no JSON API
+equivalent. Each of those takes one row or a checkbox-selected batch on the *same* endpoint (a
+repeated field with a single-value fallback — see `web_handlers.go`'s `formValues`), so there is
+no separate bulk route to look for. `DELETE /portfolio` clears a symbol's current position
+aggregate (`?symbol=`);
 `DELETE /transactions` removes one historical transaction by id and recomputes the affected
 position (`?id=`) — these are two different operations, not duplicates, matching
 docs/decision_engine.md's Portfolio Engine distinction. `DELETE /watchlist` takes `?symbol=`.

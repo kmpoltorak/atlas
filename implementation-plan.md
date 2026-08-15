@@ -105,7 +105,7 @@ Deliverables:
 - decision engine,
 - recommendation persistence and traceability.
 
-**Implementation status** (see PROJECT_CONTEXT.md and docs/ml.md/decision_engine.md for full
+**Implementation status** (see PROJECT_CONTEXT.md, docs/ml.md and docs/decision_engine.md for full
 detail): all deliverables above are real. Feature vector construction, the decision engine
 (technical + ML + portfolio-risk blend), and recommendation persistence/traceability
 (recommendations + predictions both append-only in TimescaleDB) shipped first. Model training
@@ -152,7 +152,7 @@ are only meaningful conditional on a correction happening at all, so 222 rows is
 subset of an already-modest correction history, not 222 independent observations, and 3 of 8
 symbols have zero recovered examples at all — see docs/ml.md's Implementation status note for
 the full caveat. Wired into live inference as a second, fully independent optional model
-(`RECOVERY_MODEL_PATH`, `ml.UseCase.RecoveryModel`/`NewUseCaseWithModels` — separate from
+(`RECOVERY_MODEL_PATH`, `ml.UseCase.CurrentRecoveryModel`/`NewUseCaseWithModels` — separate from
 `MODEL_PATH`'s correction model; either, both, or neither load independently, matching every
 other optional dependency's non-fatal pattern), with its own persisted columns
 (`predictions.recovery_probability`/`recovery_model_version` — migrations/010, following
@@ -940,6 +940,52 @@ have failed loudly on the first unsynchronized access before this fix (and did, 
 latent nil-map bug in the test fixture's own `DeletePosition` that nothing had exercised before).
 The full suite (`go test ./... -race`) passes clean; a live concurrent-request burst against the
 running container stayed healthy throughout.
+
+A second repo-wide over-engineering audit then produced a ranked cut list, applied in order. The
+biggest was the **delete/bulk-delete handler split**: Positions, Transaction History and Watchlist
+each had two near-identical handlers on two routes, differing only in whether they read a single
+form value or a repeated one. Each pair collapsed into one handler reading the bulk field with a
+single-item fallback (`formValues`, in `web_handlers.go`), so `/dashboard/portfolio/bulk-delete`,
+`/dashboard/portfolio/transactions/bulk-delete` and `/dashboard/watchlist/bulk-delete` are gone —
+their per-row templates simply dropped the `formaction` override and post to the form's own action.
+A present singular value deliberately wins over the repeated one, preserving the old behavior where
+clicking one row's Remove with unrelated checkboxes still ticked acts on that row alone. Two things
+were *not* collapsed away: the single-item success messages ("Removed AAPL from your positions."
+rather than "1 position(s) removed."), and symbol normalization, which stays off the transaction
+path — ids are opaque UUIDs an uppercase pass would corrupt into a silent no-match. The merge also
+closed a real gap by accident: bulk-removing positions/transactions never refreshed the affected
+symbols' recommendations, only the single-delete path did, so a stale recommendation could outlive
+a bulk delete. Verified live via Docker against the running container across all three shapes —
+singular, repeated, and both-present-at-once (the precedence case, where the unrelated symbol had
+to survive and did) — plus the empty-selection and wrong-method paths, with the watchlist row count
+confirmed unchanged at the end and no test rows left behind.
+
+`PROMETHEUS_ENABLED` was deleted outright rather than fixed. It was parsed into
+`config.Config.PrometheusEnabled`, asserted by three tests, documented in README, and set in both
+`docker-compose.yml` and `deploy/configmap.yaml` — and read by no production code whatsoever, since
+`/metrics` registers unconditionally in `NewHandler`. A config knob that silently does nothing is
+worse than no knob, and nothing ever wanted metrics off. Its exact-match test (`"yes"` must not
+read as true) was retargeted to `ML_ENABLED` rather than dropped, since that rule is shared by
+every boolean flag `Load` parses and `ML_ENABLED` is the one whose value actually changes behavior.
+
+`Notifier` lost its `Send(string)` method. **All three channels — Discord, Slack, Telegram — remain
+fully supported and independently configurable**; nothing about the fan-out changed. `Send` was
+simply never called through the interface: every alert path posts embeds, and the one plain-text
+caller (`cmd/trainer`'s training-failure notice) holds a `*DiscordClient` directly. That left
+`SlackClient.Send`/`TelegramClient.Send` as pure dead weight. `DiscordClient.Send` stays as a
+concrete method. Smaller cuts in the same pass: `ml.NewUseCaseWithModel` (exactly
+`NewUseCaseWithModels(model, nil)`), `FixedThresholdCorrectionLabelParams` (test-only API living in
+production code, inlined into its two tests), `collector.NewUseCaseWithStorageAndCache` (a
+constructor that only set three exported fields), a redundant `if mlModel != nil || ...` guard in
+the composition root, and a doc comment pointing at a `NewOrchestrator` call in `app.go` that
+hasn't existed for some time.
+
+One reported finding was **retracted after measurement rather than applied**: merging `actionClass`
+and `actionBadgeClass` in `render.go`. They look duplicative but differ by more than a prefix — one
+appends `fw-semibold` and falls back to `text-body-secondary`, the other to `text-bg-secondary` —
+so a shared core plus two wrappers came to 22 lines against the 16 the two plain switches already
+cost. The duplication is cheaper than its removal, so it stayed. Net across the pass: 181 lines
+deleted against 123 added, three routes and two whole functions gone, no dependency changes.
 
 ## 11. Acceptance Criteria
 

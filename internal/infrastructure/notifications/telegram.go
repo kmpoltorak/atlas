@@ -27,10 +27,6 @@ type telegramPayload struct {
 	ParseMode string `json:"parse_mode"`
 }
 
-func (c *TelegramClient) Send(message string) error {
-	return c.post(message)
-}
-
 // SendEmbed has no Telegram equivalent to render as a card, so it flattens Embed into Markdown:
 // a bold title, the description, then one "Name: Value" line per field.
 func (c *TelegramClient) SendEmbed(embed Embed) error {

@@ -55,7 +55,7 @@ func TestUseCasePredictWithRealModel(t *testing.T) {
 	}
 	defer model.Close()
 
-	uc := NewUseCaseWithModel(model)
+	uc := NewUseCaseWithModels(model, nil)
 	prediction, err := uc.Predict(domainml.FeatureVector{RSI: 65, EMADist: 0.01, MACDPct: 0.003, TRPct: 0.012, Volume: 1.1})
 	if err != nil {
 		t.Fatalf("Predict failed: %v", err)
@@ -106,8 +106,8 @@ func TestUseCasePredictWithRecoveryModelPopulatesRecoveryProbability(t *testing.
 }
 
 // TestUseCasePredictWithoutRecoveryModelLeavesRecoveryProbabilityZero proves the documented
-// default still holds when only the correction model is loaded (NewUseCaseWithModel, matching
-// existing callers that never mention recovery at all).
+// default still holds when only the correction model is loaded (NewUseCaseWithModels with a nil
+// recoveryModel, matching existing callers that never mention recovery at all).
 func TestUseCasePredictWithoutRecoveryModelLeavesRecoveryProbabilityZero(t *testing.T) {
 	libPath := os.Getenv("TEST_ONNXRUNTIME_LIB_PATH")
 	if libPath == "" {
@@ -120,7 +120,7 @@ func TestUseCasePredictWithoutRecoveryModelLeavesRecoveryProbabilityZero(t *test
 	}
 	defer model.Close()
 
-	uc := NewUseCaseWithModel(model)
+	uc := NewUseCaseWithModels(model, nil)
 	prediction, err := uc.Predict(domainml.FeatureVector{RSI: 65, EMADist: 0.01, MACDPct: 0.003, TRPct: 0.012, Volume: 1.1})
 	if err != nil {
 		t.Fatalf("Predict failed: %v", err)

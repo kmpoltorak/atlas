@@ -108,7 +108,7 @@ func TestCollectPersistsBarsWhenStorageEnabled(t *testing.T) {
 func TestCollectServesFromCacheWithoutCallingProviderAgain(t *testing.T) {
 	calls := 0
 	provider := stubProvider{bars: []market.Bar{{Symbol: "AAPL", Close: 100, Timestamp: time.Now()}}, callCount: &calls}
-	uc := NewUseCaseWithStorageAndCache(provider, nil, &stubCache{})
+	uc := &UseCase{Provider: provider, Cache: &stubCache{}}
 
 	_, fromCache1, err := uc.Collect("AAPL", 30)
 	if err != nil {
