@@ -145,24 +145,15 @@ func (a *Application) dashboardPageHandler(w http.ResponseWriter, r *http.Reques
 		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	positions, err := a.Portfolio.GetPositions()
-	if err != nil {
-		a.renderError(w, r, http.StatusInternalServerError, err.Error())
-		return
-	}
-	transactions, err := a.Portfolio.GetTransactions()
-	if err != nil {
-		a.renderError(w, r, http.StatusInternalServerError, err.Error())
-		return
-	}
+	positions, transactions, activePortfolioID, portfolios := a.Portfolio.Snapshot()
 	livePositions, asOf := a.livePricedPositions(positions, priceAsOf(transactions))
 	web.Render(w, "dashboard", web.DashboardPage{
 		Lang: a.resolveLang(r), Positions: livePositions, Risk: portfolioUC.ComputeRiskSnapshot(livePositions),
 		Rates:             a.exchangeRatesForDisplay(),
 		PriceAsOf:         asOf,
 		AlertCounts:       a.alertCountsByAction(),
-		Portfolios:        a.Portfolio.Portfolios,
-		ActivePortfolioID: a.Portfolio.ActivePortfolioID,
+		Portfolios:        portfolios,
+		ActivePortfolioID: activePortfolioID,
 	})
 }
 
@@ -235,7 +226,7 @@ func (a *Application) portfolioPageHandler(w http.ResponseWriter, r *http.Reques
 		// name a different portfolio than whatever tab is currently active — switch to it first
 		// so the transaction lands where the form actually said, and update the cookie so the
 		// page the user lands on after this keeps showing that same portfolio.
-		if portfolioID := r.FormValue("portfolio_id"); portfolioID != "" && portfolioID != a.Portfolio.ActivePortfolioID {
+		if portfolioID := r.FormValue("portfolio_id"); portfolioID != "" && portfolioID != a.Portfolio.ActivePortfolio() {
 			if err := a.Portfolio.SwitchPortfolio(portfolioID); err != nil {
 				a.renderPortfolioPage(w, r, err.Error(), "")
 				return
@@ -391,24 +382,15 @@ func (a *Application) renderPortfolioPage(w http.ResponseWriter, r *http.Request
 		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	positions, err := a.Portfolio.GetPositions()
-	if err != nil {
-		a.renderError(w, r, http.StatusInternalServerError, err.Error())
-		return
-	}
-	transactions, err := a.Portfolio.GetTransactions()
-	if err != nil {
-		a.renderError(w, r, http.StatusInternalServerError, err.Error())
-		return
-	}
+	positions, transactions, activePortfolioID, portfolios := a.Portfolio.Snapshot()
 	livePositions, asOf := a.livePricedPositions(positions, priceAsOf(transactions))
 	data := web.PortfolioPage{
 		Lang: a.resolveLang(r), Positions: livePositions, Transactions: transactions,
 		Rates: a.exchangeRatesForDisplay(), Currencies: currencyOptions(),
 		PriceAsOf: asOf,
 		Error:     errMsg, Success: successMsg,
-		Portfolios:        a.Portfolio.Portfolios,
-		ActivePortfolioID: a.Portfolio.ActivePortfolioID,
+		Portfolios:        portfolios,
+		ActivePortfolioID: activePortfolioID,
 	}
 	if symbols, err := a.watchlistSymbols(); err == nil {
 		data.Symbols = symbols
@@ -848,7 +830,7 @@ func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, 
 		HasBackup:             hasBackup,
 		BackupExists:          backupExists,
 		LastBackupAt:          lastBackupAt,
-		Portfolios:            a.Portfolio.Portfolios,
+		Portfolios:            a.Portfolio.PortfolioList(),
 		MaxPortfolios:         portfolioUC.MaxPortfolios,
 	})
 }

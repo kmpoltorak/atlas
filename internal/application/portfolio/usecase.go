@@ -8,6 +8,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"atlas/internal/domain/currency"
@@ -32,12 +33,23 @@ type ExchangeRateSource interface {
 // persisted state on construction and written through on every mutation, so state survives
 // restarts.
 //
-// ponytail: ActivePortfolioID/Positions/Transactions are shared mutable state on one UseCase
-// instance, switched in place by SwitchPortfolio — there is no per-request isolation. Two browser
-// tabs switching portfolios at the same moment can race and see each other's selection. Fine for
-// a single-user tool clicking around; give each request its own scoped read (or add a mutex) if
-// concurrent multi-tab use ever makes that visible.
+// ActivePortfolioID/Positions/Transactions/Portfolios are shared mutable state on one UseCase
+// instance (internal/app.Application wires up exactly one, used by every concurrent request), so
+// every method that reads or writes them takes mu — a plain sync.Mutex, not RWMutex: even a
+// "read" (GetPositions, Snapshot, …) needs the lock to hand back a defensive copy rather than a
+// slice aliasing the live backing array, since SwitchPortfolio/RecordTransaction/etc. mutate
+// elements of that array in place (see applyPositionUpdate). Two browser tabs switching
+// portfolios at the same moment now serialize on mu instead of racing; Snapshot exists so a page
+// render reads Positions/Transactions/ActivePortfolioID/Portfolios as of one consistent instant,
+// not four separate locked calls a concurrent SwitchPortfolio could interleave between.
+//
+// Exported fields are still read directly by tests that build a UseCase by hand before any
+// concurrent access starts (e.g. `uc := &UseCase{Positions: ...}`) — that's fine, mu only matters
+// once more than one goroutine can reach the same instance, which is exactly the production
+// wiring this exists for.
 type UseCase struct {
+	mu sync.Mutex
+
 	Positions    []portfolio.Position
 	Transactions []portfolio.Transaction
 	Repository   Repository
@@ -56,6 +68,8 @@ type UseCase struct {
 	// ExchangeRates nil is an error, deliberately not a silent 1:1 fallback: treating a $100
 	// price as if it were 100 PLN would misrepresent real money, unlike the "feature simply
 	// isn't active" non-fatal-optional pattern ML/Discord use elsewhere in this codebase.
+	// Set once at construction (internal/app/app.go), never reassigned afterward, so reading it
+	// doesn't need mu.
 	ExchangeRates ExchangeRateSource
 }
 
@@ -85,6 +99,15 @@ func NewUseCaseWithRepository(repo Repository) (*UseCase, error) {
 // or SwitchPortfolio was given an unknown id), it falls back to the first portfolio —
 // Repository.ListPortfolios guarantees at least one exists, bootstrapping it if needed.
 func (u *UseCase) Reload() error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.reload()
+}
+
+// reload is Reload's lock-free core — called both directly (via Reload) and by SwitchPortfolio/
+// DeletePortfolio, which need it folded into their own already-held lock rather than taking mu a
+// second time.
+func (u *UseCase) reload() error {
 	if u.Repository == nil {
 		u.Positions, u.Transactions = nil, nil
 		return nil
@@ -126,8 +149,10 @@ func portfolioIDExists(portfolios []portfolio.Portfolio, id string) bool {
 // dashboard's portfolio tabs call this before rendering. An unknown id falls back to the first
 // portfolio (see Reload) rather than erroring, so a stale cookie never breaks the page.
 func (u *UseCase) SwitchPortfolio(id string) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
 	u.ActivePortfolioID = id
-	return u.Reload()
+	return u.reload()
 }
 
 // CreatePortfolio adds a new, empty portfolio — up to MaxPortfolios total — without switching to
@@ -137,6 +162,8 @@ func (u *UseCase) CreatePortfolio(name string) (portfolio.Portfolio, error) {
 	if name == "" {
 		return portfolio.Portfolio{}, errors.New("name is required")
 	}
+	u.mu.Lock()
+	defer u.mu.Unlock()
 	if u.Repository == nil {
 		return portfolio.Portfolio{}, errors.New("no repository configured")
 	}
@@ -156,6 +183,8 @@ func (u *UseCase) RenamePortfolio(id, name string) error {
 	if name == "" {
 		return errors.New("name is required")
 	}
+	u.mu.Lock()
+	defer u.mu.Unlock()
 	if u.Repository == nil {
 		return errors.New("no repository configured")
 	}
@@ -174,6 +203,8 @@ func (u *UseCase) RenamePortfolio(id, name string) error {
 // one — Atlas always has somewhere to record a transaction. Deleting the active portfolio falls
 // back to whatever Reload picks next (the new first portfolio).
 func (u *UseCase) DeletePortfolio(id string) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
 	if u.Repository == nil {
 		return errors.New("no repository configured")
 	}
@@ -187,7 +218,7 @@ func (u *UseCase) DeletePortfolio(id string) error {
 	if wasActive {
 		u.ActivePortfolioID = ""
 	}
-	return u.Reload()
+	return u.reload()
 }
 
 // GetAllPositions aggregates positions across every portfolio (see
@@ -195,21 +226,67 @@ func (u *UseCase) DeletePortfolio(id string) error {
 // single portfolio's own page. Falls back to the active portfolio's Positions when Repository is
 // nil (test-only in-memory mode never has more than one portfolio anyway).
 func (u *UseCase) GetAllPositions() ([]portfolio.Position, error) {
-	if u.Repository == nil {
-		return u.Positions, nil
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.Repository != nil {
+		return u.Repository.GetAllPositions()
 	}
-	return u.Repository.GetAllPositions()
+	return cloneWith(u.Positions), nil
 }
 
-// GetPositions returns the current snapshot held by the use case.
+// GetPositions returns the current snapshot held by the use case — a defensive copy, since
+// SwitchPortfolio/RecordTransaction/etc. can mutate the live Positions backing array in place
+// from another concurrent request.
 func (u *UseCase) GetPositions() ([]portfolio.Position, error) {
-	return u.Positions, nil
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return cloneWith(u.Positions), nil
 }
 
 // GetTransactions returns every recorded transaction held by the use case, most recent first
-// when Repository-backed (see TimescaleDB.GetTransactions); insertion order otherwise.
+// when Repository-backed (see TimescaleDB.GetTransactions); insertion order otherwise. A
+// defensive copy, for the same reason as GetPositions.
 func (u *UseCase) GetTransactions() ([]portfolio.Transaction, error) {
-	return u.Transactions, nil
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return cloneWith(u.Transactions), nil
+}
+
+// Snapshot is a single consistent read of everything a page render needs — Positions,
+// Transactions, ActivePortfolioID, and the Portfolios tab list — taken under one lock so a
+// concurrent SwitchPortfolio from another browser tab can never be observed half-applied (e.g.
+// the new ActivePortfolioID paired with the previous portfolio's Positions, which four separate
+// locked calls could otherwise interleave with).
+func (u *UseCase) Snapshot() (positions []portfolio.Position, transactions []portfolio.Transaction, activePortfolioID string, portfolios []portfolio.Portfolio) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return cloneWith(u.Positions), cloneWith(u.Transactions), u.ActivePortfolioID, cloneWith(u.Portfolios)
+}
+
+// ActivePortfolio returns which portfolio id Positions/Transactions currently reflect.
+func (u *UseCase) ActivePortfolio() string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.ActivePortfolioID
+}
+
+// PortfolioList returns every portfolio (the dashboard's tab list, and the Account page's
+// "manage portfolios" list) — a defensive copy, for the same reason as GetPositions.
+func (u *UseCase) PortfolioList() []portfolio.Portfolio {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return cloneWith(u.Portfolios)
+}
+
+// cloneWith returns a copy of s — GetPositions/GetTransactions/Snapshot/PortfolioList all hand
+// out copies rather than the live slice, so a caller iterating the result can't observe
+// SwitchPortfolio/RecordTransaction/etc. mutating elements of the backing array in place from
+// another concurrent request after the lock protecting this read has already been released.
+func cloneWith[T any](s []T) []T {
+	if s == nil {
+		return nil
+	}
+	return append(make([]T, 0, len(s)), s...)
 }
 
 // RecordTransaction appends a transaction and updates the in-memory position state.
@@ -253,6 +330,14 @@ func (u *UseCase) RecordTransaction(tx portfolio.Transaction) error {
 		tx.PriceInPLN = priceInPLN
 	}
 
+	// Locked from here on, not from the top of the function: everything above only validates tx
+	// and (for a non-PLN transaction) calls out to ExchangeRates.ToBase, an external HTTP round
+	// trip that must not hold mu — the point of ExchangeRateSource being pluggable is that
+	// currency conversion is a separate, potentially slow concern from the in-memory mutation
+	// below, and blocking every other portfolio request on a live NBP call would defeat that.
+	u.mu.Lock()
+	defer u.mu.Unlock()
+
 	if u.Repository != nil {
 		id, err := u.Repository.SaveTransaction(u.ActivePortfolioID, tx)
 		if err != nil {
@@ -277,10 +362,10 @@ func (u *UseCase) RecordTransaction(tx portfolio.Transaction) error {
 // fully sold) is dropped entirely — a closed position lives on only in transaction history, not
 // as a lingering zero-quantity row someone has to notice and delete by hand. Shared by
 // RecordTransaction (append path) and recomputePosition (replay-after-delete path) so the two
-// can't drift on this rule.
+// can't drift on this rule. Lock-free: every caller already holds mu.
 func (u *UseCase) applyPositionUpdate(position portfolio.Position) error {
 	if position.Quantity == 0 {
-		return u.RemovePosition(position.Symbol)
+		return u.removePosition(position.Symbol)
 	}
 	if index := findPositionIndex(u.Positions, position.Symbol); index >= 0 {
 		u.Positions[index] = position
@@ -300,6 +385,15 @@ func (u *UseCase) applyPositionUpdate(position portfolio.Position) error {
 // recommendations/predictions elsewhere in this codebase), so this only clears the current
 // aggregate, not the record of what happened.
 func (u *UseCase) RemovePosition(symbol string) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.removePosition(symbol)
+}
+
+// removePosition is RemovePosition's lock-free core — also called by applyPositionUpdate
+// (RecordTransaction/RemoveTransaction's SELL-to-zero path) and RemovePositions' batch loop,
+// both of which already hold mu themselves.
+func (u *UseCase) removePosition(symbol string) error {
 	if symbol == "" {
 		return errors.New("symbol is required")
 	}
@@ -317,14 +411,17 @@ func (u *UseCase) RemovePosition(symbol string) error {
 }
 
 // RemovePositions removes several positions at once (the dashboard's checkbox-select bulk
-// delete) — each symbol still goes through RemovePosition individually rather than a single
-// batched repository call, same reasoning as RemoveTransactions: it's simple and already
-// correct one at a time. Errors from individual symbols are joined rather than aborting the
-// whole batch.
+// delete) — each symbol still goes through the same per-symbol logic as RemovePosition rather
+// than a single batched repository call, same reasoning as RemoveTransactions: it's simple and
+// already correct one at a time. The whole batch runs under one lock acquisition, not one per
+// symbol, so it can't interleave with a concurrent SwitchPortfolio mid-batch. Errors from
+// individual symbols are joined rather than aborting the rest.
 func (u *UseCase) RemovePositions(symbols []string) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
 	var errs []error
 	for _, symbol := range symbols {
-		if err := u.RemovePosition(symbol); err != nil {
+		if err := u.removePosition(symbol); err != nil {
 			errs = append(errs, fmt.Errorf("remove position %s: %w", symbol, err))
 		}
 	}
@@ -338,6 +435,14 @@ func (u *UseCase) RemovePositions(symbols []string) error {
 // this one back out" can't be reversed cleanly in general. Removing an unknown id is a no-op,
 // matching RemovePosition's convention.
 func (u *UseCase) RemoveTransaction(id string) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.removeTransaction(id)
+}
+
+// removeTransaction is RemoveTransaction's lock-free core — also called by RemoveTransactions'
+// batch loop, which already holds mu itself.
+func (u *UseCase) removeTransaction(id string) error {
 	if id == "" {
 		return errors.New("id is required")
 	}
@@ -364,16 +469,20 @@ func (u *UseCase) RemoveTransaction(id string) error {
 }
 
 // RemoveTransactions deletes several historical transactions by id (bulk delete from the
-// dashboard's checkbox selection). Each id goes through RemoveTransaction individually — not a
-// single batched repository call — because it's the affected symbols' *position recompute* that
-// matters, not the delete itself: recomputePosition already replays whatever remains after each
-// removal, so deleting one-at-a-time keeps that invariant trivially correct even when a batch
-// spans several symbols. A failure on one id doesn't stop the rest; all errors are joined and
-// returned together so the caller can report exactly which ones failed.
+// dashboard's checkbox selection). Each id goes through the same per-id logic as
+// RemoveTransaction — not a single batched repository call — because it's the affected symbols'
+// *position recompute* that matters, not the delete itself: recomputePosition already replays
+// whatever remains after each removal, so deleting one-at-a-time keeps that invariant trivially
+// correct even when a batch spans several symbols. The whole batch runs under one lock
+// acquisition, not one per id, so it can't interleave with a concurrent SwitchPortfolio
+// mid-batch. A failure on one id doesn't stop the rest; all errors are joined and returned
+// together so the caller can report exactly which ones failed.
 func (u *UseCase) RemoveTransactions(ids []string) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
 	var errs []error
 	for _, id := range ids {
-		if err := u.RemoveTransaction(id); err != nil {
+		if err := u.removeTransaction(id); err != nil {
 			errs = append(errs, fmt.Errorf("remove transaction %s: %w", id, err))
 		}
 	}
@@ -387,7 +496,8 @@ func (u *UseCase) RemoveTransactions(ids []string) error {
 // being dropped or erroring — the same "don't fail a trade record over a cosmetic field" stance
 // RecordTransaction already takes for persistence. A symbol with no transactions left at all
 // naturally comes back as the zero-quantity Position{Symbol: symbol}, which applyPositionUpdate
-// treats as "remove it" — the same rule a real SELL-to-zero follows.
+// treats as "remove it" — the same rule a real SELL-to-zero follows. Lock-free: its one caller,
+// removeTransaction, already holds mu.
 func (u *UseCase) recomputePosition(symbol string) portfolio.Position {
 	var symbolTx []portfolio.Transaction
 	for _, t := range u.Transactions {
@@ -447,6 +557,8 @@ func randomTransactionID() (string, error) {
 // quote). See ComputeRiskSnapshot for what's actually computed; this method just supplies the
 // positions the decision engine and JSON API already expect to read.
 func (u *UseCase) ComputeRisk() (portfolio.RiskSnapshot, error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
 	return ComputeRiskSnapshot(u.Positions), nil
 }
 

@@ -215,8 +215,8 @@ rationale as a list.
 Authentication is opt-in: leave `ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH` unset and there's no login
 gate at all (matches every curl-based workflow above). Set both and every route except
 `/health`, `/metrics`, `/login`, and `/static/*` requires a session — the dashboard redirects to
-`/login`, while the raw JSON API returns a real `401` instead. English, Polish, German, and French
-are all fully supported, switchable per-request, persisted in a cookie.
+`/login`, while the raw JSON API returns a real `401` instead. English, Polish, German, French, and
+Spanish are all fully supported, switchable per-request, persisted in a cookie.
 
 ## REST API
 

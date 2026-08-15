@@ -3,6 +3,8 @@ package portfolio
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -508,6 +510,9 @@ func (f *fakeRepository) DeletePosition(portfolioID, symbol string) error {
 			kept = append(kept, p)
 		}
 	}
+	if f.positions == nil {
+		f.positions = make(map[string][]portfolio.Position)
+	}
 	f.positions[portfolioID] = kept
 	return nil
 }
@@ -593,6 +598,78 @@ func TestSwitchPortfolioScopesPositionsIndependently(t *testing.T) {
 	if len(all) != 2 {
 		t.Fatalf("expected GetAllPositions to combine both portfolios, got %+v", all)
 	}
+}
+
+// TestConcurrentAccessDoesNotRace pins the fix for a real gap: UseCase's exported fields used to
+// be read/written directly by every method with no synchronization at all, so two browser tabs
+// switching portfolios (or one switching while another records a transaction) at the same moment
+// could race — plain concurrent map/slice access is undefined behavior in Go, not just "might
+// show stale data". This hammers SwitchPortfolio, RecordTransaction, RemovePosition, and every
+// read path (GetPositions/GetTransactions/Snapshot/PortfolioList/ComputeRisk) from many
+// goroutines at once; run with `go test -race` (as CI does), it fails loudly on the first
+// unsynchronized access instead of passing silently the way it would have before mu existed.
+func TestConcurrentAccessDoesNotRace(t *testing.T) {
+	repo := &fakeRepository{}
+	uc, err := NewUseCaseWithRepository(repo)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	second, err := uc.CreatePortfolio("Second")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	firstID := uc.ActivePortfolioID
+
+	const goroutines = 8
+	const iterations = 25
+	var wg sync.WaitGroup
+	wg.Add(goroutines * 5)
+
+	for g := 0; g < goroutines; g++ {
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				id := firstID
+				if (g+i)%2 == 0 {
+					id = second.ID
+				}
+				_ = uc.SwitchPortfolio(id)
+			}
+		}(g)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				_ = uc.RecordTransaction(portfolio.Transaction{
+					Symbol: "AAPL", Type: "BUY", Quantity: 1, Price: 100,
+					Timestamp: "2026-0" + strconv.Itoa(1+i%9) + "-01T00:00:00Z",
+				})
+			}
+		}(g)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				_ = uc.RemovePosition("AAPL")
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				_, _ = uc.GetPositions()
+				_, _ = uc.GetTransactions()
+				uc.Snapshot()
+				uc.PortfolioList()
+				uc.ActivePortfolio()
+				_, _ = uc.ComputeRisk()
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				_, _ = uc.GetAllPositions()
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestCreatePortfolioEnforcesMaxPortfolios(t *testing.T) {

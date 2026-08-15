@@ -71,12 +71,13 @@ func (a *Application) StartAlertPolling() func() {
 
 	lastAction := make(map[string]string)
 	a.seedLastActions(lastAction)
+	pending := make(map[string]*pendingAlert)
 
 	go func() {
 		for {
 			select {
 			case <-ticker.C:
-				a.pollAlertsOnce(lastAction)
+				a.pollAlertsOnce(lastAction, pending)
 			case <-done:
 				ticker.Stop()
 				return
@@ -85,6 +86,15 @@ func (a *Application) StartAlertPolling() func() {
 	}()
 
 	return func() { close(done) }
+}
+
+// pendingAlert is a not-yet-fully-delivered alert notification: which channels still owe it, for
+// which action. Keyed by symbol in pollAlertsOnce's pending map. Scoped to the action it was
+// built for so a fresh action change never reuses a stale channel subset left over from a
+// different, superseded alert on the same symbol.
+type pendingAlert struct {
+	action  string
+	targets []notifications.Notifier
 }
 
 // seedLastActions primes the change-detection map from persisted history, so a restart does not
@@ -127,7 +137,10 @@ func (a *Application) seedLastActions(lastAction map[string]string) {
 // changed since the last poll, so the same signal isn't re-sent every tick. Every non-HOLD
 // action (including ACCUMULATE/WAIT) is still persisted and tracked for change-detection, but
 // only high-priority actions actually push a Discord notification — see isHighPriorityAction.
-func (a *Application) pollAlertsOnce(lastAction map[string]string) {
+// pending tracks, per symbol, any channels still owed a delivery from a previous poll's partial
+// failure (see pendingAlert) — retried here instead of the whole notification, so a channel that
+// already delivered doesn't get the same alert twice just because a sibling channel failed.
+func (a *Application) pollAlertsOnce(lastAction map[string]string, pending map[string]*pendingAlert) {
 	result, err := a.Alerts.Evaluate()
 	a.AlertPoll.record(time.Now().UTC(), err)
 	if err != nil {
@@ -150,20 +163,29 @@ func (a *Application) pollAlertsOnce(lastAction map[string]string) {
 		// tracked, or a later change would be measured against a stale baseline.
 		if !a.Notifications.Configured() || !isHighPriorityAction(action) {
 			lastAction[symbol] = action
+			delete(pending, symbol)
 			continue
 		}
 
-		if err := a.Notifications.SendEmbed(buildAlertEmbed(alert)); err != nil {
-			// Deliberately left unrecorded so the next poll retries. Marking it seen here — which
-			// is what this loop used to do, by recording before sending — turned a transient
-			// delivery failure into an alert the Author never saw and never would.
-			// ponytail: with multiple channels configured, one failing still retries the whole
-			// alert next poll even if another channel already delivered it — no per-channel
-			// delivery tracking. Fine for a single-user tool with occasional duplicate pings;
-			// add per-channel state if a channel starts flapping enough to be annoying.
+		// A pending entry only applies if it's for this same action — a fresh action change
+		// (superseding a still-undelivered older one) starts over against every client, since the
+		// channels that got the old alert still need to hear about the new one.
+		var targets []notifications.Notifier
+		if p, ok := pending[symbol]; ok && p.action == action {
+			targets = p.targets
+		}
+
+		failed, err := a.Notifications.SendEmbed(buildAlertEmbed(alert), targets)
+		if err != nil {
+			// Deliberately left unrecorded so the next poll retries — only against the channels
+			// that actually failed (failed), not the ones that already delivered it. Marking it
+			// seen here — which is what this loop used to do, by recording before sending — turned
+			// a transient delivery failure into an alert the Author never saw and never would.
+			pending[symbol] = &pendingAlert{action: action, targets: failed}
 			a.Logger.Error("failed to send alert notification", zap.String("symbol", symbol), zap.Error(err))
 			continue
 		}
+		delete(pending, symbol)
 		lastAction[symbol] = action
 		a.Metrics.AlertsSent.WithLabelValues(action).Inc()
 		a.Logger.Info("alert notification sent", zap.String("symbol", symbol), zap.String("action", action))

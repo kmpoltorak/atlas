@@ -7,7 +7,7 @@ import "testing"
 // quietly show English for that one string) rather than failing loudly.
 func TestEveryTranslationKeyHasAllLanguages(t *testing.T) {
 	for key, strs := range translations {
-		for _, lang := range []Lang{LangEN, LangPL, LangDE, LangFR} {
+		for _, lang := range []Lang{LangEN, LangPL, LangDE, LangFR, LangES} {
 			if _, ok := strs[lang]; !ok {
 				t.Errorf("translation key %q is missing a %q entry", key, lang)
 			}
@@ -16,7 +16,7 @@ func TestEveryTranslationKeyHasAllLanguages(t *testing.T) {
 }
 
 func TestTFallsBackToEnglishForUnknownLanguage(t *testing.T) {
-	if got := T(Lang("es"), "nav.dashboard"); got != "Dashboard" {
+	if got := T(Lang("it"), "nav.dashboard"); got != "Dashboard" {
 		t.Fatalf("expected an unrecognized language to fall back to English, got %q", got)
 	}
 }
@@ -45,6 +45,12 @@ func TestTReturnsFrenchForKnownKey(t *testing.T) {
 	}
 }
 
+func TestTReturnsSpanishForKnownKey(t *testing.T) {
+	if got := T(LangES, "nav.dashboard"); got != "Panel de control" {
+		t.Fatalf("expected the Spanish translation, got %q", got)
+	}
+}
+
 func TestActionLabelTranslatesKnownActions(t *testing.T) {
 	if got := actionLabel(LangPL, "BUY"); got != "KUPNO" {
 		t.Fatalf("expected KUPNO, got %q", got)
@@ -58,6 +64,9 @@ func TestActionLabelTranslatesKnownActions(t *testing.T) {
 	if got := actionLabel(LangFR, "BUY"); got != "ACHETER" {
 		t.Fatalf("expected ACHETER, got %q", got)
 	}
+	if got := actionLabel(LangES, "BUY"); got != "COMPRAR" {
+		t.Fatalf("expected COMPRAR, got %q", got)
+	}
 }
 
 func TestActionLabelPassesThroughUnknownActions(t *testing.T) {
@@ -67,10 +76,10 @@ func TestActionLabelPassesThroughUnknownActions(t *testing.T) {
 }
 
 func TestValidLang(t *testing.T) {
-	if !ValidLang(LangEN) || !ValidLang(LangPL) || !ValidLang(LangDE) || !ValidLang(LangFR) {
-		t.Fatal("expected en, pl, de, and fr to all be valid")
+	if !ValidLang(LangEN) || !ValidLang(LangPL) || !ValidLang(LangDE) || !ValidLang(LangFR) || !ValidLang(LangES) {
+		t.Fatal("expected en, pl, de, fr, and es to all be valid")
 	}
-	if ValidLang(Lang("es")) || ValidLang(Lang("")) {
+	if ValidLang(Lang("it")) || ValidLang(Lang("")) {
 		t.Fatal("expected an unsupported language to be invalid")
 	}
 }
