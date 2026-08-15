@@ -53,6 +53,15 @@ jobs:
     env:
       TEST_DATABASE_DSN: "host=localhost port=5432 user=atlas password=atlas dbname=atlas sslmode=disable"
       TEST_REDIS_ADDR: "localhost:6379"
+      # Same gating pattern as the two above, for internal/application/ml's real-inference tests
+      # (onnx_integration_test.go). Without it those four tests skip silently, leaving the entire
+      # LoadOnnxModel -> PredictCorrectionProbability path — the one that needs the real native
+      # library, not the mocked onnxSession — untested everywhere. Path matches where the install
+      # step below puts the .so.
+      TEST_ONNXRUNTIME_LIB_PATH: "/opt/onnxruntime/lib/libonnxruntime.so"
+      # Pinned to the same version Dockerfile's onnxruntime stage ships, so CI exercises the
+      # library the image actually runs against rather than whatever is newest at the time.
+      ONNXRUNTIME_VERSION: "1.28.0"
     steps:
       - uses: actions/checkout@v7
 
@@ -72,6 +81,24 @@ jobs:
             echo "Applying $f"
             PGPASSWORD=atlas psql -h localhost -U atlas -d atlas -v ON_ERROR_STOP=1 -f "$f"
           done
+
+      # The Go binding (yalue/onnxruntime_go) dlopens this at runtime rather than linking it, so
+      # it's needed only for the tests, not for `go build` — which is why the build and vulnerability
+      # scan jobs don't install it. libgomp1 is what onnxruntime's CPU execution provider links
+      # against; it's already on the GitHub-hosted Ubuntu image via gcc, installed explicitly here
+      # so a slimmer future runner image doesn't turn this into a confusing dlopen failure.
+      - name: Install ONNX Runtime
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq libgomp1
+          curl -fsSL -o /tmp/ort.tgz \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz"
+          sudo mkdir -p /opt/onnxruntime
+          sudo tar -xzf /tmp/ort.tgz -C /opt/onnxruntime --strip-components=1
+          rm /tmp/ort.tgz
+          test -f "$TEST_ONNXRUNTIME_LIB_PATH" || {
+            echo "libonnxruntime.so not found at $TEST_ONNXRUNTIME_LIB_PATH after extraction"
+            exit 1
+          }
 
       - name: Verify gofmt
         run: |

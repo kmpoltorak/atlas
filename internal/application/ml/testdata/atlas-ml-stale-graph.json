@@ -1,0 +1,15 @@
+{
+  "version": "stale-graph",
+  "trained_at": 1786799454.017209,
+  "feature_order": [
+    "rsi",
+    "ema_dist",
+    "macd_pct",
+    "tr_pct",
+    "atr_pct",
+    "rvol_20",
+    "rvol_50",
+    "volume"
+  ],
+  "label_definition": "fixture for the graph/sidecar mismatch guard; never used for inference"
+}
