@@ -2,6 +2,8 @@ package ml
 
 import (
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 
 	domainml "atlas/internal/domain/ml"
@@ -127,5 +129,30 @@ func TestUseCasePredictWithoutRecoveryModelLeavesRecoveryProbabilityZero(t *test
 	}
 	if prediction.RecoveryProbability != 0 {
 		t.Fatalf("expected RecoveryProbability to stay 0 without a recovery model loaded, got %v", prediction.RecoveryProbability)
+	}
+}
+
+// TestLoadOnnxModelRejectsAGraphNarrowerThanItsSidecarClaims pins the bug that made this whole
+// file worth wiring into CI. testdata/atlas-ml-stale-graph.* is a graph built for the old
+// 5-feature layout carrying a sidecar that claims the current 8 — so featureOrderMatches, which
+// only ever reads the sidecar, waves it through. Before graphFeatureWidthMatches existed, such a
+// model loaded cleanly and then failed every inference at runtime with an opaque "Got invalid
+// dimensions for input" from onnxruntime; in production that would be a startup that looks
+// healthy and a prediction path that is dead. The load must fail here instead, naming both widths.
+func TestLoadOnnxModelRejectsAGraphNarrowerThanItsSidecarClaims(t *testing.T) {
+	libPath := os.Getenv("TEST_ONNXRUNTIME_LIB_PATH")
+	if libPath == "" {
+		t.Skip("TEST_ONNXRUNTIME_LIB_PATH not set; skipping real ONNX Runtime integration test")
+	}
+
+	model, err := LoadOnnxModel("testdata/atlas-ml-stale-graph.onnx", libPath)
+	if err == nil {
+		model.Close()
+		t.Fatal("expected a load error for a graph declaring fewer features than FeatureOrder, got none")
+	}
+	for _, want := range []string{"5", strconv.Itoa(len(FeatureOrder)), "feature layout"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q should mention %q so the fix is obvious from the message alone", err, want)
+		}
 	}
 }

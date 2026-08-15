@@ -69,12 +69,55 @@ func LoadOnnxModel(modelPath, libPath string) (*OnnxModel, error) {
 		}
 	}
 
+	if err := graphFeatureWidthMatches(modelPath); err != nil {
+		return nil, err
+	}
+
 	session, err := ort.NewDynamicAdvancedSession(modelPath, []string{"features"}, []string{"probabilities"}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("load onnx model %s: %w", modelPath, err)
 	}
 
 	return &OnnxModel{session: session, Version: metadata.Version}, nil
+}
+
+// graphFeatureWidthMatches checks the model graph's own declared input width against FeatureOrder.
+//
+// The feature_order check above reads the sidecar JSON, which is a claim about the model rather
+// than the model itself — regenerate one without the other and it passes while the graph still
+// expects the old layout. That is not hypothetical: the committed test fixture spent some time in
+// exactly that state (sidecar updated from 5 features to 8, graph left at 5), and because the only
+// tests that would have caught it skip without a native onnxruntime, nothing surfaced it. In
+// production the same mismatch would have loaded cleanly at startup and then failed every single
+// prediction at runtime, which is the worst place to find out.
+//
+// A nil/absent shape is accepted rather than rejected: some exporters leave the dimension
+// symbolic, and refusing to load then would break working models to catch a rarer bug than the
+// one this guards.
+func graphFeatureWidthMatches(modelPath string) error {
+	inputs, _, err := ort.GetInputOutputInfo(modelPath)
+	if err != nil {
+		return fmt.Errorf("inspect onnx model %s: %w", modelPath, err)
+	}
+	for _, input := range inputs {
+		if input.Name != "features" {
+			continue
+		}
+		dims := input.Dimensions
+		if len(dims) == 0 {
+			return nil
+		}
+		// Trailing dimension is the feature width; the leading one is the batch axis, normally
+		// symbolic (-1) since train.py exports with FloatTensorType([None, len(FEATURE_ORDER)]).
+		width := dims[len(dims)-1]
+		if width > 0 && int(width) != len(FeatureOrder) {
+			return fmt.Errorf(
+				"onnx model %s declares %d input features but this build expects %d (%v) — the model was trained on a different feature layout; retrain it or regenerate the metadata sidecar to match",
+				modelPath, width, len(FeatureOrder), FeatureOrder)
+		}
+		return nil
+	}
+	return nil
 }
 
 func loadModelMetadata(modelPath string) (modelMetadata, error) {

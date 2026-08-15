@@ -207,6 +207,17 @@ definition it was trained against — `internal/application/ml.LoadOnnxModel` re
 model whose sidecar `feature_order` doesn't match Go's expected order, so a mismatched/stale
 model fails loudly at startup instead of silently mis-scoring.
 
+That check alone is not enough, because the sidecar is a *claim about* the model rather than the
+model: regenerate one without the other and it passes while the graph still expects the old
+layout. `LoadOnnxModel` therefore also reads the ONNX graph's own declared input width and
+rejects a model that disagrees with `FeatureOrder`. This is not hypothetical — the committed test
+fixture spent time in exactly that state (sidecar updated from 5 features to 8, graph left at 5),
+and since the tests that would have caught it skip without a native onnxruntime, nothing surfaced
+it until CI was given the library. Without the graph check, such a model loads cleanly at startup
+and then fails *every* prediction at runtime with an opaque dimensions error from onnxruntime.
+A symbolic/absent dimension is accepted rather than rejected, so exporters that leave the width
+unspecified still work.
+
 ## Model selection and retraining
 
 Both models can be switched at runtime from the Account dashboard page (`/dashboard/account`),
