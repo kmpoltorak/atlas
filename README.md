@@ -120,16 +120,31 @@ docker compose up -d
 ```
 
 That's it — every setting has a working default baked into `docker-compose.yml`, so the stack
-comes up with zero configuration. What you get:
+comes up with zero configuration. Every container it defines:
 
-| Service | URL | Purpose |
-|---|---|---|
-| `atlas-api` | http://localhost:8080 | REST API + web dashboard |
-| `timescaledb` | localhost:5432 | Primary database |
-| `redis` | localhost:6379 | Cache |
-| `prometheus` | http://localhost:9090 | Metrics scraping |
-| `alertmanager` | http://localhost:9093 | Infra alert routing |
-| `grafana` | http://localhost:3000 | Dashboards (default login `admin`/`admin`) |
+| Service | Address | Persists in | Purpose |
+|---|---|---|---|
+| `atlas-api` | http://localhost:8080 | — | REST API + web dashboard |
+| `timescaledb` | localhost:5432 | `timescaledb-data` | Primary database |
+| `redis` | localhost:6379 | `redis-data` | Cache and session store |
+| `prometheus` | http://localhost:9090 | `prometheus-data` | Metrics scraping |
+| `alertmanager` | http://localhost:9093 | `alertmanager-data` | Infra alert routing |
+| `grafana` | http://localhost:3000 | `grafana-data` | Dashboards (default login `admin`/`admin`) |
+| `atlas-trainer` | internal only, port 8091 | `trainer-gomod-cache` | ML training sidecar. Same kind of long-lived container as the rest — HTTP service, healthcheck, `restart: unless-stopped` — but behind a Compose profile, so it needs `docker compose --profile trainer up -d` once; after that it stays up like everything else |
+
+The trainer is gated that way because it builds a full Python/XGBoost toolchain nothing else
+needs, and most sessions never train anything. It publishes no host port: atlas-api reaches it
+in-network via `TRAINER_URL` and calls its `/train`, `/status` and `/delete` endpoints, which is
+what backs the Account page's "Train new candidate" and model-delete buttons — training is
+triggered on demand *through* a continuously running service, not by starting a one-shot
+container. Until you start it those buttons just explain how to run `training/retrain.sh` by
+hand, nothing else degrades, and `up{job="atlas-trainer"}` reads as down in Prometheus, which is
+expected rather than a fault.
+
+**What persists.** The named volumes above survive `docker compose down` and are destroyed by
+`docker compose down -v`. Trained models are the exception: `./training/models` is a bind mount,
+read-only into atlas-api and read-write into the trainer, which is how a model the sidecar trains
+becomes selectable on atlas-api's Account page without a rebuild.
 
 Open http://localhost:8080/ for the web UI, or start collecting history for a symbol
 directly via the API:
@@ -227,11 +242,12 @@ shapes: [docs/api.md](docs/api.md).
 |---|---|---|
 | `/health` | GET | Liveness check, plus a per-dependency status for database/redis/trainer/prometheus/alertmanager/grafana. Only database and redis affect the overall status (and the 503) — atlas-api can serve requests without the rest |
 | `/metrics` | GET | Prometheus exposition |
+| `/swagger/index.html` | GET | Interactive API docs, generated from the handler annotations — "Try it out" reuses your dashboard session |
 | `/symbols` | GET | List known symbols |
 | `/prices` | GET | Fetch/collect OHLCV history for a symbol |
-| `/portfolio` | GET/POST | View positions + risk / record a transaction |
-| `/transactions` | GET | List recorded transactions |
-| `/watchlist` | GET/POST | View / add tracked symbols |
+| `/portfolio` | GET/POST/DELETE | View positions + risk / record a transaction / clear a symbol's position aggregate (`?symbol=`) |
+| `/transactions` | GET/DELETE | List recorded transactions / remove one by id (`?id=`) and recompute the affected position |
+| `/watchlist` | GET/POST/DELETE | View / add / remove (`?symbol=`) tracked symbols |
 | `/watchlist/export` | GET | Download the watchlist as a JSON file |
 | `/watchlist/import` | POST | Apply an exported watchlist — `?mode=replace` mirrors the file exactly, default merges |
 | `/alerts` | GET | Evaluate the watchlist for non-HOLD signals |
@@ -392,7 +408,11 @@ doesn't have a real container registry or production cluster to target.
 | [docs/](docs/) | Deep dives: `architecture.md`, `decision_engine.md`, `ml.md`, `backtesting.md`, `database.md`, `deployment.md`, `api.md` |
 | [training/README.md](training/README.md) | ML training pipeline runbook |
 | [deploy/README.md](deploy/README.md), [deploy/RUNBOOK.md](deploy/RUNBOOK.md) | Kubernetes apply instructions and the disaster-recovery runbook |
+| [GETTING_STARTED.md](GETTING_STARTED.md) | Plain-language walkthrough for using the dashboard — no technical background assumed |
+| [PRODUCT.md](PRODUCT.md) | What Atlas is for and who it's for, ahead of how it's built |
 | [PROMPT.md](PROMPT.md) | The standing development rules this project is built against |
+| [CODING_GUIDELINES.md](CODING_GUIDELINES.md) | Conventions this codebase is held to |
+| [skills/](skills/) | Domain notes (Go, Docker, TimescaleDB, Prometheus, Grafana, ML, finance) accumulated while building |
 | [architecture-final.md](architecture-final.md), [database-final.md](database-final.md) | The original approved design proposals (point-in-time, kept as historical record) |
 
 As of this writing, every phase in `implementation-plan.md` is either fully implemented or
