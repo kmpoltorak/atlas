@@ -23,9 +23,12 @@
   `wget -qO- http://localhost:8091/health`, which is fine there: its image is the full
   `golang:1.26.1-bookworm` (not `-slim`), which does ship `wget`.
 - Volumes: `timescaledb-data`/`redis-data`/`prometheus-data`/`grafana-data`/`alertmanager-data`
-  are named/persistent; `./training/models:/models:ro` is a read-only bind mount so
+  are named/persistent, plus `trainer-gomod-cache` holding atlas-trainer's Go module cache (that
+  service runs via `go run`, so without it every container recreation re-downloads the same
+  dependencies). `./training/models:/models:ro` is a read-only bind mount so
   `MODEL_PATH`/`RECOVERY_MODEL_PATH` (or the Account dashboard's model picker — see `ml.md`) can
-  reference a locally-trained model without rebuilding the image.
+  reference a locally-trained model without rebuilding the image; atlas-trainer mounts the whole
+  repo read-write instead, since `retrain.sh` writes into `training/data`/`training/models`.
 - Graceful shutdown: `cmd/api/main.go` handles `SIGTERM`/`SIGINT` and calls `Application.Close()`
   (releases DB/Redis/ONNX sessions) before exiting.
 - Real secrets never live in `docker-compose.yml` — they're `${VAR:-default}` references reading
