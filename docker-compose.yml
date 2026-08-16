@@ -89,18 +89,11 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # Backs the Account dashboard's "Train new candidate" button (cmd/trainer) — off by default
-  # (profile "trainer"): start it explicitly with `docker compose --profile trainer up -d` if
-  # you want the GUI trigger. Without it running, training/retrain.sh is still fully usable by
-  # hand or from cron, exactly as before this service existed — see training/README.md. Never
-  # exposed outside the compose network (no "ports:" below) — atlas-api reaches it at
-  # http://atlas-trainer:8091 (TRAINER_URL above), nothing else should.
   atlas-trainer:
     build:
       context: .
       dockerfile: training/Dockerfile
     container_name: atlas-trainer
-    profiles: ["trainer"]
     volumes:
       # Read-write, the whole repo: retrain.sh needs cmd/export-training-data's Go source and
       # training/train.py, and writes into training/data/ and training/models/ — the same
