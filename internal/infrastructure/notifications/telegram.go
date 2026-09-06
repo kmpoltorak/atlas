@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -29,7 +30,7 @@ type telegramPayload struct {
 
 // SendEmbed has no Telegram equivalent to render as a card, so it flattens Embed into Markdown:
 // a bold title, the description, then one "Name: Value" line per field.
-func (c *TelegramClient) SendEmbed(embed Embed) error {
+func (c *TelegramClient) SendEmbed(ctx context.Context, embed Embed) error {
 	var b strings.Builder
 	if embed.Title != "" {
 		fmt.Fprintf(&b, "*%s*\n", embed.Title)
@@ -43,10 +44,10 @@ func (c *TelegramClient) SendEmbed(embed Embed) error {
 	if embed.Footer != nil {
 		fmt.Fprintf(&b, "_%s_", embed.Footer.Text)
 	}
-	return c.post(strings.TrimSpace(b.String()))
+	return c.post(ctx, strings.TrimSpace(b.String()))
 }
 
-func (c *TelegramClient) post(text string) error {
+func (c *TelegramClient) post(ctx context.Context, text string) error {
 	if c.BotToken == "" || c.ChatID == "" {
 		return fmt.Errorf("bot token and chat id are required")
 	}
@@ -58,7 +59,12 @@ func (c *TelegramClient) post(text string) error {
 		return err
 	}
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", c.BotToken)
-	resp, err := c.Client.Post(url, "application/json", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.Client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -68,3 +74,6 @@ func (c *TelegramClient) post(text string) error {
 	}
 	return nil
 }
+
+// Name identifies this channel in the alert outbox — see Notifier.
+func (c *TelegramClient) Name() string { return "telegram" }

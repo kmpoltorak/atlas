@@ -1,5 +1,7 @@
 package portfolio
 
+import "time"
+
 // Portfolio is a named bucket of positions/transactions — e.g. "Main", "Safe", "Speculative".
 // Every Atlas install starts with exactly one (auto-created on first boot); up to
 // MaxPortfolios may exist at once (see application/portfolio.UseCase.CreatePortfolio).
@@ -17,7 +19,42 @@ type Position struct {
 	Quantity     float64 `json:"quantity"`
 	AverageCost  float64 `json:"average_cost"`
 	CurrentPrice float64 `json:"current_price"`
+
+	// PricedAt and PriceSource say where CurrentPrice came from and when, so every consumer —
+	// the dashboard, the JSON API and the decision engine — is reading the same valuation with
+	// the same caveats attached, instead of each one silently resolving the price its own way.
+	//
+	// This exists because they used to disagree. The dashboard overlaid a live quote; the
+	// decision engine read the raw column, which only ever holds the price of the last recorded
+	// trade. Buy at 100, watch it fall to 70, and the screen showed a loss while the engine
+	// scored the position's risk as though it were still worth 100.
+	PricedAt    time.Time   `json:"priced_at,omitzero"`
+	PriceSource PriceSource `json:"price_source,omitempty"`
 }
+
+// PriceSource distinguishes a real market quote from the fallback. The distinction is the whole
+// point: an absent quote must not be presented as a current price.
+type PriceSource string
+
+const (
+	// PriceFromQuote: a market quote collected by the alert loop (see refreshWatchlistQuotes).
+	PriceFromQuote PriceSource = "quote"
+	// PriceFromTrade: no quote available, so CurrentPrice is the price of the position's last
+	// recorded transaction. It is not a valuation — unrealized P&L computed against it is
+	// structurally zero, which reads as "no loss" but means "no information".
+	PriceFromTrade PriceSource = "trade"
+)
+
+// IsLive reports whether CurrentPrice is a market quote young enough to value the position with.
+// maxAge is the caller's tolerance; markets close, so anything under a few days is normal.
+func (p Position) IsLive(now time.Time, maxAge time.Duration) bool {
+	return p.PriceSource == PriceFromQuote && !p.PricedAt.IsZero() && now.Sub(p.PricedAt) <= maxAge
+}
+
+// QuoteMaxAge is how old a quote may be before Atlas stops treating it as a current valuation.
+// Four days, not one: a Friday quote is still the last traded price all through a long weekend,
+// and calling that stale would flag every Monday morning as degraded.
+const QuoteMaxAge = 4 * 24 * time.Hour
 
 type Transaction struct {
 	// ID is empty for a transaction not yet recorded (e.g. a caller-built value passed to

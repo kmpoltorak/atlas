@@ -1,51 +1,69 @@
 package config
 
 import (
+	"errors"
+	"golang.org/x/crypto/bcrypt"
 	"os"
 	"strconv"
 )
 
 type Config struct {
-	HTTPAddr           string
-	LogLevel           string
-	DatabaseHost       string
-	DatabasePort       string
-	DatabaseName       string
-	DatabaseUser       string
-	DatabasePassword   string
-	RedisHost          string
-	RedisPort          string
-	DiscordWebhookURL  string
-	SlackWebhookURL    string
-	TelegramBotToken   string
-	TelegramChatID     string
-	CollectorWindow    int
-	AlertPollSeconds   int
-	MLEnabled          bool
-	ModelPath          string
-	RecoveryModelPath  string
-	LibOnnxRuntimePath string
-	MLModelsDir        string
-	TrainerURL         string
-	AdminUsername      string
-	AdminPasswordHash  string
-	CookieSecure       bool
-	PrometheusURL      string
-	AlertmanagerURL    string
-	GrafanaURL         string
+	AuthDisabled      bool
+	HTTPAddr          string
+	LogLevel          string
+	DatabaseHost      string
+	DatabasePort      string
+	DatabaseName      string
+	DatabaseUser      string
+	DatabasePassword  string
+	DatabaseSSLMode   string
+	RedisHost         string
+	RedisPort         string
+	RedisPassword     string
+	RedisTLS          bool
+	DiscordWebhookURL string
+	SlackWebhookURL   string
+	TelegramBotToken  string
+	TelegramChatID    string
+	CollectorWindow   int
+	AlertPollSeconds  int
+	// DerivedRetentionDays bounds how long recomputable history (indicators, recommendations,
+	// predictions) is kept. 0 — the default — keeps everything: automatic deletion of data the
+	// operator can still look at is opt-in, never something an upgrade turns on silently.
+	DerivedRetentionDays int
+	MLEnabled            bool
+	ModelPath            string
+	RecoveryModelPath    string
+	LibOnnxRuntimePath   string
+	MLModelsDir          string
+	TrainerURL           string
+	AdminUsername        string
+	AdminPasswordHash    string
+	CookieSecure         bool
+	PrometheusURL        string
+	AlertmanagerURL      string
+	GrafanaURL           string
 }
 
 func Load() Config {
 	return Config{
-		HTTPAddr:          ":" + envOrDefault("SERVER_PORT", "8080"),
-		LogLevel:          envOrDefault("LOG_LEVEL", "info"),
-		DatabaseHost:      envOrDefault("DATABASE_HOST", "timescaledb"),
-		DatabasePort:      envOrDefault("DATABASE_PORT", "5432"),
-		DatabaseName:      envOrDefault("DATABASE_NAME", "atlas"),
-		DatabaseUser:      envOrDefault("DATABASE_USER", "atlas"),
-		DatabasePassword:  envOrDefault("DATABASE_PASSWORD", "atlas"),
+		AuthDisabled:     envOrDefault("AUTH_DISABLED", "false") == "true",
+		HTTPAddr:         ":" + envOrDefault("SERVER_PORT", "8080"),
+		LogLevel:         envOrDefault("LOG_LEVEL", "info"),
+		DatabaseHost:     envOrDefault("DATABASE_HOST", "timescaledb"),
+		DatabasePort:     envOrDefault("DATABASE_PORT", "5432"),
+		DatabaseName:     envOrDefault("DATABASE_NAME", "atlas"),
+		DatabaseUser:     envOrDefault("DATABASE_USER", "atlas"),
+		DatabasePassword: envOrDefault("DATABASE_PASSWORD", "atlas"),
+		// "disable" keeps the docker-compose stack (Postgres on a private compose network with
+		// no server certificate) working out of the box. Validate refuses it once COOKIE_SECURE
+		// is true, i.e. in any deployment actually served over TLS — see deploy/configmap.yaml,
+		// which sets "require".
+		DatabaseSSLMode:   envOrDefault("DATABASE_SSLMODE", "disable"),
 		RedisHost:         envOrDefault("REDIS_HOST", "redis"),
 		RedisPort:         envOrDefault("REDIS_PORT", "6379"),
+		RedisPassword:     envOrDefault("REDIS_PASSWORD", ""),
+		RedisTLS:          envOrDefault("REDIS_TLS", "false") == "true",
 		DiscordWebhookURL: envOrDefault("DISCORD_WEBHOOK_URL", ""),
 		SlackWebhookURL:   envOrDefault("SLACK_WEBHOOK_URL", ""),
 		TelegramBotToken:  envOrDefault("TELEGRAM_BOT_TOKEN", ""),
@@ -59,6 +77,11 @@ func Load() Config {
 		// providers/yahoo.go's User-Agent workaround for why that's a real concern here).
 		// internal/app/alerts_loop.go duplicates this as a fallback for the same reason.
 		AlertPollSeconds: envOrDefaultInt("ALERT_POLL_INTERVAL_SECONDS", 300),
+		// The alert loop writes one recommendation per watched symbol per poll (HOLD included),
+		// so these tables grow without bound at ~288 rows/symbol/day. Set this to e.g. 365 on a
+		// long-lived instance; BackupAll builds the whole database as one in-memory JSON
+		// document, and that is what eventually hits the container memory limit.
+		DerivedRetentionDays: envOrDefaultInt("DERIVED_RETENTION_DAYS", 0),
 		// True by default (unchanged behavior). Set ML_ENABLED=false to make the decision engine
 		// score BUY/SELL/HOLD from the technical term alone (RSI/MACD/Bollinger/momentum, see
 		// decision.Orchestrator.buildTechnicalScore) — skipping the ML+Portfolio+Risk blend
@@ -130,4 +153,45 @@ func envOrDefaultInt(key string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+// Validate rejects partial credentials and requires explicit opt-in to local no-auth mode.
+func (c Config) Validate() error {
+	if (c.AdminUsername == "") != (c.AdminPasswordHash == "") {
+		return errors.New("ADMIN_USERNAME and ADMIN_PASSWORD_HASH must both be configured")
+	}
+	if c.AdminUsername == "" {
+		if !c.AuthDisabled {
+			return errors.New("configure admin credentials or explicitly set AUTH_DISABLED=true for local use")
+		}
+	} else if _, err := bcrypt.Cost([]byte(c.AdminPasswordHash)); err != nil {
+		return errors.New("ADMIN_PASSWORD_HASH must be a valid bcrypt hash")
+	}
+	if c.CollectorWindow <= 0 || c.CollectorWindow > 730 {
+		return errors.New("COLLECTOR_WINDOW_DAYS must be between 1 and 730")
+	}
+	if c.AlertPollSeconds <= 0 {
+		return errors.New("ALERT_POLL_INTERVAL_SECONDS must be positive")
+	}
+	if c.DerivedRetentionDays < 0 {
+		return errors.New("DERIVED_RETENTION_DAYS must be 0 (keep everything) or positive")
+	}
+	// CookieSecure is the one setting that already distinguishes the two deployment profiles
+	// correctly in both manifests: false in docker-compose.yml (plain HTTP on loopback, a
+	// laptop), true in deploy/configmap.yaml (ingress.yaml terminates TLS). Rather than guessing
+	// from hostnames — "redis" and "timescaledb" name a private compose bridge in one profile
+	// and a cluster Service in the other — the backend links inherit that same answer: a real
+	// TLS-fronted deployment must not reach its database and cache in plaintext.
+	if c.CookieSecure {
+		if c.DatabaseSSLMode == "disable" {
+			return errors.New("DATABASE_SSLMODE=disable is not allowed in a TLS deployment; set it to require or stricter")
+		}
+		if c.RedisPassword == "" {
+			return errors.New("REDIS_PASSWORD is required in a TLS deployment")
+		}
+		if !c.RedisTLS {
+			return errors.New("REDIS_TLS must be true in a TLS deployment")
+		}
+	}
+	return nil
 }

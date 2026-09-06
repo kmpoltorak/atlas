@@ -7,14 +7,16 @@ import "atlas/internal/domain/portfolio"
 // except GetAllPositions, which deliberately reads across every portfolio at once — the decision
 // engine's HasPosition/risk scoring treats "do I hold this symbol" as a whole-account question,
 // not a per-portfolio one (see decision.Orchestrator.blendMLAndPortfolio).
+// There are deliberately no per-row write methods here. Every mutation goes through
+// AtomicRepository.MutatePortfolio — one transaction that commits the ledger and the recomputed
+// positions together (see mutation.go). Individual SavePositions/SaveTransaction/Delete* methods
+// still exist on the persistence type, but keeping them in this interface meant the use case had
+// a second, non-atomic write path it could fall back to by accident: exactly the half-committed
+// state MutatePortfolio was introduced to eliminate. A write path that must not be used is better
+// removed than commented.
 type Repository interface {
 	GetPositions(portfolioID string) ([]portfolio.Position, error)
-	SavePositions(portfolioID string, positions []portfolio.Position) error
-	// SaveTransaction persists a transaction and returns its generated id.
-	SaveTransaction(portfolioID string, tx portfolio.Transaction) (id string, err error)
 	GetTransactions(portfolioID string) ([]portfolio.Transaction, error)
-	DeleteTransaction(id string) error
-	DeletePosition(portfolioID, symbol string) error
 
 	// GetAllPositions aggregates every portfolio's positions by symbol (summed quantity,
 	// quantity-weighted average cost) — see decision engine usage above.

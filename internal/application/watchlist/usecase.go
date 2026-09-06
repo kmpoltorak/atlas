@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"atlas/internal/domain/watchlist"
 )
@@ -12,8 +14,32 @@ import (
 // working copy; when Repository is set, it's hydrated from persisted state on construction
 // and written through on every mutation, so tracked symbols survive restarts.
 type UseCase struct {
+	mu         sync.RWMutex
 	Items      []watchlist.Item
 	Repository Repository
+	// shared points back at the process-wide use case a request-scoped view was made from, and is
+	// nil on that process-wide one. Only Reload needs it — see ForRequest.
+	shared *UseCase
+}
+
+// ForRequest returns a view that persists through repository — the request-scoped storage handle
+// — so a watchlist write started by a client that then disconnects is cancelled rather than
+// running on against nobody.
+//
+// Scoping only Application.Storage was not enough, the same way it was not enough for portfolio
+// views (see portfolio.UseCase.ForPortfolio): this use case holds its own repository reference,
+// so however carefully a handler scoped its storage handle, every watchlist query still went
+// through the original one.
+//
+// The view starts with no in-memory items, which costs nothing: with a repository configured,
+// List re-reads, Import runs inside ReplaceWatchlist's transaction, and Add/Remove write through.
+// The in-memory copy is only the no-database fallback, and a no-database use case is not scoped
+// at all.
+func (u *UseCase) ForRequest(repository Repository) *UseCase {
+	if u == nil || u.Repository == nil || repository == nil {
+		return u
+	}
+	return &UseCase{Repository: repository, shared: u}
 }
 
 func NewUseCase() *UseCase {
@@ -33,6 +59,21 @@ func NewUseCaseWithRepository(repo Repository) (*UseCase, error) {
 // Reload re-reads Items from Repository, discarding whatever the in-memory working copy
 // currently holds — see portfolio.UseCase.Reload, the same fix for the same class of bug.
 func (u *UseCase) Reload() error {
+	u.mu.Lock()
+	err := u.reload()
+	u.mu.Unlock()
+	// A request-scoped view is discarded when the request ends, so reloading only that would leave
+	// the long-lived copy — the one the alert loop and every other request start from — holding
+	// whatever the bulk change just invalidated.
+	if u.shared != nil {
+		if sharedErr := u.shared.Reload(); err == nil {
+			err = sharedErr
+		}
+	}
+	return err
+}
+
+func (u *UseCase) reload() error {
 	if u.Repository == nil {
 		u.Items = nil
 		return nil
@@ -60,33 +101,60 @@ func NormalizeSymbol(symbol string) string {
 
 // Add tracks a symbol. Adding an already-tracked symbol is a no-op.
 func (u *UseCase) Add(symbol string, addedAt string) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.add(symbol, addedAt)
+}
+
+func (u *UseCase) add(symbol string, addedAt string) error {
 	symbol = NormalizeSymbol(symbol)
 	if symbol == "" {
 		return errors.New("symbol is required")
 	}
-	for _, item := range u.Items {
-		if item.Symbol == symbol {
-			return nil
-		}
-	}
 	item := watchlist.Item{Symbol: symbol, AddedAt: addedAt}
-	u.Items = append(u.Items, item)
 	if u.Repository != nil {
+		// Another process may have removed a locally cached item. Let the
+		// repository decide whether this insert is a duplicate.
 		if err := u.Repository.SaveItem(item); err != nil {
 			return err
 		}
 	}
+	for _, existing := range u.Items {
+		if existing.Symbol == symbol {
+			return nil
+		}
+	}
+	u.Items = append(u.Items, item)
 	return nil
 }
 
-// List returns every tracked symbol.
+// List returns every tracked symbol, re-reading persisted state when a Repository is configured.
+//
+// Read-through rather than serving the in-memory copy: with more than one replica, a symbol added
+// on one process is invisible to the other until something reloads, and "the watchlist depends on
+// which pod answered" is not a state this can be in. The list is a handful of rows behind one
+// indexed query, so the cost of being right here is negligible. The in-memory copy remains as the
+// no-database fallback (tests, a degraded start).
 func (u *UseCase) List() ([]watchlist.Item, error) {
-	return u.Items, nil
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.Repository != nil {
+		if err := u.reload(); err != nil {
+			return nil, err
+		}
+	}
+	return append([]watchlist.Item(nil), u.Items...), nil
 }
 
 // Remove untracks a symbol. Removing a symbol that isn't tracked is a no-op, matching Add's
 // idempotent stance.
 func (u *UseCase) Remove(symbol string) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.remove(symbol)
+}
+
+func (u *UseCase) remove(symbol string) error {
 	symbol = NormalizeSymbol(symbol)
 	if symbol == "" {
 		return errors.New("symbol is required")
@@ -97,10 +165,12 @@ func (u *UseCase) Remove(symbol string) error {
 			kept = append(kept, item)
 		}
 	}
-	u.Items = kept
 	if u.Repository != nil {
-		return u.Repository.DeleteItem(symbol)
+		if err := u.Repository.DeleteItem(symbol); err != nil {
+			return err
+		}
 	}
+	u.Items = kept
 	return nil
 }
 
@@ -109,9 +179,15 @@ func (u *UseCase) Remove(symbol string) error {
 // call, matching portfolio.UseCase.RemovePositions/RemoveTransactions' reasoning. Errors from
 // individual symbols are joined rather than aborting the whole batch.
 func (u *UseCase) RemoveMany(symbols []string) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.removeMany(symbols)
+}
+
+func (u *UseCase) removeMany(symbols []string) error {
 	var errs []error
 	for _, symbol := range symbols {
-		if err := u.Remove(symbol); err != nil {
+		if err := u.remove(symbol); err != nil {
 			errs = append(errs, fmt.Errorf("remove watchlist item %s: %w", symbol, err))
 		}
 	}
@@ -177,6 +253,12 @@ type ImportResult struct {
 // now. Symbols already tracked keep their existing AddedAt — a re-import never rewrites history
 // that is already there.
 func (u *UseCase) Import(items []watchlist.Item, mode ImportMode, now string) (ImportResult, error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.importItems(items, mode, now)
+}
+
+func (u *UseCase) importItems(items []watchlist.Item, mode ImportMode, now string) (ImportResult, error) {
 	if mode != ImportMerge && mode != ImportReplace {
 		return ImportResult{}, fmt.Errorf("unknown import mode %q", mode)
 	}
@@ -184,7 +266,14 @@ func (u *UseCase) Import(items []watchlist.Item, mode ImportMode, now string) (I
 		return ImportResult{}, fmt.Errorf("import carries %d items, more than the %d maximum", len(items), MaxImportItems)
 	}
 
-	// Validate and canonicalise first, mutating nothing.
+	// An empty `now` means the caller has no opinion about when these were tracked from, not that
+	// the timestamp should be stored empty — which is what it used to do, leaving a row the
+	// database then had to guess about.
+	if strings.TrimSpace(now) == "" {
+		now = time.Now().UTC().Format(time.RFC3339)
+	}
+
+	// Validate and canonicalise first, mutating nothing and touching no database.
 	incoming := make(map[string]string, len(items)) // symbol -> AddedAt
 	order := make([]string, 0, len(items))
 	for i, item := range items {
@@ -199,44 +288,84 @@ func (u *UseCase) Import(items []watchlist.Item, mode ImportMode, now string) (I
 		if addedAt == "" {
 			addedAt = now
 		}
+		if err := validateAddedAt(addedAt); err != nil {
+			return ImportResult{}, fmt.Errorf("item %d (%s): %w", i, symbol, err)
+		}
 		incoming[symbol] = addedAt
 		order = append(order, symbol)
 	}
 
-	existing := make(map[string]bool, len(u.Items))
-	for _, item := range u.Items {
-		existing[item.Symbol] = true
-	}
-
+	// plan computes the desired end state from whatever the current state turns out to be. It is
+	// pure, because with a repository it runs inside the import transaction.
 	var result ImportResult
-	for _, symbol := range order {
-		if existing[symbol] {
-			result.Skipped++
-			continue
+	plan := func(current []watchlist.Item) ([]watchlist.Item, error) {
+		result = ImportResult{}
+		existing := make(map[string]watchlist.Item, len(current))
+		for _, item := range current {
+			existing[item.Symbol] = item
 		}
-		if err := u.Add(symbol, incoming[symbol]); err != nil {
-			return result, fmt.Errorf("add %s: %w", symbol, err)
+		desired := make([]watchlist.Item, 0, len(current)+len(order))
+		for _, symbol := range order {
+			if kept, ok := existing[symbol]; ok {
+				// Already tracked: keep its original AddedAt. A re-import never rewrites history
+				// that is already there.
+				desired = append(desired, kept)
+				result.Skipped++
+				continue
+			}
+			desired = append(desired, watchlist.Item{Symbol: symbol, AddedAt: incoming[symbol]})
+			result.Added++
 		}
-		result.Added++
-	}
-
-	if mode == ImportReplace {
-		// Only the symbols the file doesn't mention are removed. Clearing everything and
-		// re-adding would churn the repository and reset AddedAt on symbols that were never in
-		// question.
-		var stale []string
-		for _, item := range u.Items {
+		if mode == ImportMerge {
+			// Merge keeps everything the file doesn't mention.
+			for _, item := range current {
+				if _, mentioned := incoming[item.Symbol]; !mentioned {
+					desired = append(desired, item)
+				}
+			}
+			return desired, nil
+		}
+		for _, item := range current {
 			if _, kept := incoming[item.Symbol]; !kept {
-				stale = append(stale, item.Symbol)
+				result.Removed++
 			}
 		}
-		if len(stale) > 0 {
-			if err := u.RemoveMany(stale); err != nil {
-				return result, err
-			}
-			result.Removed = len(stale)
-		}
+		return desired, nil
 	}
 
+	// Without a repository this is the in-memory working copy and there is nothing to serialize.
+	if u.Repository == nil {
+		desired, err := plan(u.Items)
+		if err != nil {
+			return ImportResult{}, err
+		}
+		u.Items = desired
+		return result, nil
+	}
+
+	// One transaction under the watchlist row lock: the read, the plan and every write commit
+	// together or not at all. Reading fresh and then writing item-by-item — which is what this
+	// replaced — left a partial replacement on a later failure, and let a symbol added
+	// concurrently escape the replacement entirely.
+	replacer, ok := u.Repository.(TransactionalRepository)
+	if !ok {
+		return ImportResult{}, errors.New("repository does not support transactional import")
+	}
+	desired, err := replacer.ReplaceWatchlist(plan)
+	if err != nil {
+		return ImportResult{}, fmt.Errorf("import watchlist: %w", err)
+	}
+	u.Items = desired
 	return result, nil
+}
+
+// validateAddedAt rejects a timestamp the repository would refuse later, so a bad row fails before
+// anything is written rather than partway through.
+func validateAddedAt(value string) error {
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02"} {
+		if _, err := time.Parse(layout, value); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("added_at %q must be RFC3339 or YYYY-MM-DD", value)
 }

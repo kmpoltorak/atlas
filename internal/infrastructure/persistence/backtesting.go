@@ -1,7 +1,6 @@
 package persistence
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 
@@ -12,7 +11,8 @@ import (
 // table). Like recommendations/predictions, backtest runs are append-only — every call to
 // backtesting.UseCase.Run is its own row, never upserted.
 func (t *TimescaleDB) SaveBacktestRun(result backtesting.StrategyResult) error {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	tx, err := t.db.BeginTxx(ctx, nil)
 	if err != nil {
@@ -45,7 +45,8 @@ func (t *TimescaleDB) SaveBacktestRun(result backtesting.StrategyResult) error {
 
 // ListBacktestRuns returns the most recent persisted backtest runs for a symbol, newest first.
 func (t *TimescaleDB) ListBacktestRuns(symbol string, limit int) ([]backtesting.BacktestRun, error) {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	rows, err := t.db.QueryxContext(ctx,
 		`SELECT r.id, s.ticker, r.strategy_name, r.strategy_version, r.started_at, r.finished_at, r.result_summary, r.created_at

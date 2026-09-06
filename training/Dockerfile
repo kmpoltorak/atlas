@@ -13,4 +13,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+# Every Go invocation in this container — the CMD below, retrain.sh's `go run
+# ./cmd/export-training-data`, and scripts/trainer-smoke-test.sh's build — runs against a
+# bind-mounted repo whose .git belongs to the host user, not to this container's. Go stamps
+# binaries with VCS metadata by default, git refuses to read a repository it considers
+# dubiously-owned, and the build dies with "error obtaining VCS status: exit status 128".
+#
+# Docker Desktop virtualizes file ownership, so this never appears on macOS — it appeared the
+# first time CI ran the smoke test on Linux. Stamping is meaningless here anyway: these are
+# throwaway binaries built from a working tree, not released artifacts.
+ENV GOFLAGS=-buildvcs=false
+
 CMD ["go", "run", "./cmd/trainer"]

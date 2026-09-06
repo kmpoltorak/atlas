@@ -1,7 +1,6 @@
 package persistence
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 )
@@ -10,7 +9,8 @@ import (
 // enabled is false and secret is "" when no row exists yet — the normal state before 2FA has
 // ever been enrolled, not an error.
 func (t *TimescaleDB) GetTOTP() (secret string, enabled bool, err error) {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	var nullableSecret sql.NullString
 	err = t.db.QueryRowxContext(ctx,
@@ -29,7 +29,8 @@ func (t *TimescaleDB) GetTOTP() (secret string, enabled bool, err error) {
 // enabled true, after QR-enrollment confirmation) and to disable it (secret cleared, enabled
 // false). secret is stored as SQL NULL, not an empty string, when cleared.
 func (t *TimescaleDB) SetTOTP(secret string, enabled bool) error {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	var secretValue any
 	if secret != "" {

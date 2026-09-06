@@ -2,6 +2,8 @@ package cache
 
 import (
 	"context"
+	"crypto/tls"
+	"net"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -13,10 +15,15 @@ type RedisClient struct {
 	client *redis.Client
 }
 
-func NewRedisClient(host, port string) *RedisClient {
-	return &RedisClient{
-		client: redis.NewClient(&redis.Options{Addr: host + ":" + port}),
+// NewRedisClient dials Redis, optionally authenticating and wrapping the connection in TLS.
+// Both are off by default because the docker-compose stack runs Redis on its own private
+// network; config.Validate refuses either default once REDIS_HOST is not local.
+func NewRedisClient(host, port, password string, useTLS bool) *RedisClient {
+	options := &redis.Options{Addr: net.JoinHostPort(host, port), Password: password}
+	if useTLS {
+		options.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12, ServerName: host}
 	}
+	return &RedisClient{client: redis.NewClient(options)}
 }
 
 func (c *RedisClient) Close() error {
@@ -54,14 +61,6 @@ func (c *RedisClient) Delete(ctx context.Context, key string) error {
 // time the key is created (a fixed window counter) — used by auth.UseCase to count failed login
 // attempts without a separate read-modify-write race.
 func (c *RedisClient) Increment(ctx context.Context, key string, ttl time.Duration) (count int64, err error) {
-	count, err = c.client.Incr(ctx, key).Result()
-	if err != nil {
-		return 0, err
-	}
-	if count == 1 && ttl > 0 {
-		if err := c.client.Expire(ctx, key, ttl).Err(); err != nil {
-			return count, err
-		}
-	}
-	return count, nil
+	result, err := c.client.Eval(ctx, `local n = redis.call('INCR', KEYS[1]); if n == 1 and tonumber(ARGV[1]) > 0 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end; return n`, []string{key}, ttl.Milliseconds()).Int64()
+	return result, err
 }

@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -59,16 +60,16 @@ type webhookPayload struct {
 // one caller is cmd/trainer's training-failure notice, which holds a *DiscordClient directly and
 // has nothing card-shaped to say.
 func (c *DiscordClient) Send(message string) error {
-	return c.post(webhookPayload{Content: message})
+	return c.post(context.Background(), webhookPayload{Content: message})
 }
 
 // SendEmbed posts a single rich embed — the shape every fan-out path in Atlas uses (see
 // application/notifications.UseCase.SendEmbed), across Discord, Slack and Telegram alike.
-func (c *DiscordClient) SendEmbed(embed Embed) error {
-	return c.post(webhookPayload{Embeds: []Embed{embed}})
+func (c *DiscordClient) SendEmbed(ctx context.Context, embed Embed) error {
+	return c.post(ctx, webhookPayload{Embeds: []Embed{embed}})
 }
 
-func (c *DiscordClient) post(payload webhookPayload) error {
+func (c *DiscordClient) post(ctx context.Context, payload webhookPayload) error {
 	if c.WebhookURL == "" {
 		return fmt.Errorf("webhook url is required")
 	}
@@ -83,7 +84,13 @@ func (c *DiscordClient) post(payload webhookPayload) error {
 		return err
 	}
 
-	resp, err := c.Client.Post(c.WebhookURL, "application/json", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.WebhookURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.Client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -93,3 +100,6 @@ func (c *DiscordClient) post(payload webhookPayload) error {
 	}
 	return nil
 }
+
+// Name identifies this channel in the alert outbox — see Notifier.
+func (c *DiscordClient) Name() string { return "discord" }

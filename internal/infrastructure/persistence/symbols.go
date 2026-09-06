@@ -50,7 +50,8 @@ type SymbolInfo struct {
 // changes. An empty field from the provider is stored as SQL NULL rather than "", matching
 // upsertSymbol's plain ticker-only insert leaving these columns NULL until this is called.
 func (t *TimescaleDB) UpsertSymbolInfo(ticker string, info market.InstrumentInfo) error {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	if _, err := t.db.ExecContext(ctx, `
 		INSERT INTO symbols (ticker, name, exchange, asset_class)
@@ -80,7 +81,8 @@ func (t *TimescaleDB) UpsertSymbolQuote(ticker string, quote market.Quote) error
 	if quote.Price <= 0 {
 		return nil
 	}
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	if _, err := t.db.ExecContext(ctx, `
 		INSERT INTO symbols (ticker, last_price, previous_close, quote_updated_at)
@@ -107,7 +109,8 @@ func nullIfZero(value float64) any {
 // existed — not an error; the Watchlist page's "Refresh info" button backfills the former, the
 // alert-poll loop backfills the latter on its own schedule.
 func (t *TimescaleDB) SymbolInfoByTicker() (map[string]SymbolInfo, error) {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	var rows []struct {
 		Ticker         string          `db:"ticker"`
@@ -139,7 +142,8 @@ func (t *TimescaleDB) SymbolInfoByTicker() (map[string]SymbolInfo, error) {
 // of current watchlist membership. Used by cmd/export-training-data to find every symbol with
 // real history to train on, not just the currently-watched subset.
 func (t *TimescaleDB) ListSymbolsWithBars() ([]string, error) {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	var tickers []string
 	if err := t.db.SelectContext(ctx, &tickers,

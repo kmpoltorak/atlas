@@ -6,7 +6,9 @@ metadata:
   labels:
     app: atlas-api
 spec:
-  replicas: 2
+  replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: atlas-api
@@ -15,8 +17,12 @@ spec:
       labels:
         app: atlas-api
     spec:
-      # Stateless by design (see docs/deployment.md "Scaling") — safe to run multiple replicas
-      # and roll without coordination.
+      # ONE replica, and Recreate so a rollout never overlaps two. Everything concurrency needs is
+      # built — a database lease with a fencing epoch, a durable alert cursor and outbox,
+      # DB-authoritative portfolio state, cancellation that reaches in-flight work — and each part
+      # is tested on its own. What does not exist is a test running two live processes against one
+      # database through a lease handover. Until that exists and passes, this stays at 1; see
+      # docs/deployment.md's "Scaling", which says the same thing rather than claiming otherwise.
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -43,10 +49,16 @@ spec:
               memory: "256Mi"
           livenessProbe:
             httpGet:
-              path: /health
+              path: /live
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
+          startupProbe:
+            httpGet:
+              path: /live
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /health

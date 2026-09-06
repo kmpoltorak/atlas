@@ -1,7 +1,6 @@
 package persistence
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -14,7 +13,8 @@ import (
 // Recommendations are an append-only decision log (like transactions), not upserted state —
 // each call to the decision engine is its own row, even for the same symbol.
 func (t *TimescaleDB) SaveRecommendation(rec decision.Recommendation) error {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	tx, err := t.db.BeginTxx(ctx, nil)
 	if err != nil {
@@ -88,7 +88,8 @@ type ActionStreak struct {
 // The returned times are what the database holds, which is UTC (created_at is timestamptz,
 // defaulted to now()). Callers comparing against wall-clock time should do so in UTC.
 func (t *TimescaleDB) CurrentActionStreaks() (map[string]ActionStreak, error) {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	var rows []ActionStreak
 	if err := t.db.SelectContext(ctx, &rows, `
@@ -167,7 +168,8 @@ type LatestRecommendation struct {
 // sequential provider fetches plus ML inference inline, measured at p90 8.4s / p99 >10s on live
 // traffic.
 func (t *TimescaleDB) LatestRecommendations() (map[string]LatestRecommendation, error) {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	var rows []latestRecommendationRow
 	if err := t.db.SelectContext(ctx, &rows, `

@@ -12,6 +12,10 @@ RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 COPY docs ./docs
+# The SQL files are embedded into the binary (migrations/embed.go), so the API applies them
+# itself at startup rather than relying on Postgres's docker-entrypoint-initdb.d hook, which only
+# ever runs against a brand-new data volume. That means they have to be present at build time.
+COPY migrations ./migrations
 
 RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o /out/atlas-api ./cmd/api
 

@@ -37,6 +37,20 @@ var lowMLConfidenceSearchDeltas = []float64{-0.10, 0, 0.10}
 // validate and test. Nothing here ever touches u.Orchestrator.Decision — the result is a report
 // for a human to review (BestThresholds), never an automatic change to the live decision engine.
 func (u *UseCase) RunWalkForward(symbol string, bars []market.Bar, initialCapital float64, strategyName, strategyVersion string) (backtesting.WalkForwardResult, error) {
+	// Walk-forward runs many simulations back to back, so it needs a slot at least as much as a
+	// single run does — the original review's bounded-job requirement covers both entry points.
+	admit, err := u.admit()
+	if err != nil {
+		return backtesting.WalkForwardResult{}, err
+	}
+	defer admit()
+
+	frozen, release := u.freeze()
+	defer release()
+	return frozen.runWalkForward(symbol, bars, initialCapital, strategyName, strategyVersion)
+}
+
+func (u *UseCase) runWalkForward(symbol string, bars []market.Bar, initialCapital float64, strategyName, strategyVersion string) (backtesting.WalkForwardResult, error) {
 	if err := u.validateInputs(strategyName, initialCapital); err != nil {
 		return backtesting.WalkForwardResult{}, err
 	}

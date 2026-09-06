@@ -1,15 +1,24 @@
-# Go build output
+# Go build output. One entry per cmd/ binary, because `go build ./cmd/<name>` drops the binary in
+# whatever directory you ran it from — usually the repo root. Only atlas-api was listed here, so a
+# plain `go build ./cmd/export-training-data` left an untracked 20MB binary sitting in the tree.
 atlas-api
+export-training-data
+generate-admin-credentials
+trainer
 *.exe
 /bin/
 atlas
+
+# Go test output: `go test -c` binaries and coverage profiles.
+*.test
+coverage.out
 
 # Local env
 .env
 .env.*
 !.env.example
 
-# Docker data
+# Logs
 *.log
 
 # Local backup dumps (e.g. from rehearsing deploy/RUNBOOK.md's restore procedure)

@@ -1,6 +1,7 @@
 package notifications
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -69,7 +70,7 @@ func TestSendEmbedPostsDiscordEmbedPayload(t *testing.T) {
 	defer server.Close()
 
 	client := NewDiscordClient(server.URL)
-	err := client.SendEmbed(Embed{
+	err := client.SendEmbed(context.Background(), Embed{
 		Title:       "ORCL — BUY",
 		URL:         "https://finance.yahoo.com/quote/ORCL/",
 		Description: "• Momentum signal is favorable\n• ML signal supportive",
@@ -125,7 +126,7 @@ func TestSendEmbedOmitsUnsetColor(t *testing.T) {
 	defer server.Close()
 
 	client := NewDiscordClient(server.URL)
-	if err := client.SendEmbed(Embed{Title: "WAIT"}); err != nil {
+	if err := client.SendEmbed(context.Background(), Embed{Title: "WAIT"}); err != nil {
 		t.Fatalf("expected send to succeed, got %v", err)
 	}
 	if strings.Contains(raw, `"color"`) {

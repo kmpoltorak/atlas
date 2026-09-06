@@ -20,11 +20,11 @@ and `REDIS_HOST` in `configmap.yaml` at wherever those end up living.
 | `namespace.yaml` | Creates the `atlas` namespace |
 | `configmap.yaml` | Non-secret environment configuration (see `internal/config/config.go` for the full env var list) |
 | `secret.yaml` | **Template only** — see the warning in the file. Do not commit real secrets. |
-| `deployment.yaml` | `atlas-api` Deployment: 2 replicas, resource limits, `/health` liveness+readiness probes, non-root security context |
+| `deployment.yaml` | `atlas-api` Deployment: **one** replica with `strategy: Recreate` so a rollout never overlaps two, resource limits, `/health` liveness+readiness probes, non-root security context |
 | `service.yaml` | ClusterIP service exposing port 8080 |
 | `ingress.yaml` | External routing — replace `atlas.example.com` and the cert-manager/ingress-class annotations with real values |
-| `hpa.yaml` | Horizontal autoscaling on CPU/memory (2–6 replicas) |
-| `pdb.yaml` | Keeps at least 1 pod available during voluntary disruptions (node drains, upgrades) |
+| `hpa.yaml` | Horizontal autoscaling on CPU/memory, **pinned to 1–1** until concurrent replicas are proven safe — see `../docs/deployment.md`'s Scaling section |
+| `pdb.yaml` | `maxUnavailable: 1` — with a single replica this permits voluntary disruption (node drains, upgrades) and accepts a brief outage rather than blocking maintenance forever |
 | `backup-cronjob.yaml` | Daily automated TimescaleDB `pg_dump`, 7-day retention on a PVC — see `RUNBOOK.md`'s Backup section |
 
 ## Apply

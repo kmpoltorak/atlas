@@ -233,6 +233,27 @@ func (u *UseCase) DisableTOTP(currentPassword string) error {
 	return u.TOTP.SetTOTP("", false)
 }
 
+// Reauthenticate re-checks the account password for an operation that a valid session alone
+// should not be enough to authorise — wiping every row, or replacing them all from a file.
+//
+// A session cookie proves someone logged in at some point in the last SessionTTL. It does not
+// prove the person at the keyboard right now is the account holder, which is precisely the
+// question worth asking before an irreversible, whole-database operation. Same reasoning as
+// DisableTOTP above, generalised.
+//
+// With auth disabled there is no password to check and no account to protect, so this passes:
+// the deployment has already declared it is not gating anything (see config.Validate's
+// AUTH_DISABLED).
+func (u *UseCase) Reauthenticate(password string) error {
+	if !u.Enabled() {
+		return nil
+	}
+	if !u.verifyPassword(u.Username, password) {
+		return ErrInvalidCredentials
+	}
+	return nil
+}
+
 func randomToken() (string, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {

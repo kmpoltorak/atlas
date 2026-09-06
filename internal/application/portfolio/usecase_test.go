@@ -290,7 +290,7 @@ func TestRemovePositionsDeletesEachSelectedSymbol(t *testing.T) {
 	}
 }
 
-func TestRemovePositionsJoinsErrorsButDeletesTheRest(t *testing.T) {
+func TestRemovePositionsRollsBackInvalidBatch(t *testing.T) {
 	uc := NewUseCase()
 	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Timestamp: "2024-01-01"})
 
@@ -299,8 +299,8 @@ func TestRemovePositionsJoinsErrorsButDeletesTheRest(t *testing.T) {
 		t.Fatal("expected an error for the empty symbol")
 	}
 	positions, _ := uc.GetPositions()
-	if len(positions) != 0 {
-		t.Fatalf("expected AAPL to still be deleted despite the other error, got %+v", positions)
+	if len(positions) != 1 {
+		t.Fatalf("invalid batch must leave positions unchanged, got %+v", positions)
 	}
 }
 
@@ -411,9 +411,9 @@ func TestRemoveTransactionsDeletesAcrossSymbols(t *testing.T) {
 	}
 }
 
-// TestRemoveTransactionsJoinsErrorsButDeletesTheRest proves one bad id in a batch doesn't block
+// TestRemoveTransactionsRollsBackInvalidBatch proves one bad id in a batch doesn't block
 // the others from being removed.
-func TestRemoveTransactionsJoinsErrorsButDeletesTheRest(t *testing.T) {
+func TestRemoveTransactionsRollsBackInvalidBatch(t *testing.T) {
 	uc := NewUseCase()
 	_ = uc.RecordTransaction(portfolio.Transaction{Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Timestamp: "2026-01-01T00:00:00Z"})
 	realID := uc.Transactions[0].ID
@@ -422,8 +422,8 @@ func TestRemoveTransactionsJoinsErrorsButDeletesTheRest(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for the empty id")
 	}
-	if len(uc.Transactions) != 0 {
-		t.Fatalf("expected the real id to still be deleted despite the other error, got %+v", uc.Transactions)
+	if len(uc.Transactions) != 1 {
+		t.Fatalf("invalid batch must leave transactions unchanged, got %+v", uc.Transactions)
 	}
 }
 
@@ -695,4 +695,19 @@ func TestDeletePortfolioRefusesToDeleteTheLastOne(t *testing.T) {
 	if err := uc.DeletePortfolio(uc.ActivePortfolioID); err == nil {
 		t.Fatal("expected deleting the only remaining portfolio to fail")
 	}
+}
+
+func (f *fakeRepository) MutatePortfolio(id string, apply func([]portfolio.Position, []portfolio.Transaction) ([]portfolio.Position, []portfolio.Transaction, error)) error {
+	positions, transactions, err := apply(f.positions[id], f.transactions[id])
+	if err != nil {
+		return err
+	}
+	if f.positions == nil {
+		f.positions = make(map[string][]portfolio.Position)
+	}
+	if f.transactions == nil {
+		f.transactions = make(map[string][]portfolio.Transaction)
+	}
+	f.positions[id], f.transactions[id] = positions, transactions
+	return nil
 }

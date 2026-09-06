@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: atlas-api
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       SERVER_PORT: "8080"
       LOG_LEVEL: info
@@ -20,6 +20,13 @@ services:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-atlas}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
+      # Empty by default: this stack's Redis is on a private Compose network, published on
+      # loopback only. Set REDIS_PASSWORD in .env and the redis service below picks up the same
+      # value as its requirepass, so the two can't drift.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # 0 keeps every recommendation/indicator/prediction row forever, which is fine for a
+      # laptop run. Set a day count on anything long-lived (see config.DerivedRetentionDays).
+      DERIVED_RETENTION_DAYS: ${DERIVED_RETENTION_DAYS:-0}
       # /health reports these three as purely informational (never affects its own status/HTTP
       # code — see internal/app/http_handler.go's healthHandler) — hardcoded in-network Compose
       # service names, same as DATABASE_HOST/REDIS_HOST above, not a `${VAR:-default}` override
@@ -62,6 +69,7 @@ services:
       # 2FA is not configured here at all: enable it from the dashboard after logging in
       # (Account → Set up 2FA), which walks through a real QR-code enrollment — see
       # internal/application/auth's doc comment.
+      AUTH_DISABLED: ${AUTH_DISABLED:-true}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-}
       ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
       # False by default, matching this stack running over plain HTTP with no reverse proxy in
@@ -150,13 +158,14 @@ services:
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-atlas}
     volumes:
       - timescaledb-data:/var/lib/postgresql/data
-      # Official postgres/timescaledb images auto-run any .sql files found here, in
-      # lexical order, but only against a fresh (empty) data volume. For an existing
-      # volume, apply new migrations manually — this isn't a real migration tool with
-      # version tracking, just the standard Docker Compose bootstrap mechanism.
+      # Official postgres/timescaledb images auto-run any .sql files found here, in lexical
+      # order, but only against a fresh (empty) data volume. That is no longer the only path:
+      # atlas-api applies the same files itself on every start, under an advisory lock and
+      # tracked in schema_migrations (see persistence.Migrate). This mount just means a brand-new
+      # volume is already migrated by the time the API connects.
       - ./migrations:/docker-entrypoint-initdb.d
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U atlas -d atlas"]
       interval: 10s
@@ -166,12 +175,20 @@ services:
   redis:
     image: redis:7-alpine
     container_name: atlas-redis
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # 0 keeps every recommendation/indicator/prediction row forever, which is fine for a
+      # laptop run. Set a day count on anything long-lived (see config.DerivedRetentionDays).
+      DERIVED_RETENTION_DAYS: ${DERIVED_RETENTION_DAYS:-0}
+    # Same variable as atlas-api's REDIS_PASSWORD, so requirepass and the client credential can
+    # never disagree. Unset means no password at all, rather than an empty one Redis rejects.
+    command: ["sh", "-c", 'exec redis-server ${REDIS_PASSWORD:+--requirepass "$$REDIS_PASSWORD"}']
     volumes:
       - redis-data:/data
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", 'redis-cli ${REDIS_PASSWORD:+-a "$$REDIS_PASSWORD"} ping']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -184,7 +201,7 @@ services:
       - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml
       - prometheus-data:/prometheus
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     depends_on:
       - alertmanager
 
@@ -219,7 +236,7 @@ services:
       - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
       - alertmanager-data:/alertmanager
     ports:
-      - "9093:9093"
+      - "127.0.0.1:9093:9093"
 
   grafana:
     image: grafana/grafana:11.4.0
@@ -232,7 +249,7 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards
       - grafana-data:/var/lib/grafana
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
 
 volumes:
   timescaledb-data:

@@ -4,7 +4,7 @@ metadata:
   name: atlas-api-pdb
   namespace: atlas
 spec:
-  minAvailable: 1
+  maxUnavailable: 1 # One replica: allow maintenance, expect a brief outage.
   selector:
     matchLabels:
       app: atlas-api

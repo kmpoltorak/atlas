@@ -1,15 +1,22 @@
 package app
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	mlUC "atlas/internal/application/ml"
 
 	"atlas/internal/domain/alerts"
 	"atlas/internal/domain/currency"
 	"atlas/internal/domain/market"
 	"atlas/internal/infrastructure/notifications"
+	"atlas/internal/infrastructure/persistence"
 
 	"go.uber.org/zap"
 )
@@ -69,127 +76,372 @@ func (a *Application) StartAlertPolling() func() {
 	ticker := time.NewTicker(interval)
 	done := make(chan struct{})
 
-	lastAction := make(map[string]string)
-	a.seedLastActions(lastAction)
-	pending := make(map[string]*pendingAlert)
+	// Leadership is acquired before anything else starts: every task below is singleton work
+	// that must not run once per replica (see Leader).
+	releaseLease := a.startLeaderElection(done)
 
+	// Daily, not per poll: pruning is a bulk DELETE whose result changes on the scale of days,
+	// and running it every 300s would be pure load. Ticks are independent of the poll ticker so
+	// a slow prune can never delay an alert.
+	pruneTicker := time.NewTicker(24 * time.Hour)
+	// Retries for anything the outbox still holds. Faster than the poll interval because a
+	// pending entry is a notification the user has not received yet, and the reason it is
+	// pending is usually a transient channel failure that clears in seconds.
+	deliverTicker := time.NewTicker(deliveryRetryInterval)
+	// Runtime settings are persisted but held in memory (see Orchestrator.SetMLEnabled), so a
+	// toggle flipped on the replica serving the Account page never reaches the others. This
+	// ticker is deliberately NOT leader-gated: every replica has to converge on the same
+	// settings, not just whichever one is polling.
+	settingsTicker := time.NewTicker(settingsRefreshInterval)
+
+	// worker is joined before the lease is released. Cancelling the term aborts in-flight I/O, but
+	// "aborted" is not "returned": without this the release could still overtake a poll that was
+	// on its way out, and the successor would start while this process was still writing.
+	var worker sync.WaitGroup
+	worker.Add(1)
 	go func() {
+		defer worker.Done()
 		for {
 			select {
 			case <-ticker.C:
-				a.pollAlertsOnce(lastAction, pending)
+				if a.Leader.IsLeader() {
+					a.pollAlertsOnce(a.Leader.Snapshot())
+				}
+			case <-deliverTicker.C:
+				if a.Leader.IsLeader() {
+					a.deliverPendingAlerts(a.Leader.Snapshot())
+				}
+			case <-settingsTicker.C:
+				a.refreshRuntimeSettings()
+			case <-pruneTicker.C:
+				if a.Leader.IsLeader() {
+					a.pruneDerivedDataOnce()
+				}
 			case <-done:
 				ticker.Stop()
+				pruneTicker.Stop()
+				deliverTicker.Stop()
+				settingsTicker.Stop()
 				return
 			}
 		}
 	}()
 
-	return func() { close(done) }
+	return func() {
+		// The order is the whole point. Cancel the term first so anything running stops rather
+		// than being waited on; then stop the loop; then wait for it to actually return; only then
+		// hand the lease over. Releasing before the worker has exited is what let a former leader
+		// keep writing while its successor was already polling.
+		a.Leader.endTerm()
+		close(done)
+		worker.Wait()
+		releaseLease()
+	}
 }
 
-// pendingAlert is a not-yet-fully-delivered alert notification: which channels still owe it, for
-// which action. Keyed by symbol in pollAlertsOnce's pending map. Scoped to the action it was
-// built for so a fresh action change never reuses a stale channel subset left over from a
-// different, superseded alert on the same symbol.
-type pendingAlert struct {
-	action  string
-	targets []notifications.Notifier
-}
+// deliveryRetryInterval is how often undelivered outbox entries are retried.
+const deliveryRetryInterval = 30 * time.Second
 
-// seedLastActions primes the change-detection map from persisted history, so a restart does not
-// re-announce every symbol that is merely continuing to say what it already said.
-//
-// Without this the map starts empty and the first poll after any restart treats the entire
-// actionable watchlist as brand new. That was invisible while actionable signals were rare, and
-// became obvious the moment they weren't: four deploys on 2026-08-10 pushed the same seventeen
-// BUY tickers four times over, none of which had actually changed action — ORCL had read BUY
-// continuously since 15:22.
-//
-// The seed comes from the recommendations log rather than from a record of what was notified.
-// Those are not the same claim, and the difference is worth stating: this restores "what did the
-// engine last say about this symbol", which is exactly what lastAction means during a poll, but
-// it cannot know whether the corresponding Discord message actually left the building. A message
-// that failed to send before a restart will not be retried after one. Tracking delivery properly
-// would need its own table; for a single-user tool the failure mode (one missed alert, logged as
-// an error when it happened) does not justify that, and pollAlertsOnce below at least no longer
-// marks a failed send as delivered within a single process lifetime.
-//
-// Best-effort by design: no storage, or a failed query, simply leaves the map empty and restores
-// the previous behaviour rather than stopping the loop from running at all.
-func (a *Application) seedLastActions(lastAction map[string]string) {
-	if a.Storage == nil {
+// outboxClaimTTL is how long a claimed row stays owned by the worker that took it. Long enough to
+// cover a slow channel, short enough that a worker dying mid-send does not strand the alert for
+// more than one retry cycle.
+const outboxClaimTTL = 2 * time.Minute
+
+// maxOutboxBatch bounds one delivery pass, so a long backlog after an outage is worked through
+// over several ticks instead of one pass that holds the loop for minutes.
+const maxOutboxBatch = 50
+
+// settingsRefreshInterval bounds how long a runtime setting changed on one replica takes to
+// reach the others. Half a minute: long enough to be one cheap query, short enough that a
+// deliberate change does not appear to have been ignored.
+const settingsRefreshInterval = 30 * time.Second
+
+// refreshRuntimeSettings re-reads the durable engine settings so every replica converges on the
+// Account page's choices, not just the one that happened to serve the request that made them.
+// Runs on every replica, leader or not — a follower serving a recommendation must score it with
+// the same engine configuration the leader would.
+func (a *Application) refreshRuntimeSettings() {
+	if a.Storage == nil || a.Orchestrator == nil {
 		return
 	}
-	streaks, err := a.Storage.CurrentActionStreaks()
-	if err != nil {
-		a.Logger.Warn("could not seed alert change-detection from history; "+
-			"the first poll may re-announce actions that have not changed", zap.Error(err))
-		return
-	}
-	for symbol, streak := range streaks {
-		lastAction[symbol] = streak.Action
-	}
-	a.Logger.Info("seeded alert change-detection from persisted history", zap.Int("symbols", len(streaks)))
+	a.Orchestrator.SetMLEnabled(resolveMLEnabled(a.Storage, a.Logger, a.Config.MLEnabled))
+	a.reconcileModelSelection(mlUC.RoleCorrection)
+	a.reconcileModelSelection(mlUC.RoleRecovery)
 }
 
-// pollAlertsOnce evaluates the watchlist once and notifies only for symbols whose action
-// changed since the last poll, so the same signal isn't re-sent every tick. Every non-HOLD
-// action (including ACCUMULATE/WAIT) is still persisted and tracked for change-detection, but
-// only high-priority actions actually push a Discord notification — see isHighPriorityAction.
-// pending tracks, per symbol, any channels still owed a delivery from a previous poll's partial
-// failure (see pendingAlert) — retried here instead of the whole notification, so a channel that
-// already delivered doesn't get the same alert twice just because a sibling channel failed.
-func (a *Application) pollAlertsOnce(lastAction map[string]string, pending map[string]*pendingAlert) {
-	result, err := a.Alerts.Evaluate()
-	a.AlertPoll.record(time.Now().UTC(), err)
+// reconcileModelSelection loads whichever model the database says should be active for role, if
+// this replica is not already serving it.
+//
+// Without this, activating a model changed only the replica that served the click: every other
+// one kept serving its previous model, and two replicas answered the same question with
+// different models while the UI showed one selection. The Account page's choice is a *desired*
+// state; this is the loop that makes each replica's actual state match it.
+//
+// Silent when already correct — the common case, every 30 seconds. Loud only on a real failure,
+// where it keeps the currently loaded model rather than dropping to no model at all: a stale
+// model still answers, and an unavailable file is an operator problem, not a reason to degrade.
+func (a *Application) reconcileModelSelection(role mlUC.Role) {
+	filename, ok, err := a.Storage.GetActiveModelSelection(string(role))
 	if err != nil {
-		a.Logger.Warn("alert evaluation completed with per-symbol errors", zap.Error(err))
+		a.Logger.Warn("could not read the active model selection",
+			zap.String("role", string(role)), zap.Error(err))
+		return
+	}
+	if !ok {
+		return // no durable selection; the env-var default stands
+	}
+
+	current := a.ML.CurrentModel()
+	if role == mlUC.RoleRecovery {
+		current = a.ML.CurrentRecoveryModel()
+	}
+	if current != nil && current.Filename == filename {
+		return
+	}
+
+	path := filepath.Join(a.Config.MLModelsDir, filename)
+	model, err := mlUC.LoadOnnxModel(path, a.Config.LibOnnxRuntimePath)
+	if err != nil {
+		a.Logger.Error("the selected ML model could not be loaded on this replica; still serving the previous one",
+			zap.String("role", string(role)), zap.String("filename", filename), zap.Error(err))
+		return
+	}
+	var previous *mlUC.OnnxModel
+	if role == mlUC.RoleCorrection {
+		previous = a.ML.SetModel(model)
+	} else {
+		previous = a.ML.SetRecoveryModel(model)
+	}
+	a.Logger.Info("reconciled to the selected ML model",
+		zap.String("role", string(role)), zap.String("version", model.Version))
+	if previous != nil {
+		if err := previous.Close(); err != nil {
+			a.Logger.Warn("failed to close the superseded ML model",
+				zap.String("role", string(role)), zap.Error(err))
+		}
+	}
+}
+
+// pruneDerivedDataOnce drops indicator/recommendation/prediction rows past the configured
+// retention window. Best-effort and non-fatal, like every other background maintenance step:
+// a failure here must not stop alerts from being evaluated.
+func (a *Application) pruneDerivedDataOnce() {
+	if a.Storage == nil || a.Config.DerivedRetentionDays <= 0 {
+		return
+	}
+	maxAge := time.Duration(a.Config.DerivedRetentionDays) * 24 * time.Hour
+	deleted, err := a.Storage.PruneDerivedData(maxAge)
+	if err != nil {
+		a.Logger.Warn("failed to prune derived data", zap.Error(err))
+		return
+	}
+	if deleted > 0 {
+		a.Logger.Info("pruned derived data past the retention window",
+			zap.Int64("rows", deleted), zap.Int("retention_days", a.Config.DerivedRetentionDays))
+	}
+	// Delivered outbox rows go too. The outbox is a delivery mechanism, not an audit log — the
+	// recommendations table already holds what the engine said — so keeping them forever would
+	// grow a table nobody reads.
+	if _, err := a.Storage.PruneDeliveredAlerts(maxAge); err != nil {
+		a.Logger.Warn("failed to prune delivered alerts", zap.Error(err))
+	}
+}
+
+// pollAlertsOnce evaluates the watchlist once and enqueues a notification only for symbols whose
+// action changed since the last one actually announced. Every evaluation (HOLD included) is
+// persisted for history, but only high-priority actions produce a notification — see
+// isHighPriorityAction.
+//
+// The change-detection cursor is read from the database at the start of every poll, not held in
+// memory across the process lifetime. Two reasons, both from the 2026-09-06 review:
+//
+//   - It used to be derived from the recommendations table, which GET /recommendations, the
+//     recommendations page and post-transaction refreshes also write. That table records what the
+//     engine said to anyone, which is not the same claim as what was announced to the user.
+//   - A follower seeded its map once at startup. Promoted an hour later, it compared against a
+//     baseline from before it became leader. Reading per poll costs one query over a few dozen
+//     rows and removes the failure mode entirely.
+//
+// ctx and epoch are one snapshot of the leadership term (see Leader.Snapshot), taken before the
+// batch and used throughout it: losing the lease mid-batch stops the batch rather than letting it
+// finish on behalf of a lease somebody else now holds, and every write in the batch is fenced by
+// the epoch the batch began under rather than by whatever the current one happens to be.
+func (a *Application) pollAlertsOnce(ctx context.Context, epoch int64) {
+	cursor, err := a.alertCursor()
+	if err != nil {
+		// Without a trustworthy cursor every symbol looks changed, which would re-announce the
+		// whole watchlist. Skipping this poll is the cheaper mistake.
+		a.Logger.Error("could not read the alert cursor; skipping this poll", zap.Error(err))
+		a.AlertPoll.record(time.Now().UTC(), err)
+		return
+	}
+
+	result, evalErr := a.Alerts.EvaluateAll(ctx)
+	a.AlertPoll.record(time.Now().UTC(), evalErr)
+	if evalErr != nil {
+		a.Logger.Warn("alert evaluation completed with per-symbol errors", zap.Error(evalErr))
 		a.Metrics.AlertPollErrors.Inc()
 	}
-	a.refreshWatchlistQuotes()
+	a.refreshWatchlistQuotes(ctx)
 
 	for _, alert := range result {
+		if ctx.Err() != nil {
+			a.Logger.Info("stopped mid-poll: no longer the polling leader")
+			return
+		}
 		a.persistRecommendation(alert.Recommendation)
 		a.persistIndicatorSnapshot(alert.Recommendation.Symbol, alert.Bars)
 
 		symbol := alert.Recommendation.Symbol
 		action := alert.Recommendation.Action
-		if lastAction[symbol] == action {
+		if cursor[symbol] == action {
 			continue
 		}
-
-		// Actions that never push anywhere are recorded straight away: they still have to be
-		// tracked, or a later change would be measured against a stale baseline.
-		if !a.Notifications.Configured() || !isHighPriorityAction(action) {
-			lastAction[symbol] = action
-			delete(pending, symbol)
+		if err := a.advanceCursor(ctx, alert, epoch); err != nil {
+			if errors.Is(err, persistence.ErrNotLeader) {
+				a.Logger.Info("stopped mid-poll: the lease changed hands")
+				return
+			}
+			// Deliberately not treated as announced: an alert that could not be recorded has not
+			// been announced, and marking it would silence the next poll too.
+			a.Logger.Error("failed to record an alert transition",
+				zap.String("symbol", symbol), zap.String("action", action), zap.Error(err))
 			continue
 		}
-
-		// A pending entry only applies if it's for this same action — a fresh action change
-		// (superseding a still-undelivered older one) starts over against every client, since the
-		// channels that got the old alert still need to hear about the new one.
-		var targets []notifications.Notifier
-		if p, ok := pending[symbol]; ok && p.action == action {
-			targets = p.targets
-		}
-
-		failed, err := a.Notifications.SendEmbed(buildAlertEmbed(alert), targets)
-		if err != nil {
-			// Deliberately left unrecorded so the next poll retries — only against the channels
-			// that actually failed (failed), not the ones that already delivered it. Marking it
-			// seen here — which is what this loop used to do, by recording before sending — turned
-			// a transient delivery failure into an alert the Author never saw and never would.
-			pending[symbol] = &pendingAlert{action: action, targets: failed}
-			a.Logger.Error("failed to send alert notification", zap.String("symbol", symbol), zap.Error(err))
-			continue
-		}
-		delete(pending, symbol)
-		lastAction[symbol] = action
-		a.Metrics.AlertsSent.WithLabelValues(action).Inc()
-		a.Logger.Info("alert notification sent", zap.String("symbol", symbol), zap.String("action", action))
 	}
+
+	// Deliver in the same tick rather than waiting for the retry timer, so the common case (a
+	// healthy channel) is still a notification sent seconds after the signal.
+	a.deliverPendingAlerts(ctx, epoch)
+}
+
+// alertCursor reads the durable "last announced action per symbol". With no storage — tests, a
+// degraded start — there is nothing durable to read and every action reads as new.
+func (a *Application) alertCursor() (map[string]string, error) {
+	if a.Storage == nil {
+		return map[string]string{}, nil
+	}
+	return a.Storage.AlertCursor()
+}
+
+// advanceCursor records one transition. A notifiable action goes into the outbox and moves the
+// cursor in the same transaction; anything else moves the cursor alone. Either way the cursor
+// only advances if the durable record of *why* it advanced landed with it.
+func (a *Application) advanceCursor(ctx context.Context, alert alerts.Alert, epoch int64) error {
+	symbol := alert.Recommendation.Symbol
+	action := alert.Recommendation.Action
+	notifiable := a.Notifications.Configured() && isHighPriorityAction(action)
+
+	if a.Storage == nil {
+		if notifiable {
+			_, err := a.Notifications.SendEmbed(ctx, buildAlertEmbed(alert), nil)
+			return err
+		}
+		return nil
+	}
+	if !notifiable {
+		return a.Storage.RecordSilentTransition(a.Leader.Identity(), epoch, symbol, action)
+	}
+	payload, err := persistence.MarshalAlertPayload(buildAlertEmbed(alert))
+	if err != nil {
+		return err
+	}
+	_, err = a.Storage.EnqueueAlert(a.Leader.Identity(), epoch,
+		symbol, action, payload, a.Notifications.ChannelNames())
+	return err
+}
+
+// deliverPendingAlerts works through the outbox, retrying each entry against only the channels
+// that still owe it. Rows are claimed before sending, so two workers — a former leader still
+// finishing a batch and its successor — cannot deliver the same entry concurrently.
+//
+// Delivery is at-least-once per channel: the send happens before its success is recorded, so a
+// crash in between causes a retry that sends again. What is guaranteed is that nothing is
+// silently dropped and that a retry does not fan back out to channels already recorded as
+// delivered. See docs/deployment.md's "Delivery guarantee".
+//
+// Two things keep that guarantee from degrading into "older delivery state can overwrite newer".
+// A batch stops sending the moment its claims lapse, rather than working through 50 entries on a
+// lease that expired at the third. And every acknowledgement names the claim it belongs to, so
+// one that arrives after the row has been taken over is refused (persistence.ErrClaimLost) rather
+// than clearing the successor's claim or restoring channels the successor already delivered to.
+func (a *Application) deliverPendingAlerts(ctx context.Context, epoch int64) {
+	if a.Storage == nil || !a.Notifications.Configured() {
+		return
+	}
+	entries, err := a.Storage.ClaimPendingAlerts(a.Leader.Identity(), maxOutboxBatch, outboxClaimTTL)
+	if err != nil {
+		a.Logger.Warn("could not claim pending alerts", zap.Error(err))
+		return
+	}
+	for _, entry := range entries {
+		if ctx.Err() != nil {
+			// The remaining claims expire on their own, so stopping here strands nothing —
+			// whoever holds the lease next picks them up once the claim lapses.
+			a.Logger.Info("stopped mid-delivery: no longer the polling leader")
+			return
+		}
+		// The claim is a lease like any other, and sending on an expired one is how two workers
+		// end up delivering the same alert while each believes it owns the row. Stopping is safe:
+		// these rows are already claimable again, so the next tick — here or on another replica —
+		// picks them up with a fresh claim.
+		if !entry.ClaimExpiresAt.IsZero() && !time.Now().UTC().Before(entry.ClaimExpiresAt) {
+			a.Logger.Warn("stopped mid-delivery: the outbox claims for this batch expired",
+				zap.String("id", entry.ID), zap.Time("claim_expired_at", entry.ClaimExpiresAt))
+			return
+		}
+		var embed notifications.Embed
+		if err := json.Unmarshal(entry.Payload, &embed); err != nil {
+			// Unreadable payload: nothing will ever make this deliverable, so retrying it every
+			// 30 seconds forever would just be noise. Mark it done and say why.
+			a.Logger.Error("dropping an undeliverable alert with an unreadable payload",
+				zap.String("id", entry.ID), zap.String("symbol", entry.Symbol), zap.Error(err))
+			a.recordDelivery(entry, nil, err)
+			continue
+		}
+		targets := a.Notifications.ChannelsNamed(entry.PendingChannels)
+		if len(targets) == 0 {
+			// Every channel this alert was queued for has since been unconfigured. There is
+			// nobody left to deliver to, so it is not pending any more.
+			a.recordDelivery(entry, nil, nil)
+			continue
+		}
+		failed, sendErr := a.Notifications.SendEmbed(ctx, embed, targets)
+		stillPending := make([]string, 0, len(failed))
+		for _, channel := range failed {
+			stillPending = append(stillPending, channel.Name())
+		}
+		if err := a.recordDelivery(entry, stillPending, sendErr); err != nil {
+			continue
+		}
+		if sendErr != nil {
+			a.Logger.Error("alert delivery partially failed; will retry the failed channels",
+				zap.String("symbol", entry.Symbol), zap.Strings("pending", stillPending), zap.Error(sendErr))
+			continue
+		}
+		a.Metrics.AlertsSent.WithLabelValues(entry.Action).Inc()
+		a.Logger.Info("alert notification sent",
+			zap.String("symbol", entry.Symbol), zap.String("action", entry.Action))
+	}
+}
+
+// recordDelivery acknowledges one entry under the claim it was handed out with, and reports
+// whether the acknowledgement landed.
+//
+// A lost claim is logged at info, not as an error: it means this worker was superseded mid-send,
+// which the design allows for. The consequence is a duplicate delivery by the successor, which is
+// what at-least-once already promises — not corruption, which is what applying the write anyway
+// would have caused.
+func (a *Application) recordDelivery(entry persistence.OutboxEntry, stillPending []string, sendErr error) error {
+	err := a.Storage.RecordAlertDelivery(entry.ID, entry.ClaimSeq, stillPending, sendErr)
+	switch {
+	case errors.Is(err, persistence.ErrClaimLost):
+		a.Logger.Info("discarded a delivery result for an alert claimed by another worker",
+			zap.String("id", entry.ID), zap.String("symbol", entry.Symbol))
+	case err != nil:
+		a.Logger.Warn("could not record an alert delivery", zap.String("id", entry.ID), zap.Error(err))
+	}
+	return err
 }
 
 // refreshWatchlistQuotes fetches and persists market.Quote (current live price + prior close)
@@ -201,7 +453,7 @@ func (a *Application) pollAlertsOnce(lastAction map[string]string, pending map[s
 // or was later removed from it, so this covers the union of the two, not just the watchlist.
 // Best-effort per symbol: one provider failure just logs and moves on, matching Evaluate's own
 // per-symbol handling.
-func (a *Application) refreshWatchlistQuotes() {
+func (a *Application) refreshWatchlistQuotes(ctx context.Context) {
 	if a.Collector == nil || a.Collector.Provider == nil || a.Storage == nil {
 		return
 	}
@@ -214,7 +466,7 @@ func (a *Application) refreshWatchlistQuotes() {
 		}
 	}
 	if a.Portfolio != nil {
-		if positions, err := a.Portfolio.GetPositions(); err != nil {
+		if positions, err := a.Portfolio.GetAllPositions(); err != nil {
 			a.Logger.Warn("could not list positions for quote refresh", zap.Error(err))
 		} else {
 			for _, position := range positions {
@@ -224,6 +476,12 @@ func (a *Application) refreshWatchlistQuotes() {
 	}
 
 	for symbol := range symbols {
+		if ctx.Err() != nil {
+			// Same rule as the evaluation loop: a demoted leader stops refreshing quotes rather
+			// than working through the rest of the list on a lease it no longer holds.
+			a.Logger.Info("stopped mid-refresh: no longer the polling leader")
+			return
+		}
 		quote, err := a.Collector.Provider.FetchQuote(symbol)
 		outcome := "success"
 		if err != nil {
@@ -258,8 +516,11 @@ func (a *Application) refreshWatchlistQuotes() {
 // guessing at a rate.
 func (a *Application) quoteToPLN(quote market.Quote) (market.Quote, error) {
 	code := currency.Code(quote.Currency)
-	if quote.Currency == "" || !currency.Valid(code) || a.ExchangeRates == nil {
+	if code == currency.Base {
 		return quote, nil
+	}
+	if !currency.Valid(code) || a.ExchangeRates == nil {
+		return market.Quote{}, fmt.Errorf("cannot convert quote currency %q to PLN", quote.Currency)
 	}
 	price, err := a.ExchangeRates.ToBase(quote.Price, code)
 	if err != nil {

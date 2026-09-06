@@ -14,6 +14,16 @@ import (
 	_ "atlas/docs" // registers the generated OpenAPI spec with swaggo/swag — see docs/README (swag init)
 )
 
+// scoped adapts a handler method so it runs against a request-scoped Application — one whose
+// storage handle is cancelled with the request (see forRequest). Applied at registration rather
+// than inside each handler: it is the same wrapping every time, and doing it here means a new
+// route cannot forget it.
+func (a *Application) scoped(handler func(*Application, http.ResponseWriter, *http.Request)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		handler(a.forRequest(r), w, r)
+	}
+}
+
 func (a *Application) NewHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", a.Metrics.Handler())
@@ -23,53 +33,54 @@ func (a *Application) NewHandler() http.Handler {
 	// (auth_middleware.go), so it needs the same session as the rest of the API when auth is
 	// enabled — "Try it out" then reuses that session's cookie automatically.
 	mux.HandleFunc("/swagger/", httpSwagger.WrapHandler)
-	mux.HandleFunc("/health", a.healthHandler)
-	mux.HandleFunc("/symbols", a.symbolsHandler)
-	mux.HandleFunc("/prices", a.pricesHandler)
-	mux.HandleFunc("/portfolio", a.portfolioHandler)
-	mux.HandleFunc("/transactions", a.transactionsHandler)
-	mux.HandleFunc("/watchlist", a.watchlistHandler)
-	mux.HandleFunc("/watchlist/export", a.watchlistExportHandler)
-	mux.HandleFunc("/watchlist/import", a.watchlistImportHandler)
-	mux.HandleFunc("/alerts", a.alertsHandler)
-	mux.HandleFunc("/recommendations", a.recommendationsHandler)
-	mux.HandleFunc("/predictions", a.predictionsHandler)
-	mux.HandleFunc("/backtests", a.backtestsHandler)
-	mux.HandleFunc("/backtests/history", a.backtestHistoryHandler)
-	mux.HandleFunc("/backtests/walkforward", a.backtestWalkForwardHandler)
+	mux.HandleFunc("/health", a.scoped((*Application).healthHandler))
+	mux.HandleFunc("GET /live", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	mux.HandleFunc("/symbols", a.scoped((*Application).symbolsHandler))
+	mux.HandleFunc("/prices", a.scoped((*Application).pricesHandler))
+	mux.HandleFunc("/portfolio", a.scoped((*Application).portfolioHandler))
+	mux.HandleFunc("/transactions", a.scoped((*Application).transactionsHandler))
+	mux.HandleFunc("/watchlist", a.scoped((*Application).watchlistHandler))
+	mux.HandleFunc("/watchlist/export", a.scoped((*Application).watchlistExportHandler))
+	mux.HandleFunc("/watchlist/import", a.scoped((*Application).watchlistImportHandler))
+	mux.HandleFunc("/alerts", a.scoped((*Application).alertsHandler))
+	mux.HandleFunc("/recommendations", a.scoped((*Application).recommendationsHandler))
+	mux.HandleFunc("/predictions", a.scoped((*Application).predictionsHandler))
+	mux.HandleFunc("/backtests", a.scoped((*Application).backtestsHandler))
+	mux.HandleFunc("/backtests/history", a.scoped((*Application).backtestHistoryHandler))
+	mux.HandleFunc("/backtests/walkforward", a.scoped((*Application).backtestWalkForwardHandler))
 
 	// Server-rendered dashboard (Phase 8 — see implementation-plan.md and internal/app/web).
-	mux.HandleFunc("/login", a.loginPageHandler)
-	mux.HandleFunc("/logout", a.logoutPageHandler)
-	mux.HandleFunc("/dashboard/lang", a.langSetHandler)
-	mux.HandleFunc("/dashboard/portfolio", a.portfolioPageHandler)
+	mux.HandleFunc("/login", a.scoped((*Application).loginPageHandler))
+	mux.HandleFunc("/logout", a.scoped((*Application).logoutPageHandler))
+	mux.HandleFunc("/dashboard/lang", a.scoped((*Application).langSetHandler))
+	mux.HandleFunc("/dashboard/portfolio", a.scoped((*Application).portfolioPageHandler))
 	// One route per thing being deleted, not one per selection shape: each handler takes either
 	// the checkbox-select bulk field or a single per-row value (see web_handlers.go's formValues).
-	mux.HandleFunc("/dashboard/portfolio/delete", a.portfolioDeleteHandler)
-	mux.HandleFunc("/dashboard/portfolio/transactions/delete", a.portfolioTransactionDeleteHandler)
-	mux.HandleFunc("/dashboard/portfolio/select", a.portfolioSelectHandler)
-	mux.HandleFunc("/dashboard/portfolios/create", a.portfolioCreateHandler)
-	mux.HandleFunc("/dashboard/portfolios/rename", a.portfolioRenameHandler)
-	mux.HandleFunc("/dashboard/portfolios/remove", a.portfolioRemoveHandler)
-	mux.HandleFunc("/dashboard/recommendations", a.recommendationsPageHandler)
-	mux.HandleFunc("/dashboard/alerts", a.alertsPageHandler)
-	mux.HandleFunc("/dashboard/backtests", a.backtestsPageHandler)
-	mux.HandleFunc("/dashboard/watchlist", a.watchlistPageHandler)
-	mux.HandleFunc("/dashboard/watchlist/delete", a.watchlistDeleteHandler)
-	mux.HandleFunc("/dashboard/watchlist/import", a.watchlistImportPageHandler)
-	mux.HandleFunc("/dashboard/watchlist/refresh-info", a.watchlistRefreshInfoHandler)
-	mux.HandleFunc("/dashboard/account", a.accountPageHandler)
-	mux.HandleFunc("/dashboard/account/totp/setup", a.totpSetupHandler)
-	mux.HandleFunc("/dashboard/account/totp/qr.png", a.totpQRHandler)
-	mux.HandleFunc("/dashboard/account/totp/confirm", a.totpConfirmHandler)
-	mux.HandleFunc("/dashboard/account/totp/disable", a.totpDisableHandler)
-	mux.HandleFunc("/dashboard/account/ml/toggle", a.mlEngineToggleHandler)
-	mux.HandleFunc("/dashboard/account/ml/activate", a.mlModelActivateHandler)
-	mux.HandleFunc("/dashboard/account/ml/delete", a.mlModelDeleteHandler)
-	mux.HandleFunc("/dashboard/account/ml/train", a.mlTrainHandler)
-	mux.HandleFunc("/dashboard/account/backup", a.accountBackupHandler)
-	mux.HandleFunc("/dashboard/account/restore", a.accountRestoreHandler)
-	mux.HandleFunc("/dashboard/account/flush", a.accountFlushHandler)
+	mux.HandleFunc("/dashboard/portfolio/delete", a.scoped((*Application).portfolioDeleteHandler))
+	mux.HandleFunc("/dashboard/portfolio/transactions/delete", a.scoped((*Application).portfolioTransactionDeleteHandler))
+	mux.HandleFunc("/dashboard/portfolio/select", a.scoped((*Application).portfolioSelectHandler))
+	mux.HandleFunc("/dashboard/portfolios/create", a.scoped((*Application).portfolioCreateHandler))
+	mux.HandleFunc("/dashboard/portfolios/rename", a.scoped((*Application).portfolioRenameHandler))
+	mux.HandleFunc("/dashboard/portfolios/remove", a.scoped((*Application).portfolioRemoveHandler))
+	mux.HandleFunc("/dashboard/recommendations", a.scoped((*Application).recommendationsPageHandler))
+	mux.HandleFunc("/dashboard/alerts", a.scoped((*Application).alertsPageHandler))
+	mux.HandleFunc("/dashboard/backtests", a.scoped((*Application).backtestsPageHandler))
+	mux.HandleFunc("/dashboard/watchlist", a.scoped((*Application).watchlistPageHandler))
+	mux.HandleFunc("/dashboard/watchlist/delete", a.scoped((*Application).watchlistDeleteHandler))
+	mux.HandleFunc("/dashboard/watchlist/import", a.scoped((*Application).watchlistImportPageHandler))
+	mux.HandleFunc("/dashboard/watchlist/refresh-info", a.scoped((*Application).watchlistRefreshInfoHandler))
+	mux.HandleFunc("/dashboard/account", a.scoped((*Application).accountPageHandler))
+	mux.HandleFunc("/dashboard/account/totp/setup", a.scoped((*Application).totpSetupHandler))
+	mux.HandleFunc("/dashboard/account/totp/qr.png", a.scoped((*Application).totpQRHandler))
+	mux.HandleFunc("/dashboard/account/totp/confirm", a.scoped((*Application).totpConfirmHandler))
+	mux.HandleFunc("/dashboard/account/totp/disable", a.scoped((*Application).totpDisableHandler))
+	mux.HandleFunc("/dashboard/account/ml/toggle", a.scoped((*Application).mlEngineToggleHandler))
+	mux.HandleFunc("/dashboard/account/ml/activate", a.scoped((*Application).mlModelActivateHandler))
+	mux.HandleFunc("/dashboard/account/ml/delete", a.scoped((*Application).mlModelDeleteHandler))
+	mux.HandleFunc("/dashboard/account/ml/train", a.scoped((*Application).mlTrainHandler))
+	mux.HandleFunc("/dashboard/account/backup", a.scoped((*Application).accountBackupHandler))
+	mux.HandleFunc("/dashboard/account/restore", a.scoped((*Application).accountRestoreHandler))
+	mux.HandleFunc("/dashboard/account/flush", a.scoped((*Application).accountFlushHandler))
 
 	// Bare "/dashboard" (no trailing path) isn't a real route — every actual page lives under
 	// "/dashboard/..." — but it's a natural URL to type or bookmark expecting the dashboard
@@ -88,8 +99,8 @@ func (a *Application) NewHandler() http.Handler {
 
 	// "/" is the dashboard itself (not a separate "/dashboard" route — a subtree pattern in
 	// net/http.ServeMux, so this is also the catch-all for anything else unmatched above).
-	mux.HandleFunc("/", a.dashboardPageHandler)
-	return a.instrument(a.requireAuth(mux))
+	mux.HandleFunc("/", a.scoped((*Application).dashboardPageHandler))
+	return a.instrument(a.requireAuth(http.NewCrossOriginProtection().Handler(mux)))
 }
 
 // instrument records request count and latency for every route except /metrics itself,
@@ -104,8 +115,18 @@ func (a *Application) instrument(next http.Handler) http.Handler {
 		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(recorder, r)
 
-		a.Metrics.RequestCounter.WithLabelValues(r.URL.Path, r.Method, http.StatusText(recorder.status)).Inc()
-		a.Metrics.RequestDuration.WithLabelValues(r.URL.Path, r.Method).Observe(time.Since(start).Seconds())
+		route := r.Pattern
+		if route == "" || (route == "/" && r.URL.Path != "/") {
+			route = "unmatched"
+		}
+		method := r.Method
+		switch method {
+		case "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS":
+		default:
+			method = "OTHER"
+		}
+		a.Metrics.RequestCounter.WithLabelValues(route, method, http.StatusText(recorder.status)).Inc()
+		a.Metrics.RequestDuration.WithLabelValues(route, method).Observe(time.Since(start).Seconds())
 	})
 }
 

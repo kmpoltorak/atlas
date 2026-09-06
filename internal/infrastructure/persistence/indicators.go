@@ -1,7 +1,6 @@
 package persistence
 
 import (
-	"context"
 	"fmt"
 	"time"
 )
@@ -22,7 +21,8 @@ func (t *TimescaleDB) SaveIndicatorSnapshot(symbol string, ts time.Time, points 
 	if len(points) == 0 {
 		return nil
 	}
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	tx, err := t.db.BeginTxx(ctx, nil)
 	if err != nil {

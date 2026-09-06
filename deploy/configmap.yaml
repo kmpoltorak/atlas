@@ -10,10 +10,20 @@ data:
   DATABASE_PORT: "5432"
   DATABASE_NAME: "atlas"
   DATABASE_USER: "atlas"
+  # Encrypted links to the database and cache are mandatory whenever COOKIE_SECURE is true (see
+  # config.Validate) — a TLS-fronted deployment must not reach its own backends in plaintext.
+  # "require" encrypts without verifying the server certificate; use "verify-full" once the
+  # database presents a certificate signed by a CA the pod trusts.
+  DATABASE_SSLMODE: "require"
   REDIS_HOST: "redis"
   REDIS_PORT: "6379"
+  REDIS_TLS: "true"
   COLLECTOR_WINDOW_DAYS: "30"
   ALERT_POLL_INTERVAL_SECONDS: "300"
+  # Days of recomputable history (indicators, recommendations, predictions) to keep. "0" keeps
+  # everything. The alert loop writes one recommendation per watched symbol per poll, so a
+  # long-lived deployment should set a real window here — see config.Config.DerivedRetentionDays.
+  DERIVED_RETENTION_DAYS: "365"
   # Both "": no trained model available is a normal, non-fatal startup state (see
   # internal/config/config.go). Set MODEL_PATH/RECOVERY_MODEL_PATH to a path mounted into the
   # container (e.g. via an extra volume) if a trained ONNX model is deployed — the two are
@@ -27,7 +37,8 @@ data:
   ML_MODELS_DIR: "/models"
   # "": auth disabled, no login gate at all — the same non-fatal-optional pattern. Set to enable
   # the dashboard/API login gate; ADMIN_PASSWORD_HASH (the matching secret) lives in secret.yaml.
-  ADMIN_USERNAME: ""
+  ADMIN_USERNAME: "admin"
+  AUTH_DISABLED: "false"
   # "true" here (unlike docker-compose.yml's local-dev default of "false") because ingress.yaml
   # terminates TLS in front of this deployment — the session cookie only makes sense as Secure
   # when the connection actually is HTTPS.

@@ -9,6 +9,37 @@ Sharpe Ratio, and Win Rate. ML Evaluation (Accuracy/Precision/Recall/F1/ROC AUC 
 train/validate/test splitting with threshold optimization (`GET /backtests/walkforward`, see
 "Walk Forward Testing"/"Optimization" below) are all real.
 
+**Execution model — read this before reading any number below.** The simulation observes,
+signals and executes at three distinct times, which it did not always do:
+
+- **Observation**: the decision at bar `i` sees `bars[:i]` — bars that have *closed*. It used to
+  see `bars[:i+1]`, i.e. bar `i`'s own final close and volume, which are not known until that bar
+  is over.
+- **Execution**: at bar `i`'s **open**, the first price actually reachable after the signal. The
+  earlier version bought and sold at the same close the signal was computed from — a fill that
+  requires knowing the closing price before placing the order.
+- **Cost**: `tradeCostRate` (0.1% per side, commission) plus `slippageRate` (0.05% per side,
+  adverse fill), charged in both directions, so a round trip pays four times. Both are
+  placeholders for a liquid instrument, not measurements — calibrate them against real fills
+  before reading a result as money, especially on an illiquid GPW small cap.
+
+**Position sizing is all-in/all-out, and partial orders are deliberately not simulated.**
+The Decision Engine emits ACCUMULATE and REDUCE as well as BUY and SELL, but the simulation
+executes only BUY (deploy all cash) and SELL (liquidate); ACCUMULATE and REDUCE are ignored.
+This is a stated limitation, not an oversight, and it has a consequence worth being explicit
+about: a backtest cannot evaluate the graded part of the engine's output at all. Whatever the
+scoring does with position sizing is untested here. Implementing it needs a sizing policy — what
+fraction, on what basis, with what minimum trade size — which is a product decision nobody has
+made yet, and inventing one would make the reported returns a function of that invention rather
+than of the signal.
+
+**Annualization follows the curve's own calendar.** Volatility and Sharpe are computed from a
+daily equity curve (last observation per UTC date, see `dailyEquity`) and scaled by the
+observations-per-year that curve actually contains (`observationsPerYear`), not a hardcoded
+`sqrt(252)`. The old constant treated an hourly curve as if each bar were a trading day,
+inflating the annualized figures by roughly `sqrt(24)`, and assumed every exchange runs the same
+number of sessions.
+
 **Portfolio-state leakage — fixed**: backtesting previously reused the exact same Orchestrator
 instance as live recommendations (see internal/app/app.go), so every simulated
 recommendation's `decision.RecommendationInput.HasPosition` (see docs/decision_engine.md's

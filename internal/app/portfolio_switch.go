@@ -1,6 +1,8 @@
 package app
 
 import (
+	portfolioUC "atlas/internal/application/portfolio"
+	"context"
 	"net/http"
 	"strings"
 
@@ -12,20 +14,34 @@ import (
 const portfolioCookieName = "atlas_portfolio"
 const portfolioCookieMaxAge = 365 * 24 * 60 * 60
 
-// syncActivePortfolio makes a.Portfolio.ActivePortfolioID match the request's portfolio cookie
-// before any handler reads or writes Positions/Transactions — every page/JSON handler that
-// touches a.Portfolio calls this first. A missing cookie, or one naming a portfolio that no
-// longer exists, is not an error: SwitchPortfolio/Reload fall back to the first portfolio on
-// their own (see portfolio.UseCase.Reload).
-func (a *Application) syncActivePortfolio(r *http.Request) error {
+type portfolioContextKey struct{}
+
+// forPortfolio binds a request-owned view to the cookie (or first portfolio), and scopes the
+// storage handle to the request's context so a client that disconnects mid-request cancels the
+// database work it started rather than leaving it running against nobody.
+// Nested rendering reuses it, including a form's explicit portfolio selection.
+func (a *Application) forPortfolio(r *http.Request) (*Application, error) {
 	if a.Portfolio == nil {
-		return nil
+		return a.forRequest(r), nil
 	}
-	cookie, err := r.Cookie(portfolioCookieName)
-	if err != nil || cookie.Value == a.Portfolio.ActivePortfolio() {
-		return nil
+	scoped := *a.forRequest(r)
+	if uc, ok := r.Context().Value(portfolioContextKey{}).(*portfolioUC.UseCase); ok {
+		scoped.Portfolio = uc
+		return &scoped, nil
 	}
-	return a.Portfolio.SwitchPortfolio(cookie.Value)
+	id := ""
+	if cookie, err := r.Cookie(portfolioCookieName); err == nil {
+		id = cookie.Value
+	}
+	// The scoped storage handle, not the shared one: this is what actually makes an HTTP
+	// portfolio write cancellable when the client disconnects.
+	uc, err := a.Portfolio.ForPortfolio(id, scoped.Storage)
+	if err != nil {
+		return nil, err
+	}
+	scoped.Portfolio = uc
+	*r = *r.WithContext(context.WithValue(r.Context(), portfolioContextKey{}, uc))
+	return &scoped, nil
 }
 
 // setActivePortfolioCookie points portfolioCookieName at id — shared by portfolioSelectHandler
@@ -43,16 +59,22 @@ func setActivePortfolioCookie(w http.ResponseWriter, id string) {
 // submit), since switching which portfolio is showing is a display preference, not a data
 // mutation, same reasoning as langSetHandler being the only other cookie-setting nav control.
 func (a *Application) portfolioSelectHandler(w http.ResponseWriter, r *http.Request) {
+	scoped, err := a.forPortfolio(r)
+	if err != nil {
+		a.renderError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+	a = scoped
 	id := r.URL.Query().Get("id")
 	if a.Portfolio != nil && id != "" {
 		if err := a.Portfolio.SwitchPortfolio(id); err != nil {
 			a.Logger.Warn("failed to switch active portfolio", zap.String("id", id), zap.Error(err))
 		} else {
-			setActivePortfolioCookie(w, id)
+			setActivePortfolioCookie(w, a.Portfolio.ActivePortfolio())
 		}
 	}
 	redirect := r.Referer()
-	if redirect == "" {
+	if !strings.HasPrefix(redirect, "/") || strings.HasPrefix(redirect, "//") {
 		redirect = "/"
 	}
 	http.Redirect(w, r, redirect, http.StatusSeeOther)
@@ -70,6 +92,15 @@ func (a *Application) portfolioCreateHandler(w http.ResponseWriter, r *http.Requ
 		a.renderAccountPage(w, r, "Invalid form submission.", "")
 		return
 	}
+	// The request-scoped view, not the shared use case. Creating, renaming and removing a
+	// portfolio are database writes like any other; they were the three that still ran on the
+	// process-wide use case and so ignored the request context however carefully it was scoped.
+	scoped, err := a.forPortfolio(r)
+	if err != nil {
+		a.renderAccountPage(w, r, err.Error(), "")
+		return
+	}
+	a = scoped
 	name := strings.TrimSpace(r.FormValue("name"))
 	created, err := a.Portfolio.CreatePortfolio(name)
 	if err != nil {
@@ -88,6 +119,12 @@ func (a *Application) portfolioRenameHandler(w http.ResponseWriter, r *http.Requ
 		a.renderAccountPage(w, r, "Invalid form submission.", "")
 		return
 	}
+	scoped, err := a.forPortfolio(r) // see portfolioCreateHandler
+	if err != nil {
+		a.renderAccountPage(w, r, err.Error(), "")
+		return
+	}
+	a = scoped
 	id := r.FormValue("id")
 	name := strings.TrimSpace(r.FormValue("name"))
 	if err := a.Portfolio.RenamePortfolio(id, name); err != nil {
@@ -109,6 +146,12 @@ func (a *Application) portfolioRemoveHandler(w http.ResponseWriter, r *http.Requ
 		a.renderAccountPage(w, r, "Invalid form submission.", "")
 		return
 	}
+	scoped, err := a.forPortfolio(r) // see portfolioCreateHandler
+	if err != nil {
+		a.renderAccountPage(w, r, err.Error(), "")
+		return
+	}
+	a = scoped
 	id := r.FormValue("id")
 	if err := a.Portfolio.DeletePortfolio(id); err != nil {
 		a.renderAccountPage(w, r, err.Error(), "")
@@ -119,4 +162,26 @@ func (a *Application) portfolioRemoveHandler(w http.ResponseWriter, r *http.Requ
 	// back to the first remaining portfolio whenever the cookie is absent or stale.
 	http.SetCookie(w, &http.Cookie{Name: portfolioCookieName, Value: "", Path: "/", MaxAge: -1})
 	a.flashRedirect(w, r, "/dashboard/account", "Portfolio removed.")
+}
+
+// forRequest scopes the storage handle to this request's lifetime, and with it every use case
+// that holds a repository reference of its own. Everything else on the Application is shared and
+// immutable per request, so a shallow copy is all this needs.
+//
+// The point is cancellation, not timeouts: the ten-second query deadline already bounded a stuck
+// query, but a client that gave up after two seconds still paid for the full ten, and a browser
+// that reloads a slow page three times used to leave three copies of the same work running.
+//
+// Scoping Storage alone did not achieve that, because a use case constructed at startup keeps the
+// repository it was built with. Whichever use case reaches the database has to be scoped too, or
+// the handler's careful scoping applies to a handle it never uses — the gap the 2026-09-06
+// verification found in the watchlist paths after the portfolio ones were fixed.
+func (a *Application) forRequest(r *http.Request) *Application {
+	if a.Storage == nil {
+		return a
+	}
+	scoped := *a
+	scoped.Storage = a.Storage.WithContext(r.Context())
+	scoped.Watchlist = a.Watchlist.ForRequest(scoped.Storage)
+	return &scoped
 }

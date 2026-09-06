@@ -1,10 +1,13 @@
 package backtesting
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
+	"time"
 
 	decisionUC "atlas/internal/application/decision"
 	mlUC "atlas/internal/application/ml"
@@ -27,15 +30,53 @@ const minLookback = 15
 // commission and spread; set it to the real brokerage fee before reading any result as money.
 const tradeCostRate = 0.001
 
-// UseCase runs a historical simulation of the real decision pipeline (analyzer + decision
-// engine, via Orchestrator) against past bars. Per docs/backtesting.md's "No Future Data
-// Leakage" principle, the decision at bar i only ever sees bars[:i+1].
-type UseCase struct {
-	Orchestrator *decisionUC.Orchestrator
+// slippageRate is the adverse price move assumed between the signal and the fill, charged on top
+// of tradeCostRate. The two are separate because they are separate things: commission is a fee
+// you can look up, slippage is what the market does to a marketable order — a gap open, a thin
+// book, the spread you actually cross. Executing at the next bar's Open (see simulate) removes
+// the impossible same-bar fill, but pretending the Open is obtainable to the tick is its own
+// fiction, and a strategy that trades often is exactly the one this flatters.
+//
+// 0.05% per side is a placeholder for a liquid instrument, not a measurement. Calibrate it
+// against real fills before reading any result as money; on an illiquid GPW small cap it is
+// several times this.
+const slippageRate = 0.0005
+
+// buyFill and sellFill turn a bar's open into the price actually paid/received, moving it
+// against the trade in both directions so a round trip is charged twice, once each way.
+func buyFill(open float64) float64  { return open * (1 + slippageRate) }
+func sellFill(open float64) float64 { return open * (1 - slippageRate) }
+
+// fillPrice picks the right side of the spread for a reported trade.
+func fillPrice(open float64, action string) float64 {
+	if action == "SELL" {
+		return sellFill(open)
+	}
+	return buyFill(open)
 }
 
+// UseCase runs a historical simulation of the real decision pipeline (analyzer + decision
+// engine, via Orchestrator) against past bars. Per docs/backtesting.md's "No Future Data
+// Leakage" principle, the decision at bar i sees only bars[:i] — bars that have closed — and
+// executes at bar i's open. It used to see bars[:i+1] and fill at that same bar's close, which
+// required knowing the closing price before placing the order.
+type UseCase struct {
+	Context      context.Context
+	Orchestrator *decisionUC.Orchestrator
+	// Admission bounds concurrent simulations (see admission.go). Nil means unbounded, which is
+	// what tests and one-off callers want; the HTTP handlers always set it.
+	Admission *Admission
+}
+
+// NewUseCase wires a backtesting use case with a bounded admission slot count, so a page reload
+// or a script cannot put more CPU-bound simulations in flight than the container has cores —
+// which would starve the alert loop sharing this process. Tests that want unbounded concurrency
+// set Admission to nil explicitly.
 func NewUseCase(orchestrator *decisionUC.Orchestrator) *UseCase {
-	return &UseCase{Orchestrator: orchestrator}
+	return &UseCase{
+		Orchestrator: orchestrator,
+		Admission:    NewAdmission(DefaultAdmissionSlots()),
+	}
 }
 
 // Run simulates a single all-in/all-out strategy against the live decision engine's current
@@ -46,6 +87,28 @@ func NewUseCase(orchestrator *decisionUC.Orchestrator) *UseCase {
 // train/validate/test splitting and threshold optimization (docs/backtesting.md's "Walk Forward
 // Testing"/"Optimization" sections).
 func (u *UseCase) Run(symbol string, bars []market.Bar, initialCapital float64, strategyName, strategyVersion string) (backtesting.StrategyResult, error) {
+	admit, err := u.admit()
+	if err != nil {
+		return backtesting.StrategyResult{}, err
+	}
+	defer admit()
+
+	frozen, release := u.freeze()
+	defer release()
+	return frozen.run(symbol, bars, initialCapital, strategyName, strategyVersion)
+}
+
+// admit waits for a simulation slot, bounded by this use case's context so a client that
+// disconnects while queued stops holding a place in the queue.
+func (u *UseCase) admit() (func(), error) {
+	ctx := u.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return u.Admission.Acquire(ctx)
+}
+
+func (u *UseCase) run(symbol string, bars []market.Bar, initialCapital float64, strategyName, strategyVersion string) (backtesting.StrategyResult, error) {
 	if err := u.validateInputs(strategyName, initialCapital); err != nil {
 		return backtesting.StrategyResult{}, err
 	}
@@ -55,6 +118,9 @@ func (u *UseCase) Run(symbol string, bars []market.Bar, initialCapital float64, 
 	result, err := u.simulate(symbol, bars, initialCapital, strategyName, strategyVersion, u.Orchestrator.Decision.Thresholds, u.Orchestrator.ML)
 	if err != nil {
 		return backtesting.StrategyResult{}, err
+	}
+	if u.Orchestrator.MLEnabled() {
+		result.MLEvaluation = u.evaluateML(symbol, bars)
 	}
 	result.MLContribution, err = u.measureMLContribution(symbol, bars, initialCapital, strategyName, strategyVersion, result)
 	if err != nil {
@@ -71,7 +137,7 @@ func (u *UseCase) Run(symbol string, bars []market.Bar, initialCapital float64, 
 // difference to, matching evaluateML's guard: with only the deterministic stub loaded, both runs
 // would be scoring the same made-up signal and the delta would be a fabricated number.
 func (u *UseCase) measureMLContribution(symbol string, bars []market.Bar, initialCapital float64, strategyName, strategyVersion string, withML backtesting.StrategyResult) (*backtesting.MLContribution, error) {
-	if u.Orchestrator.ML == nil || u.Orchestrator.ML.CurrentModel() == nil {
+	if !u.Orchestrator.MLEnabled() || u.Orchestrator.ML == nil || u.Orchestrator.ML.CurrentModel() == nil {
 		return nil, nil
 	}
 	withoutML, err := u.simulate(symbol, bars, initialCapital, strategyName, strategyVersion, u.Orchestrator.Decision.Thresholds, nil)
@@ -101,10 +167,10 @@ func (u *UseCase) validateInputs(strategyName string, initialCapital float64) er
 	if strategyName == "" {
 		return errors.New("strategy name is required")
 	}
-	if initialCapital <= 0 {
+	if initialCapital <= 0 || math.IsNaN(initialCapital) || math.IsInf(initialCapital, 0) {
 		return errors.New("initial capital must be positive")
 	}
-	if u.Orchestrator == nil {
+	if u.Orchestrator == nil || u.Orchestrator.Decision == nil {
 		return errors.New("orchestrator is not configured")
 	}
 	return nil
@@ -121,7 +187,8 @@ func (u *UseCase) simulate(symbol string, bars []market.Bar, initialCapital floa
 	entryPrice := 0.0
 	wins, losses := 0, 0
 	trades := make([]backtesting.Trade, 0)
-	equityCurve := make([]float64, 0, len(bars)-minLookback)
+	equityCurve := make([]float64, 0, len(bars)-minLookback+1)
+	equityCurve = append(equityCurve, initialCapital)
 
 	// The Orchestrator injected into UseCase is shared with live trading (see
 	// internal/app/app.go) and its Portfolio reflects real, present-day positions — using it
@@ -139,14 +206,32 @@ func (u *UseCase) simulate(symbol string, bars []market.Bar, initialCapital floa
 	// strategy with the model removed — see MLContribution. A nil ml leaves the blend
 	// technical-only, the same degradation path as running with no model configured at all.
 	simOrchestrator := decisionUC.NewOrchestratorWithML(u.Orchestrator.Analyzer, simPortfolio, simDecision, ml)
+	simOrchestrator.SetMLEnabled(u.Orchestrator.MLEnabled())
+	simOrchestrator.SetPortfolioRiskEnabled(u.Orchestrator.PortfolioRiskEnabled())
+	if err := validateBars(bars); err != nil {
+		return backtesting.StrategyResult{}, err
+	}
+	if simOrchestrator.MLEnabled() && ml != nil {
+		if err := ml.ValidateEvaluationPeriod(bars[minLookback].Timestamp); err != nil {
+			return backtesting.StrategyResult{}, err
+		}
+	}
 
 	for i := minLookback; i < len(bars); i++ {
-		window := bars[:i+1] // only data available at this bar's timestamp
+		if u.Context != nil {
+			if err := u.Context.Err(); err != nil {
+				return backtesting.StrategyResult{}, err
+			}
+		}
+		window := bars[:i] // signal uses only previously closed bars; execute at this bar's open
 		today := bars[i]
 
 		if quantity > 0 {
 			simPortfolio.Positions = []portfolio.Position{{
-				Symbol: symbol, Quantity: quantity, AverageCost: entryPrice, CurrentPrice: today.Close,
+				Symbol: symbol, Quantity: quantity, AverageCost: entryPrice, CurrentPrice: bars[i-1].Close,
+				// The simulation's own mark-to-market is a real valuation as of that bar, so it
+				// must not read as a never-quoted position (see Orchestrator.asOf).
+				PriceSource: portfolio.PriceFromQuote, PricedAt: bars[i-1].Timestamp,
 			}}
 		} else {
 			simPortfolio.Positions = nil
@@ -163,7 +248,7 @@ func (u *UseCase) simulate(symbol string, bars []market.Bar, initialCapital floa
 				// entryPrice is the effective per-share cost basis including the entry fee, not
 				// the market price — so the position's ROI (which reaches the decision engine via
 				// simPortfolio.AverageCost) reflects what the shares actually cost.
-				entryPrice = today.Close / (1 - tradeCostRate)
+				entryPrice = buyFill(today.Open) / (1 - tradeCostRate)
 				quantity = cash / entryPrice
 				cash = 0
 				trades = append(trades, newTrade(today, symbol, recommendation, quantity))
@@ -171,9 +256,9 @@ func (u *UseCase) simulate(symbol string, bars []market.Bar, initialCapital floa
 		case "SELL":
 			if quantity > 0 {
 				sold := quantity
-				cash += quantity * today.Close * (1 - tradeCostRate)
+				cash += quantity * sellFill(today.Open) * (1 - tradeCostRate)
 				// A trade that gained less than the round trip cost is a loss, not a win.
-				if today.Close*(1-tradeCostRate) > entryPrice {
+				if sellFill(today.Open)*(1-tradeCostRate) > entryPrice {
 					wins++
 				} else {
 					losses++
@@ -189,7 +274,8 @@ func (u *UseCase) simulate(symbol string, bars []market.Bar, initialCapital floa
 	finalBar := bars[len(bars)-1]
 	finalEquity := cash + quantity*finalBar.Close
 	totalReturn := (finalEquity - initialCapital) / initialCapital
-	volatility, sharpe := volatilityAndSharpe(equityCurve)
+	daily := dailyEquity(bars[minLookback:], equityCurve)
+	volatility, sharpe := volatilityAndSharpe(daily, observationsPerYear(bars[minLookback:], len(daily)))
 
 	winRate := 0.0
 	if wins+losses > 0 {
@@ -213,7 +299,7 @@ func (u *UseCase) simulate(symbol string, bars []market.Bar, initialCapital floa
 		LosingTrades:    losses,
 		WinRate:         winRate,
 		Trades:          trades,
-		MLEvaluation:    u.evaluateML(symbol, bars),
+		MLEvaluation:    nil, // evaluated once after the strategy run, not for every optimizer candidate
 	}, nil
 }
 
@@ -244,7 +330,8 @@ func (u *UseCase) evaluateML(symbol string, bars []market.Bar) *backtesting.MLEv
 			continue // not enough forward history yet to know the real outcome
 		}
 		feature := mlUC.BuildFeatureVector(u.Orchestrator.Analyzer, symbol, bars[:i+1])
-		probability, err := model.PredictCorrectionProbability(feature)
+		prediction, err := mlUseCase.Predict(feature)
+		probability := prediction.CorrectionProbability
 		if err != nil {
 			continue
 		}
@@ -354,10 +441,12 @@ func rocAUC(trueLabels []int, predictedProbs []float64) float64 {
 
 func newTrade(bar market.Bar, symbol string, recommendation domainDecision.Recommendation, quantity float64) backtesting.Trade {
 	return backtesting.Trade{
-		Timestamp:  bar.Timestamp,
-		Symbol:     symbol,
-		Action:     recommendation.Action,
-		Price:      bar.Close,
+		Timestamp: bar.Timestamp,
+		Symbol:    symbol,
+		Action:    recommendation.Action,
+		// The fill, not the quoted open — a reported trade price the simulation didn't actually
+		// use would make the trade list disagree with the equity curve derived from it.
+		Price:      fillPrice(bar.Open, recommendation.Action),
 		Quantity:   quantity,
 		Confidence: recommendation.Confidence,
 		Reason:     strings.Join(recommendation.Reason, "; "),
@@ -384,9 +473,12 @@ func maxDrawdown(equity []float64) float64 {
 }
 
 // volatilityAndSharpe computes annualized volatility and Sharpe ratio (zero risk-free rate)
-// from a daily equity curve.
-func volatilityAndSharpe(equity []float64) (float64, float64) {
-	if len(equity) < 2 {
+// from a daily equity curve, scaled by periodsPerYear — how many observations this particular
+// curve actually contains per year, measured from its own dates (see observationsPerYear).
+// Hardcoding sqrt(252) was wrong twice over: it silently treated an hourly curve as daily, and
+// it assumed every exchange runs the same number of sessions, which GPW does not.
+func volatilityAndSharpe(equity []float64, periodsPerYear float64) (float64, float64) {
+	if len(equity) < 2 || periodsPerYear <= 0 {
 		return 0, 0
 	}
 	returns := make([]float64, 0, len(equity)-1)
@@ -413,12 +505,28 @@ func volatilityAndSharpe(equity []float64) (float64, float64) {
 	variance /= float64(len(returns))
 	stddev := math.Sqrt(variance)
 
-	volatility := stddev * math.Sqrt(252)
+	scale := math.Sqrt(periodsPerYear)
+	volatility := stddev * scale
 	sharpe := 0.0
 	if stddev > 0 {
-		sharpe = (mean / stddev) * math.Sqrt(252)
+		sharpe = (mean / stddev) * scale
 	}
 	return volatility, sharpe
+}
+
+// observationsPerYear is how many equity observations this curve holds per calendar year,
+// measured from the first and last bar it was sampled from rather than assumed. A curve too
+// short to measure (under a month) falls back to 252, since annualizing a two-week sample is
+// meaningless either way and the fallback at least keeps the number comparable.
+func observationsPerYear(bars []market.Bar, observations int) float64 {
+	if len(bars) < 2 || observations < 2 {
+		return 252
+	}
+	years := bars[len(bars)-1].Timestamp.Sub(bars[0].Timestamp).Hours() / 24 / 365.25
+	if years < 1.0/12 {
+		return 252
+	}
+	return float64(observations-1) / years
 }
 
 func annualize(totalReturn, days float64) float64 {
@@ -427,4 +535,55 @@ func annualize(totalReturn, days float64) float64 {
 		return totalReturn
 	}
 	return math.Pow(1+totalReturn, 1/years) - 1
+}
+
+// dailyEquity uses the last observation of each UTC trading date. The initial capital
+// remains the baseline, including entry costs in the first daily return.
+func dailyEquity(bars []market.Bar, equity []float64) []float64 {
+	if len(equity) == 0 {
+		return nil
+	}
+	daily := []float64{equity[0]}
+	for i, bar := range bars {
+		if i+1 == len(bars) || bar.Timestamp.UTC().Format("2006-01-02") != bars[i+1].Timestamp.UTC().Format("2006-01-02") {
+			daily = append(daily, equity[i+1])
+		}
+	}
+	return daily
+}
+
+func validateBars(bars []market.Bar) error {
+	for i, bar := range bars {
+		if bar.Timestamp.IsZero() || (i > 0 && !bar.Timestamp.After(bars[i-1].Timestamp)) {
+			return errors.New("bars must have strictly increasing timestamps")
+		}
+		for _, v := range []float64{bar.Open, bar.High, bar.Low, bar.Close} {
+			if v <= 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+				return fmt.Errorf("bar %s has invalid prices", bar.Timestamp.Format(time.RFC3339))
+			}
+		}
+	}
+	return nil
+}
+
+func (u *UseCase) WithContext(ctx context.Context) *UseCase {
+	return &UseCase{Orchestrator: u.Orchestrator, Context: ctx, Admission: u.Admission}
+}
+
+func (u *UseCase) freeze() (*UseCase, func()) {
+	if u.Orchestrator == nil {
+		return u, func() {}
+	}
+	source := u.Orchestrator
+	model := source.ML
+	release := func() {}
+	if model != nil {
+		model, release = model.Snapshot()
+	}
+	frozen := decisionUC.NewOrchestratorWithML(source.Analyzer, nil, source.Decision, model)
+	frozen.SetMLEnabled(source.MLEnabled())
+	frozen.SetPortfolioRiskEnabled(source.PortfolioRiskEnabled())
+	// No Admission on the frozen copy: the slot is already held by the caller, and re-acquiring
+	// it here would deadlock a single-slot admission against itself.
+	return &UseCase{Orchestrator: frozen, Context: u.Context}, release
 }

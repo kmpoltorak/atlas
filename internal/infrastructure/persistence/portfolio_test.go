@@ -153,7 +153,7 @@ func TestSaveTransactionReturnsAGeneratedID(t *testing.T) {
 	portfolioID := testPortfolioID(t, db)
 
 	tx := portfolio.Transaction{
-		Symbol: "TESTTX", Type: "BUY", Quantity: 4, Price: 25, Timestamp: "2026-08-06T00:00:00Z",
+		Symbol: "TESTTX", Type: "BUY", Quantity: 4, Price: 25, PriceInPLN: 25, Timestamp: "2026-08-06T00:00:00Z",
 	}
 	id, err := db.SaveTransaction(portfolioID, tx)
 	if err != nil {
@@ -169,7 +169,7 @@ func TestSaveTransactionFallsBackOnUnparseableTimestamp(t *testing.T) {
 	portfolioID := testPortfolioID(t, db)
 
 	tx := portfolio.Transaction{
-		Symbol: "TESTTXBADTS", Type: "SELL", Quantity: 1, Price: 10, Timestamp: "not-a-timestamp",
+		Symbol: "TESTTXBADTS", Type: "SELL", Quantity: 1, Price: 10, PriceInPLN: 10, Timestamp: "not-a-timestamp",
 	}
 	if _, err := db.SaveTransaction(portfolioID, tx); err != nil {
 		t.Fatalf("expected an unparseable timestamp to fall back to now, not error: %v", err)
@@ -181,7 +181,7 @@ func TestGetTransactionsReturnsPersistedRows(t *testing.T) {
 	portfolioID := testPortfolioID(t, db)
 
 	id, err := db.SaveTransaction(portfolioID, portfolio.Transaction{
-		Symbol: "TESTTXLIST", Type: "BUY", Quantity: 2, Price: 30, Timestamp: "2026-08-06T00:00:00Z",
+		Symbol: "TESTTXLIST", Type: "BUY", Quantity: 2, Price: 30, PriceInPLN: 30, Timestamp: "2026-08-06T00:00:00Z",
 	})
 	if err != nil {
 		t.Fatalf("SaveTransaction failed: %v", err)
@@ -240,7 +240,7 @@ func TestDeleteTransactionRemovesTheRow(t *testing.T) {
 	portfolioID := testPortfolioID(t, db)
 
 	id, err := db.SaveTransaction(portfolioID, portfolio.Transaction{
-		Symbol: "TESTTXDEL", Type: "BUY", Quantity: 1, Price: 10, Timestamp: "2026-08-06T00:00:00Z",
+		Symbol: "TESTTXDEL", Type: "BUY", Quantity: 1, Price: 10, PriceInPLN: 10, Timestamp: "2026-08-06T00:00:00Z",
 	})
 	if err != nil {
 		t.Fatalf("SaveTransaction failed: %v", err)
@@ -329,7 +329,7 @@ func TestDeletePortfolioAlsoDeletesItsPositionsAndTransactions(t *testing.T) {
 		t.Fatalf("SavePositions failed: %v", err)
 	}
 	if _, err := db.SaveTransaction(created.ID, portfolio.Transaction{
-		Symbol: "TESTDELPF", Type: "BUY", Quantity: 1, Price: 10, Timestamp: "2026-08-06T00:00:00Z",
+		Symbol: "TESTDELPF", Type: "BUY", Quantity: 1, Price: 10, PriceInPLN: 10, Timestamp: "2026-08-06T00:00:00Z",
 	}); err != nil {
 		t.Fatalf("SaveTransaction failed: %v", err)
 	}

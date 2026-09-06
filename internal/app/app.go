@@ -26,6 +26,7 @@ import (
 	"atlas/internal/infrastructure/providers"
 	trainerInfra "atlas/internal/infrastructure/trainer"
 	"atlas/internal/observability"
+	"atlas/migrations"
 
 	"go.uber.org/zap"
 )
@@ -76,6 +77,10 @@ type Application struct {
 	// Alerts page can show it directly — the Metrics.AlertPollErrors counter alone is only
 	// visible in Prometheus/Grafana, invisible to anyone just looking at the dashboard.
 	AlertPoll *AlertPollStatus
+	// Leader says whether this process holds the polling lease. Only the holder evaluates the
+	// watchlist and sends notifications, so more than one replica can serve HTTP without each
+	// one independently pushing its own copy of every alert (see leader.go).
+	Leader *Leader
 }
 
 // New connects to TimescaleDB and Redis and wires the full application. A connection
@@ -83,13 +88,22 @@ type Application struct {
 // can't give a truthful recommendation without real historical data (see
 // persistence.NewTimescaleDB's doc comment).
 func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics, logger *zap.Logger) (*Application, error) {
-	dsn := persistence.DSN(cfg.DatabaseHost, cfg.DatabasePort, cfg.DatabaseName, cfg.DatabaseUser, cfg.DatabasePassword)
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+	dsn := persistence.DSN(cfg.DatabaseHost, cfg.DatabasePort, cfg.DatabaseName, cfg.DatabaseUser, cfg.DatabasePassword, cfg.DatabaseSSLMode)
 	storage, err := persistence.NewTimescaleDB(ctx, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("connect to timescaledb: %w", err)
 	}
+	// Runs on every start, not just against a fresh volume like the old initdb mount — an
+	// existing database that missed a migration used to fail much later, on an unrelated query.
+	if err := persistence.Migrate(ctx, storage, migrations.Files); err != nil {
+		_ = storage.Close()
+		return nil, fmt.Errorf("apply database migrations: %w", err)
+	}
 
-	redisCache := cache.NewRedisClient(cfg.RedisHost, cfg.RedisPort)
+	redisCache := cache.NewRedisClient(cfg.RedisHost, cfg.RedisPort, cfg.RedisPassword, cfg.RedisTLS)
 	if err := redisCache.Ping(ctx); err != nil {
 		_ = storage.Close()
 		return nil, fmt.Errorf("connect to redis: %w", err)
@@ -214,6 +228,7 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 		ExchangeRates: exchangeRates,
 		Trainer:       trainerClient,
 		AlertPoll:     &AlertPollStatus{},
+		Leader:        newLeader(),
 	}, nil
 }
 
