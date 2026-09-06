@@ -8,10 +8,11 @@
 # dependency that no longer resolves, or a train.py that fails to import would be discovered by
 # the one person who eventually clicked the button, months later.
 #
-# Deliberately does NOT train a model: that needs real collected history, takes minutes, and would
-# make this a data test rather than a container test. It checks the things that break silently —
-# the interpreter is there, the pinned dependency set installs and imports together, train.py
-# parses and its split logic runs, and the Go exporter compiles.
+# It runs a full training pass on synthetic data (make_synthetic_features.py), not just an import
+# check. The earlier version only verified that train.py *parsed*, which is exactly why a
+# `NameError: name 'roc_auc_score' is not defined` in a function body shipped and killed a real
+# run: py_compile cannot see an undefined name inside a function. Synthetic input keeps this a
+# container test rather than a data test — nothing here is ever promoted to a candidate.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
