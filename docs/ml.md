@@ -2,17 +2,22 @@
 
 **Implementation status**: the Python training pipeline described below is real and
 implemented (see training/README.md for the runbook) — XGBoost binary classifier predicting
-"correction probability" (a >5% close-price drop within 10 forward bars by default, see
-`application/ml.CorrectionLabelParams`), trained on real collected OHLCV history (no synthetic
-data), exported to ONNX. Go production inference (`internal/application/ml`, `OnnxModel`) loads
+"correction probability" (a drop within 10 forward bars past a barrier of 4x the instrument's own
+trailing 20-bar realised volatility, floored at 2% — see `application/ml.CorrectionLabelParams`
+and "Why the label is volatility-scaled" below; the fixed 5% this replaced is kept only as the
+comparison it is measured against), trained on real collected OHLCV history, exported to ONNX. No
+shipped model is trained on synthetic data — `training/make_synthetic_features.py` exists only so
+CI can run a full training pass without a database. Go production inference (`internal/application/ml`, `OnnxModel`) loads
 that ONNX model via `github.com/yalue/onnxruntime_go` and runs real inference when `MODEL_PATH`
 is set and loads successfully — verified live end-to-end (train → export → load → real HTTP
 `/predictions` response → persisted `correction_probability` row, not NULL). When no model is
 loaded (the default), Predict falls back to the same deterministic RSI-derived stub as before
 (`ml.StubModelVersion`, "stub-v0", fixed 0.72 confidence) — this is a normal, non-fatal startup
 state, not an error. Caveats, honestly: training data today is whatever Atlas has actually
-collected (see PROJECT_CONTEXT.md); validation is a per-symbol time-ordered holdout with an
-embargo gap, not full walk-forward validation (a separate, larger backtesting gap, now real —
+collected (see PROJECT_CONTEXT.md); validation is a **global** time-ordered holdout with a
+`label_end` purge at the boundary, not full walk-forward validation — the per-symbol split it
+replaced was not a test of a future period at all, since symbols with different history lengths
+put different calendar periods on each side of the cut (a separate, larger backtesting gap, now real —
 see docs/backtesting.md); `expected_duration`/`expected_strength` (the predictions table columns
 beyond `correction_probability`) still stay NULL, since no model produces those yet; and, most
 importantly, both models are judged on PR AUC against a per-symbol base-rate baseline rather than on

@@ -14,3 +14,11 @@ __pycache__
 .env.*
 .impeccable
 .claude
+
+# Same reasoning as the venvs: a local pg_dump from rehearsing deploy/RUNBOOK.md's restore
+# procedure is easily gigabytes, and nothing in any image reads one.
+*.dump
+
+# Build output that would otherwise be copied into the builder and then ignored.
+*.test
+coverage.out

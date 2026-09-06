@@ -1,7 +1,7 @@
 # Database
 
 Tables (see `migrations/*.sql` for the authoritative schema — this list is current as of
-migrations/001-017):
+migrations/001-020):
 
 - `symbols` — ticker registry, upserted on demand by every write path that needs a symbol_id.
   `name`/`exchange`/`asset_class` (migrations/016) hold what the symbol actually is (fetched once,
@@ -45,6 +45,23 @@ migrations/001-017):
   this row exists and is less than five minutes old, so it's deliberately excluded from the
   backup/restore/flush cycle itself (see `internal/infrastructure/persistence/backup.go`) — a
   Flush doesn't erase the fact that a backup was once taken, and a Restore doesn't overwrite it.
+- `leader_election` (migrations/018) — a single-row lease naming which process is currently doing
+  the singleton work (polling the watchlist, writing recommendations, sending notifications), with
+  an expiry and a monotonic `epoch`. The epoch is a fencing token: a write from a process that has
+  since been superseded fails rather than landing late (`persistence.requireLeadership`). Runtime
+  state, deliberately excluded from backups.
+- `alert_outbox` (migrations/018, extended by 019 and 020) — one row per alert awaiting delivery,
+  written *before* anything tries to send it, with the set of channels that still owe it
+  (`pending_channels`, a comma-separated TEXT column rather than TEXT[] so no new driver
+  dependency was needed). Delivery claims a row with `FOR UPDATE SKIP LOCKED` for a bounded lease
+  (`claimed_by`/`claim_expires_at`) and a claim generation (`claim_seq`, migrations/020) that
+  fences the acknowledgement, so a worker whose claim lapsed mid-send cannot overwrite the state
+  of the worker that took over. Runtime state, excluded from backups.
+- `alert_cursor` (migrations/019) — the last action actually *announced* per symbol, committed in
+  the same transaction as the outbox row that announced it. This is not the same claim as
+  `recommendations`, which ordinary HTTP browsing also writes; deriving "have we told the user"
+  from that table meant a crash between the two could silently suppress a real alert. Included in
+  backups (format version 2).
 
 There is no `alerts` table — alerts are computed live from the watchlist on every request, not
 persisted (see `internal/application/alerts`).
@@ -60,16 +77,24 @@ deliberately doesn't write indicator snapshots, since its bars are historical/si
 readings (see docs/backtesting.md).
 
 Only `prices` is an actual TimescaleDB hypertable — every other table above is a plain relational
-table, despite this doc's original proposal sketching more of them as hypertables. No compression
-policy and no retention policy are configured anywhere; "10 years" below was a target, never
-implemented (there's nothing to prune yet at this project's real data volume).
+table, despite this doc's original proposal sketching more of them as hypertables. No TimescaleDB
+compression or retention *policy* is configured; the "10 years" figure below was a target, never
+implemented. Retention that does exist is application-level and covers derived data only:
+`PruneDerivedData` drops indicator, recommendation and prediction rows past
+`DERIVED_RETENTION_DAYS`, once a day, alongside delivered `alert_outbox` rows. It is **off by
+default** — the env var defaults to `0`, meaning keep everything; `deploy/configmap.yaml` sets 365
+for Kubernetes. Prices, portfolio state and transactions are never pruned regardless.
 
 Indexes: `symbols.ticker`, `prices(symbol_id, ts)` (a real unique constraint,
 `prices_symbol_ts_unique` from migrations/002, is what makes the collector's upsert idempotent),
 `backtest_runs(symbol_id, created_at)` (migrations/005). Most other lookups go through a small
 number of tables at a scale where an explicit index hasn't been needed yet.
 
-Migrations are hand-written, numbered SQL files with no real migration tool — see
-`skills/timescaledb.md` for how they actually get applied (fresh volume vs. existing one), for
-the `schema_migrations` version-tracking table (migrations/013), and for the real `pg_restore -c`
-hypertable-constraint bug this project hit and fixed (see `deploy/RUNBOOK.md`'s recovery drill).
+Migrations are hand-written, numbered SQL files, embedded with `go:embed` and applied by the
+application itself at startup under a `pg_advisory_lock` — so a fresh volume and an existing one
+converge on the same schema without anyone running `psql` by hand. Which versions actually landed
+is recorded in `schema_migrations` (migrations/013); every migration from 013 onward inserts its
+own row. See `CLAUDE.md` for the constraints this puts on writing one (Postgres has no
+`ADD CONSTRAINT IF NOT EXISTS`, so a migration that only works once is broken) and for the real
+`pg_restore -c` hypertable-constraint bug this project hit and fixed (see `deploy/RUNBOOK.md`'s
+recovery drill).

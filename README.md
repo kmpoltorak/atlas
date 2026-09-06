@@ -17,11 +17,11 @@ analytical assistant, not a trading bot.
 [GETTING_STARTED.md](GETTING_STARTED.md) — a plain-language walkthrough with no technical
 background assumed. Everything below this point is the technical/developer README.
 
-This README gives a full tour of what the project actually does today. For a phase-by-phase,
-continuously-updated account of what's implemented vs. explicitly out of scope, see
-[implementation-plan.md](implementation-plan.md) and [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) —
-those two files (plus [docs/*.md](docs/)) are the authoritative source of truth; this README is a
-map, not a duplicate.
+This README gives a full tour of what the project actually does today. [docs/](docs/) is the
+authoritative detail and this README is a map, not a duplicate;
+[implementation-plan.md](implementation-plan.md) says what is built and what is deliberately not,
+[PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) the scope and hard constraints, and
+[CLAUDE.md](CLAUDE.md) the rules the code is held to.
 
 ## Table of Contents
 
@@ -86,9 +86,9 @@ API (HTTP handlers, request/response shaping)
   watchlist continuously, which is also what keeps real price history accumulating in the
   background for later ML training — no separate ingestion job needed.
 
-See [architecture-final.md](architecture-final.md) for the original approved design and
-[docs/architecture.md](docs/architecture.md) / [docs/decision_engine.md](docs/decision_engine.md)
-for the as-built detail, including the exact scoring formula.
+See [docs/architecture.md](docs/architecture.md) and
+[docs/decision_engine.md](docs/decision_engine.md) for the as-built detail, including the exact
+scoring formula, and [docs/adr/](docs/adr/) for why the load-bearing decisions were made.
 
 ## Tech stack
 
@@ -168,9 +168,13 @@ integration is non-fatal when unset — Atlas degrades gracefully instead of ref
 | `SERVER_PORT` | `8080` | HTTP listen port |
 | `LOG_LEVEL` | `info` | zap log level |
 | `DATABASE_HOST`/`PORT`/`NAME`/`USER`/`PASSWORD` | `timescaledb`/`5432`/`atlas`/`atlas`/`atlas` | TimescaleDB connection |
+| `DATABASE_SSLMODE` | `disable` | libpq SSL mode for the database connection. Rejected at startup when `COOKIE_SECURE=true` — a TLS-fronted deployment must not reach its own database in plaintext. Use `require`, or `verify-full` once the server presents a trusted certificate |
 | `REDIS_HOST`/`PORT` | `redis`/`6379` | Redis connection |
+| `REDIS_PASSWORD` | *(empty → no auth)* | Redis `AUTH` password; the Compose `redis` service picks up the same variable as its `requirepass`, so the two can't drift. Required when `COOKIE_SECURE=true` |
+| `REDIS_TLS` | `false` | Wrap the Redis connection in TLS 1.2+. Required when `COOKIE_SECURE=true` |
 | `COLLECTOR_WINDOW_DAYS` | `30` | How much history to request per collection call |
 | `ALERT_POLL_INTERVAL_SECONDS` | `300` | Background watchlist-evaluation interval |
+| `DERIVED_RETENTION_DAYS` | `0` *(keep everything)* | Days of recomputable history (indicators, recommendations, predictions) to keep; pruned once a day. The alert loop writes one recommendation per watched symbol per poll — including `HOLD` — so these tables grow without bound on a long-lived instance, and `BackupAll` builds the whole database as one in-memory JSON document |
 | `DISCORD_WEBHOOK_URL` | *(empty → disabled)* | Business alerts: BUY/ACCUMULATE/REDUCE/SELL notifications, sent only when a symbol's action *changes* |
 | `SLACK_WEBHOOK_URL` | *(empty → disabled)* | Same business alerts as `DISCORD_WEBHOOK_URL`, delivered to a Slack Incoming Webhook instead/as well |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | *(empty → disabled)* | Same business alerts, delivered via a Telegram bot; both must be set |
@@ -184,6 +188,14 @@ integration is non-fatal when unset — Atlas degrades gracefully instead of ref
 | `PROMETHEUS_URL`/`ALERTMANAGER_URL`/`GRAFANA_URL` | `http://prometheus:9090`/`http://alertmanager:9093`/`http://grafana:3000` | Checked by `/health` and the `atlas_dependency_up` gauge. Non-empty by default because all three are always in the default Compose stack; set one to an empty string to disable that check |
 | `ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH` | *(empty → no login gate)* | Enables password+TOTP auth for the dashboard/API — generate a hash with `go run ./cmd/generate-admin-credentials`. Login is locked out globally (not per-IP — there's only ever one account) for 15 minutes after 5 failed attempts in a row. |
 | `COOKIE_SECURE` | `false` | Adds the `Secure` flag to the session cookie — set to `true` once Atlas is actually served over HTTPS (e.g. `deploy/ingress.yaml`'s TLS termination); leave `false` for the plain-HTTP local Compose stack. |
+
+Database migrations are applied by the API itself on every start, under a Postgres advisory lock
+and tracked in `schema_migrations` (`internal/infrastructure/persistence/migrate.go`). The
+`./migrations` mount in `docker-compose.yml` only pre-seeds a brand-new volume; an existing
+database no longer needs migrations applied by hand.
+
+Architecture decisions that are not obvious from the code live in [docs/adr/](docs/adr/) — one
+short file per decision, with its trade-off and what would make it wrong.
 
 `GRAFANA_ADMIN_PASSWORD` and `DATABASE_PASSWORD` are also read directly by `docker-compose.yml`
 for the `grafana`/`timescaledb` containers themselves. See `.env.example` for the full,
@@ -260,10 +272,15 @@ shapes: [docs/api.md](docs/api.md).
 ## Machine learning
 
 Two independent, optional binary classifiers (XGBoost → ONNX), trained offline on real collected
-history — never synthetic data:
+history. No shipped model is ever trained on synthetic data; the one synthetic generator in the
+repo (`training/make_synthetic_features.py`) exists solely so CI can run a full training pass
+end-to-end without a database, and its output never becomes a candidate.
 
-- **Correction probability** (`MODEL_PATH`) — probability of a >5% close-price drop within the
-  next 10 bars.
+- **Correction probability** (`MODEL_PATH`) — probability of a drop within the next 10 bars past a
+  barrier of **4x the instrument's own trailing 20-bar realised volatility, floored at 2%**. It is
+  deliberately not a fixed 5%: that asked a different question of every instrument (GLD never
+  qualified, SOXL qualified in 58% of windows), which is a large part of why a per-symbol
+  frequency lookup was so hard to beat.
 - **Recovery probability** (`RECOVERY_MODEL_PATH`) — conditional on a correction having actually
   happened, probability it recovers to its pre-drop price within N bars. Structurally thinner
   training data than the correction model, since recovery is only a defined question *after* a
@@ -403,17 +420,15 @@ doesn't have a real container registry or production cluster to target.
 
 | Document | What it's for |
 |---|---|
-| [implementation-plan.md](implementation-plan.md) | Phase-by-phase build plan with a live "Implementation status" note per phase — the single best place to check what's actually done |
+| [implementation-plan.md](implementation-plan.md) | One paragraph of status per phase, plus what is deliberately not built and why |
 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) | Component-by-component architecture reference with the same honest implementation-status treatment |
 | [docs/](docs/) | Deep dives: `architecture.md`, `decision_engine.md`, `ml.md`, `backtesting.md`, `database.md`, `deployment.md`, `api.md` |
 | [training/README.md](training/README.md) | ML training pipeline runbook |
 | [deploy/README.md](deploy/README.md), [deploy/RUNBOOK.md](deploy/RUNBOOK.md) | Kubernetes apply instructions and the disaster-recovery runbook |
 | [GETTING_STARTED.md](GETTING_STARTED.md) | Plain-language walkthrough for using the dashboard — no technical background assumed |
 | [PRODUCT.md](PRODUCT.md) | What Atlas is for and who it's for, ahead of how it's built |
-| [PROMPT.md](PROMPT.md) | The standing development rules this project is built against |
-| [CODING_GUIDELINES.md](CODING_GUIDELINES.md) | Conventions this codebase is held to |
-| [skills/](skills/) | Domain notes (Go, Docker, TimescaleDB, Prometheus, Grafana, ML, finance) accumulated while building |
-| [architecture-final.md](architecture-final.md), [database-final.md](database-final.md) | The original approved design proposals (point-in-time, kept as historical record) |
+| [docs/adr/](docs/adr/) | The decisions that are expensive to reverse, and what would have to be true to revisit them |
+| [CLAUDE.md](CLAUDE.md) | The standing rules this codebase is held to, by domain (Go, finance, ML, TimescaleDB, Docker, observability) — mostly rules that exist because the alternative was tried and cost something |
 
 As of this writing, every phase in `implementation-plan.md` is either fully implemented or
 explicitly marked out of scope — the only intentionally excluded items are multi-user accounts,

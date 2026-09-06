@@ -524,19 +524,27 @@ every ALERT_POLL_INTERVAL_SECONDS (default 300), but only pushes when a symbol's
 from the previous poll. A symbol sitting in BUY for three days produces one notification, not
 hundreds.
 
-That change-detection map is seeded at startup from the recommendations log (`seedLastActions`
-via `CurrentActionStreaks`), so a restart does not re-announce symbols that are merely continuing
-to say what they already said. It previously lived only in memory, which was invisible while
-actionable signals were rare and obvious the moment they weren't: four deploys on 2026-08-10
-pushed the same seventeen BUY tickers four times over, none of which had changed action — ORCL
-had read BUY continuously since 15:22.
+That change detection reads a durable cursor, `alert_cursor`, at the start of every poll. Two
+earlier designs failed here and both are worth knowing about. The first kept the map purely in
+memory, which was invisible while actionable signals were rare and obvious the moment they were
+not: four deploys on 2026-08-10 pushed the same seventeen BUY tickers four times over, none of
+which had changed action — ORCL had read BUY continuously since 15:22. The second seeded that map
+at startup from the `recommendations` log, which answers "what did the engine last *say*", not
+"what did we last *announce*" — and since ordinary HTTP browsing writes that table too, a crash
+between recording a recommendation and queuing its alert left history claiming BUY with nothing
+pending, and the restart suppressed the alert as unchanged.
 
-The seed answers "what did the engine last say about this symbol", not "what did we last
-successfully deliver". The difference is real and accepted: a Discord message that failed to send
-before a restart is not retried after one. Tracking delivery properly would need its own table,
-which a single-user tool doesn't warrant for a failure that is already logged as an error when it
-happens. Within one process lifetime a failed send *is* retried — the action is recorded only
-after the webhook accepts it, where the loop used to record it before even trying.
+`alert_cursor` records only what was actually announced, and it is committed in the same
+transaction as the outbox row that announced it: neither can exist without the other. Reading it
+per poll rather than seeding once also means a replica promoted to leader an hour later inherits
+the real cursor instead of a baseline captured before its promotion.
+
+Delivery is tracked properly now, in `alert_outbox` — this document previously argued a
+single-user tool did not warrant its own table for that, and that was wrong: the row is written
+*before* anything tries to send, so a process that dies mid-send loses nothing, and a retry goes
+only to the channels that still owe the alert rather than re-notifying ones that already
+succeeded. The guarantee is at-least-once per channel; see `docs/deployment.md`'s "Delivery
+guarantee" for what that does and does not promise.
 
 Each notification is a Discord embed (`buildAlertEmbed`), not a line of text: colour-coded by
 action so an add reads differently from a trim at a glance, titled with the symbol and linked to
