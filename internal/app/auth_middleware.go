@@ -13,6 +13,7 @@ const sessionCookieName = "atlas_session"
 // infra-facing (Kubernetes probes, Prometheus scraping) and shouldn't require a browser login,
 // and /login is obviously how you get a session in the first place.
 var publicPaths = map[string]bool{
+	"/live":           true,
 	"/health":         true,
 	"/metrics":        true,
 	"/login":          true,

@@ -32,9 +32,9 @@ func main() {
 
 	logger, err := observability.NewLogger(cfg.LogLevel)
 	if err != nil {
-		// No logger exists yet to log through (CODING_GUIDELINES.md bans panic() for
-		// everything else — this is the one unavoidable exception, at the single point
-		// before logging itself is available).
+		// No logger exists yet to log through (CLAUDE.md bans panic() and bare stderr
+		// printing for everything else — this is the one unavoidable exception, at the
+		// single point before logging itself is available).
 		fmt.Fprintln(os.Stderr, "failed to initialize logger:", err)
 		os.Exit(1)
 	}

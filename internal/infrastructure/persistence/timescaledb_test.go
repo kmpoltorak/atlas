@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"context"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -79,11 +80,28 @@ func testPortfolioID(t *testing.T, db *TimescaleDB) string {
 }
 
 func TestDSNIncludesConnectionParameters(t *testing.T) {
-	dsn := DSN("localhost", "5432", "atlas", "atlas", "secret")
-	for _, want := range []string{"host=localhost", "port=5432", "user=atlas", "dbname=atlas"} {
+	dsn := DSN("localhost", "5432", "atlas", "atlas", "secret", "require")
+	for _, want := range []string{"@localhost:5432", "/atlas", "atlas:secret", "sslmode=require"} {
 		if !strings.Contains(dsn, want) {
 			t.Fatalf("expected DSN to contain %q, got %q", want, dsn)
 		}
+	}
+}
+
+// A password with URL-significant characters must survive intact, which the old key/value
+// fmt.Sprintf DSN did not do — it truncated at the first space.
+func TestDSNEscapesAwkwardPasswords(t *testing.T) {
+	dsn := DSN("db.internal", "5432", "atlas", "atlas", "p@ss word/#1", "verify-full")
+	parsed, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatalf("DSN is not a valid URL: %v", err)
+	}
+	password, _ := parsed.User.Password()
+	if password != "p@ss word/#1" {
+		t.Fatalf("password did not round-trip, got %q", password)
+	}
+	if parsed.Host != "db.internal:5432" || parsed.Query().Get("sslmode") != "verify-full" {
+		t.Fatalf("unexpected host/sslmode in %q", dsn)
 	}
 }
 

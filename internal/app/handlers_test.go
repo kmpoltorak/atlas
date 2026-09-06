@@ -10,34 +10,36 @@ import (
 	"atlas/internal/infrastructure/persistence"
 )
 
-func TestOverlayLivePricesUsesQuoteWhenAvailable(t *testing.T) {
-	positions := []portfolio.Position{{Symbol: "ETFBDIVPL.WA", Quantity: 10, AverageCost: 302.55, CurrentPrice: 302.55}}
+// The valuation itself now happens once in the SQL layer (see persistence.positionRow.
+// toPosition); what is left here is turning it into the per-symbol "as of" the templates show.
+func TestLivePricedPositionsReportsTheQuoteTimestamp(t *testing.T) {
+	quotedAt := time.Date(2026, 8, 11, 14, 46, 59, 0, time.UTC)
+	positions := []portfolio.Position{{
+		Symbol: "ETFBDIVPL.WA", Quantity: 10, AverageCost: 302.55, CurrentPrice: 301.6,
+		PriceSource: portfolio.PriceFromQuote, PricedAt: quotedAt,
+	}}
 	asOf := map[string]string{"ETFBDIVPL.WA": "2026-08-11T12:18:33Z"}
-	updatedAt := time.Date(2026, 8, 11, 14, 46, 59, 0, time.UTC)
-	quotes := map[string]persistence.SymbolInfo{
-		"ETFBDIVPL.WA": {LastPrice: 301.6, QuoteUpdatedAt: updatedAt},
-	}
 
-	priced, live := overlayLivePrices(positions, asOf, quotes)
-	if priced[0].CurrentPrice != 301.6 {
-		t.Fatalf("expected the live price to overlay CurrentPrice, got %v", priced[0].CurrentPrice)
+	priced, live := (&Application{}).livePricedPositions(positions, asOf)
+
+	if priced[0].CurrentPrice != 301.6 || priced[0].AverageCost != 302.55 || priced[0].Quantity != 10 {
+		t.Fatalf("the valuation must pass through untouched, got %+v", priced[0])
 	}
-	if live["ETFBDIVPL.WA"] != updatedAt.Format(time.RFC3339) {
-		t.Fatalf("expected asOf to switch to the quote timestamp, got %q", live["ETFBDIVPL.WA"])
-	}
-	// The original AverageCost/Quantity must survive untouched.
-	if priced[0].AverageCost != 302.55 || priced[0].Quantity != 10 {
-		t.Fatalf("expected AverageCost/Quantity unchanged, got %+v", priced[0])
+	if live["ETFBDIVPL.WA"] != quotedAt.Format(time.RFC3339) {
+		t.Fatalf("expected asOf to be the quote timestamp, got %q", live["ETFBDIVPL.WA"])
 	}
 }
 
-func TestOverlayLivePricesFallsBackWithoutAQuote(t *testing.T) {
-	positions := []portfolio.Position{{Symbol: "AAPL", CurrentPrice: 200}}
+// A position priced from its last trade keeps the transaction-time "as of", so the page says
+// when the number is from instead of implying it is a current market price.
+func TestLivePricedPositionsKeepsTransactionTimeWithoutAQuote(t *testing.T) {
+	positions := []portfolio.Position{{Symbol: "AAPL", CurrentPrice: 200, PriceSource: portfolio.PriceFromTrade}}
 	asOf := map[string]string{"AAPL": "2026-08-01T00:00:00Z"}
 
-	priced, live := overlayLivePrices(positions, asOf, map[string]persistence.SymbolInfo{})
+	priced, live := (&Application{}).livePricedPositions(positions, asOf)
+
 	if priced[0].CurrentPrice != 200 {
-		t.Fatalf("expected the original CurrentPrice to survive with no quote, got %v", priced[0].CurrentPrice)
+		t.Fatalf("expected the trade price to survive, got %v", priced[0].CurrentPrice)
 	}
 	if live["AAPL"] != "2026-08-01T00:00:00Z" {
 		t.Fatalf("expected asOf to keep the transaction timestamp, got %q", live["AAPL"])

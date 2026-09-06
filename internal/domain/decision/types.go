@@ -109,6 +109,13 @@ type Recommendation struct {
 	// raw score in that case, since 1.0 there means "nothing observed," not "no risk found."
 	RiskDataAvailable bool `json:"risk_data_available"`
 
+	// Degraded is true when an input the engine expected to have was unavailable — an ML
+	// prediction that errored, or a portfolio that could not be read — so the score reflects
+	// fewer signals than a normal one. Reason carries the specifics. A degraded recommendation
+	// is still a real one, but it is a weaker claim than a complete one, and callers should not
+	// present the two identically.
+	Degraded bool `json:"degraded,omitempty"`
+
 	// MarketCondition is BULL/BEAR/SIDEWAYS (see ml.ClassifyMarketCondition) — a deterministic
 	// ADX+EMA technical rule, not a trained model. Empty string when there isn't enough history
 	// to compute it (see ml.ClassifyMarketCondition's own warm-up requirement).

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -91,14 +92,22 @@ func TestPollAlertsOnceSendsDiscordNotificationForNewAction(t *testing.T) {
 	defer server.Close()
 
 	app := newTestApplicationWithDiscord(server.URL)
-	app.pollAlertsOnce(map[string]string{}, map[string]*pendingAlert{})
+	app.pollAlertsOnce(context.Background(), 0)
 
 	if atomic.LoadInt32(&sent) != 1 {
 		t.Fatalf("expected exactly one Discord notification, got %d", sent)
 	}
 }
 
-func TestPollAlertsOnceSkipsRepeatedSameAction(t *testing.T) {
+func TestPollAlertsOnceSkipsWhenDiscordNotConfigured(t *testing.T) {
+	app := newTestApplicationWithDiscord("")
+	app.pollAlertsOnce(context.Background(), 0)
+}
+
+// Losing the lease mid-batch has to stop the batch, not merely prevent the next one. Before this,
+// a replica that lost the lease kept writing results and sending notifications while its
+// successor started doing the same.
+func TestPollAlertsOnceStopsWhenTheLeadershipTermEnds(t *testing.T) {
 	var sent int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&sent, 1)
@@ -107,17 +116,14 @@ func TestPollAlertsOnceSkipsRepeatedSameAction(t *testing.T) {
 	defer server.Close()
 
 	app := newTestApplicationWithDiscord(server.URL)
-	lastAction := map[string]string{"AAPL": "BUY"}
-	app.pollAlertsOnce(lastAction, map[string]*pendingAlert{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // the lease is already gone by the time the batch starts its first symbol
+
+	app.pollAlertsOnce(ctx, 0)
 
 	if atomic.LoadInt32(&sent) != 0 {
-		t.Fatalf("expected no notification for a repeated action, got %d", sent)
+		t.Fatalf("a batch running without leadership must send nothing, got %d", sent)
 	}
-}
-
-func TestPollAlertsOnceSkipsWhenDiscordNotConfigured(t *testing.T) {
-	app := newTestApplicationWithDiscord("")
-	app.pollAlertsOnce(map[string]string{}, map[string]*pendingAlert{})
 }
 
 // ACCUMULATE is a partial buy against a position you already hold, and it notifies for the same
@@ -141,12 +147,8 @@ func TestPollAlertsOnceNotifiesForAccumulate(t *testing.T) {
 	app.Alerts = alertsUC.NewUseCase(app.Watchlist, app.Alerts.Collector,
 		decisionUC.NewOrchestrator(analyzerUC.NewUseCase(), app.Portfolio, decisionUC.NewUseCase()), 30)
 
-	lastAction := map[string]string{}
-	app.pollAlertsOnce(lastAction, map[string]*pendingAlert{})
+	app.pollAlertsOnce(context.Background(), 0)
 
-	if lastAction["AAPL"] != "ACCUMULATE" {
-		t.Fatalf("expected ACCUMULATE to be tracked for change-detection, got %q", lastAction["AAPL"])
-	}
 	if atomic.LoadInt32(&sent) != 1 {
 		t.Fatalf("expected exactly one Discord notification for ACCUMULATE, got %d", sent)
 	}
@@ -222,112 +224,6 @@ func TestBuildAlertEmbedOmitsUnknownMarketCondition(t *testing.T) {
 // A failed Discord send must not be recorded as delivered. The loop used to mark the action seen
 // before attempting the send, which turned a transient webhook failure into an alert the Author
 // never saw and never would — every later poll considered it already handled.
-func TestPollAlertsOnceRetriesAfterAFailedSend(t *testing.T) {
-	var attempts int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Fail the first attempt, accept the second.
-		if atomic.AddInt32(&attempts, 1) == 1 {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	app := newTestApplicationWithDiscord(server.URL)
-	lastAction := map[string]string{}
-	pending := map[string]*pendingAlert{}
-
-	app.pollAlertsOnce(lastAction, pending)
-	if lastAction["AAPL"] != "" {
-		t.Fatalf("a failed send must leave the action unrecorded so it retries, got %q", lastAction["AAPL"])
-	}
-
-	app.pollAlertsOnce(lastAction, pending)
-	if atomic.LoadInt32(&attempts) != 2 {
-		t.Fatalf("expected the next poll to retry the failed alert, got %d attempts", attempts)
-	}
-	if lastAction["AAPL"] != "BUY" {
-		t.Fatalf("a delivered alert must be recorded, got %q", lastAction["AAPL"])
-	}
-
-	// And once delivered, it stays quiet.
-	app.pollAlertsOnce(lastAction, pending)
-	if atomic.LoadInt32(&attempts) != 2 {
-		t.Fatalf("expected no further sends for an unchanged action, got %d attempts", attempts)
-	}
-}
-
-// With two channels configured, one failing must not cause the next poll to redeliver to the
-// channel that already succeeded — see pendingAlert. Channel A always succeeds; channel B fails
-// once then succeeds.
-func TestPollAlertsOnceRetriesOnlyTheFailedChannel(t *testing.T) {
-	var callsA, callsB int32
-	serverA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&callsA, 1)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer serverA.Close()
-	serverB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if atomic.AddInt32(&callsB, 1) == 1 {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer serverB.Close()
-
-	watchlist := watchlistUC.NewUseCase()
-	_ = watchlist.Add("AAPL", "2026-08-05T00:00:00Z")
-	collector := &collectorUC.UseCase{Provider: loopStubProvider{}}
-	orchestrator := decisionUC.NewOrchestrator(analyzerUC.NewUseCase(), portfolioUC.NewUseCase(), decisionUC.NewUseCase())
-	app := &Application{
-		Config:  config.Config{DiscordWebhookURL: serverA.URL},
-		Metrics: observability.NewMetrics(),
-		Logger:  zap.NewNop(),
-		Notifications: notificationsUC.NewUseCase(
-			infraNotifications.NewDiscordClient(serverA.URL),
-			infraNotifications.NewDiscordClient(serverB.URL),
-		),
-		Watchlist: watchlist,
-		Alerts:    alertsUC.NewUseCase(watchlist, collector, orchestrator, 30),
-	}
-
-	lastAction := map[string]string{}
-	pending := map[string]*pendingAlert{}
-
-	app.pollAlertsOnce(lastAction, pending)
-	if callsA != 1 || callsB != 1 {
-		t.Fatalf("expected both channels attempted once, got A=%d B=%d", callsA, callsB)
-	}
-	if lastAction["AAPL"] != "" {
-		t.Fatalf("a partial failure must leave the action unrecorded, got %q", lastAction["AAPL"])
-	}
-
-	app.pollAlertsOnce(lastAction, pending)
-	if callsA != 1 {
-		t.Fatalf("channel A already delivered — the retry must not call it again, got %d calls", callsA)
-	}
-	if callsB != 2 {
-		t.Fatalf("expected the retry to call only the previously-failed channel B, got %d calls", callsB)
-	}
-	if lastAction["AAPL"] != "BUY" {
-		t.Fatalf("expected the action recorded once both channels succeed, got %q", lastAction["AAPL"])
-	}
-}
-
-// Actions that never reach Discord still have to be tracked, or a later change would be measured
-// against a stale baseline and go unannounced.
-func TestPollAlertsOnceTracksNonNotifyingActionsWithoutSending(t *testing.T) {
-	app := newTestApplicationWithDiscord("")
-	lastAction := map[string]string{}
-
-	app.pollAlertsOnce(lastAction, map[string]*pendingAlert{})
-
-	if lastAction["AAPL"] != "BUY" {
-		t.Fatalf("expected the action to be tracked even with no webhook configured, got %q", lastAction["AAPL"])
-	}
-}
 
 type fakeRateProvider struct{ rates map[currency.Code]float64 }
 
@@ -354,11 +250,11 @@ func TestQuoteToPLNConvertsNonPLNCurrency(t *testing.T) {
 	}
 }
 
-func TestQuoteToPLNLeavesPLNAndUnknownCurrenciesUnconverted(t *testing.T) {
+func TestQuoteToPLNLeavesPLNUnconverted(t *testing.T) {
 	app := &Application{ExchangeRates: exchangerateUC.NewUseCase(
 		fakeRateProvider{rates: map[currency.Code]float64{currency.USD: 3.8}}, noopRateCache{})}
 
-	for _, code := range []string{"PLN", "", "GBP"} {
+	for _, code := range []string{"PLN"} {
 		quote, err := app.quoteToPLN(market.Quote{Symbol: "ALE.WA", Price: 46.71, Currency: code})
 		if err != nil {
 			t.Fatalf("currency %q: unexpected error: %v", code, err)

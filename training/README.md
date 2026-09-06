@@ -31,12 +31,18 @@ go run ./cmd/export-training-data -label-type=correction --output training/data/
 
 This reads every symbol with persisted bars, computes the same feature vector the live
 inference path uses (`internal/application/ml.BuildFeatureVector`), and labels each row with
-whether a >5% close-price drop occurred within the next 10 bars
-(`internal/application/ml.DefaultCorrectionLabelParams`) — override with `--horizon-bars` /
-`--threshold-pct` if you want a different label definition.
+whether the close dropped past a volatility-scaled barrier within the next 10 bars — 4x the
+instrument's own trailing 20-bar realised volatility, floored at 2%
+(`internal/application/ml.DefaultCorrectionLabelParams`). Override the horizon with
+`-horizon-bars`; `-threshold-pct` sets the fixed-percentage fallback, which only applies when the
+volatility multiple is disabled. A fixed percentage asked a different question of every
+instrument, which is most of why a per-symbol frequency table was so hard to beat — see
+`docs/ml.md`.
 
-The CSV columns are `rsi, ema_dist, macd_pct, tr_pct, volume` — every one scale-free (a ratio or
-a bounded index), never a raw price or share count. If you are looking at an older CSV with
+The CSV feature columns are `rsi, ema_dist, macd_pct, tr_pct, atr_pct, rvol_20, rvol_50, volume`
+— the same order as `internal/application/ml.FeatureOrder`, which `train.py` and the ONNX
+sidecar guard must agree with exactly. Every one is scale-free (a ratio or a bounded index),
+never a raw price or share count. If you are looking at an older CSV with
 `ema, macd, atr` columns instead, it predates that change and `train.py` will refuse it: those
 carried each symbol's absolute price level, which let the model identify the symbol instead of
 reading its dynamics. See `internal/domain/ml.FeatureVector`'s doc comment for the measurement
@@ -64,13 +70,36 @@ python3 train.py --input data/features.csv --output-dir models --target correcti
 python3 train.py --input data/recovery.csv --output-dir models --target recovery
 ```
 
-Both runs use the identical training procedure — same XGBoost params, same time-ordered
-per-symbol holdout with an embargo gap, same ONNX export — only the input CSV, `--target` (which
-affects the output filename prefix, the metadata's `label_definition` text and the default
-embargo width) differ. Each writes `models/atlas-ml[-recovery]-<version>.onnx` and a matching
+Both runs use the identical training procedure — same XGBoost params, same **global**
+time-ordered holdout with a `label_end` purge at the boundary, same ONNX export — only the input
+CSV, `--target` (which affects the output filename prefix, the metadata's `label_definition` text
+and the default embargo width) differ. Each writes `models/atlas-ml[-recovery]-<version>.onnx` and a matching
 `.json` metadata sidecar (feature order, holdout AUC / PR AUC / accuracy, baselines, label
 distribution, label definition). Model files are gitignored — they're a locally/CI-generated
 artifact, not committed source.
+
+### The split lives in its own module
+
+`train.py` delegates the train/holdout split to `split.py`, which imports nothing but pandas.
+That boundary is deliberate. The split used to live in `train.py` alongside lazy, in-function
+imports of sklearn and xgboost so the file stayed importable without the training stack — until a
+function referenced a name whose lazy import lived in a *different* function, and a real run died
+with `NameError: name 'roc_auc_score' is not defined` after the export and the split had both
+already completed. A module boundary cannot fail that way: a name is either imported at the top
+of the file or it is not.
+
+`test_split.py` covers the split itself and needs only pandas, so it runs anywhere:
+
+```
+cd training && python3 -m pytest test_split.py
+```
+
+CI goes further and runs a **full training pass** on every push — `scripts/trainer-smoke-test.sh`
+builds the trainer container, generates a synthetic CSV shaped exactly like the exporter's output
+(`make_synthetic_features.py`), and trains a real model from it, asserting the ONNX file and its
+metadata sidecar come out intact. The earlier smoke test only checked that `train.py` *parsed*,
+which is precisely why the `NameError` above shipped. Synthetic data is used here and nowhere
+else: it never produces a candidate anyone can promote.
 
 ### Reading the printed metrics
 
@@ -182,7 +211,7 @@ instead of a shell/cron — it calls a small internal-only service (`cmd/trainer
 retrain.sh and reports back its status/output. This lives in its own container
 (`training/Dockerfile`), never inside `atlas-api`'s own image: retrain.sh needs the Go toolchain
 and a Python virtualenv at runtime, and the production image is explicitly not supposed to depend
-on either (see `PROMPT.md`, `skills/ml.md`).
+on either (see `CLAUDE.md`).
 
 Off by default — start it explicitly:
 

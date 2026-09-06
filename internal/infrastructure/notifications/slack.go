@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -42,7 +43,7 @@ type slackPayload struct {
 	Attachments []slackAttachment `json:"attachments,omitempty"`
 }
 
-func (c *SlackClient) SendEmbed(embed Embed) error {
+func (c *SlackClient) SendEmbed(ctx context.Context, embed Embed) error {
 	fields := make([]slackField, len(embed.Fields))
 	for i, f := range embed.Fields {
 		fields[i] = slackField{Title: f.Name, Value: f.Value, Short: f.Inline}
@@ -61,10 +62,10 @@ func (c *SlackClient) SendEmbed(embed Embed) error {
 			attachment.Ts = ts.Unix()
 		}
 	}
-	return c.post(slackPayload{Attachments: []slackAttachment{attachment}})
+	return c.post(ctx, slackPayload{Attachments: []slackAttachment{attachment}})
 }
 
-func (c *SlackClient) post(payload slackPayload) error {
+func (c *SlackClient) post(ctx context.Context, payload slackPayload) error {
 	if c.WebhookURL == "" {
 		return fmt.Errorf("webhook url is required")
 	}
@@ -75,7 +76,12 @@ func (c *SlackClient) post(payload slackPayload) error {
 	if err != nil {
 		return err
 	}
-	resp, err := c.Client.Post(c.WebhookURL, "application/json", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.WebhookURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.Client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -85,3 +91,6 @@ func (c *SlackClient) post(payload slackPayload) error {
 	}
 	return nil
 }
+
+// Name identifies this channel in the alert outbox — see Notifier.
+func (c *SlackClient) Name() string { return "slack" }

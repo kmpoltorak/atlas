@@ -1,6 +1,7 @@
 package notifications
 
 import (
+	"context"
 	"errors"
 
 	"atlas/internal/infrastructure/notifications"
@@ -32,7 +33,9 @@ func (u *UseCase) Configured() bool {
 // alerts_loop.go's pendingAlert) can retry only those next time instead of re-sending to channels
 // that already succeeded — with multiple channels configured, a plain "did the whole send fail"
 // result would otherwise make a retry re-deliver to a channel that already got it.
-func (u *UseCase) SendEmbed(embed notifications.Embed, targets []notifications.Notifier) ([]notifications.Notifier, error) {
+// ctx is the caller's cancellation. A channel not reached because ctx ended counts as failed and
+// stays owed, which is the honest record: nothing was sent to it.
+func (u *UseCase) SendEmbed(ctx context.Context, embed notifications.Embed, targets []notifications.Notifier) ([]notifications.Notifier, error) {
 	if embed.Title == "" && embed.Description == "" {
 		return nil, errors.New("embed needs a title or description")
 	}
@@ -45,10 +48,44 @@ func (u *UseCase) SendEmbed(embed notifications.Embed, targets []notifications.N
 	var failed []notifications.Notifier
 	var errs []error
 	for _, c := range targets {
-		if err := c.SendEmbed(embed); err != nil {
+		if err := ctx.Err(); err != nil {
+			failed = append(failed, c)
+			errs = append(errs, err)
+			continue
+		}
+		if err := c.SendEmbed(ctx, embed); err != nil {
 			failed = append(failed, c)
 			errs = append(errs, err)
 		}
 	}
 	return failed, errors.Join(errs...)
+}
+
+// ChannelNames lists every configured channel by name — the set an alert starts out owed to in
+// the durable outbox (see persistence.EnqueueAlert). Names rather than pointers because the
+// outbox has to survive a restart, and a pointer means nothing across process lifetimes.
+func (u *UseCase) ChannelNames() []string {
+	names := make([]string, 0, len(u.Clients))
+	for _, client := range u.Clients {
+		names = append(names, client.Name())
+	}
+	return names
+}
+
+// ChannelsNamed resolves outbox channel names back to live clients, skipping any that are no
+// longer configured. A channel removed from the config between enqueue and delivery is simply
+// dropped from that alert rather than keeping it pending forever against something that no
+// longer exists.
+func (u *UseCase) ChannelsNamed(names []string) []notifications.Notifier {
+	wanted := make(map[string]bool, len(names))
+	for _, name := range names {
+		wanted[name] = true
+	}
+	matched := make([]notifications.Notifier, 0, len(names))
+	for _, client := range u.Clients {
+		if wanted[client.Name()] {
+			matched = append(matched, client)
+		}
+	}
+	return matched
 }

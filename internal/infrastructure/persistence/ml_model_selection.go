@@ -1,7 +1,6 @@
 package persistence
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 )
@@ -11,7 +10,8 @@ import (
 // selected for that role — the normal state before anyone has used the picker, not an error;
 // the composition root falls back to MODEL_PATH/RECOVERY_MODEL_PATH in that case.
 func (t *TimescaleDB) GetActiveModelSelection(role string) (filename string, ok bool, err error) {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	err = t.db.QueryRowxContext(ctx,
 		`SELECT model_filename FROM ml_model_selection WHERE role = $1`, role).Scan(&filename)
@@ -28,7 +28,8 @@ func (t *TimescaleDB) GetActiveModelSelection(role string) (filename string, ok 
 // choice survives a restart — called only after the composition root has already loaded the
 // file successfully (see app.activateModel), never speculatively.
 func (t *TimescaleDB) SetActiveModelSelection(role, filename string) error {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	if _, err := t.db.ExecContext(ctx, `
 		INSERT INTO ml_model_selection (role, model_filename, activated_at)

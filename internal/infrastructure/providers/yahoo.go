@@ -99,6 +99,9 @@ func (p *YahooFinanceProvider) FetchBars(symbol string, window int) ([]market.Ba
 	}
 
 	result := payload.Chart.Result[0]
+	if len(result.Indicators.Quote) == 0 {
+		return nil, fmt.Errorf("no quote data returned for symbol %s", symbol)
+	}
 	quote := result.Indicators.Quote[0]
 	bars := make([]market.Bar, 0, len(result.Timestamp))
 

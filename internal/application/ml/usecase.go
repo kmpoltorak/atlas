@@ -1,8 +1,11 @@
 package ml
 
 import (
+	"fmt"
 	"math"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	analyzerUC "atlas/internal/application/analyzer"
 	"atlas/internal/domain/market"
@@ -21,6 +24,7 @@ import (
 // concurrently with that from other in-flight HTTP requests — a plain pointer swap would be a
 // data race.
 type UseCase struct {
+	mu            sync.RWMutex
 	model         atomic.Pointer[OnnxModel]
 	recoveryModel atomic.Pointer[OnnxModel]
 }
@@ -50,17 +54,40 @@ func (u *UseCase) CurrentRecoveryModel() *OnnxModel {
 	return u.recoveryModel.Load()
 }
 
+// Snapshot pins both sessions until release, allowing a whole experiment to use
+// fixed models while activation waits. The returned use case has its own lock.
+func (u *UseCase) Snapshot() (*UseCase, func()) {
+	u.mu.RLock()
+	return NewUseCaseWithModels(u.CurrentModel(), u.CurrentRecoveryModel()), u.mu.RUnlock
+}
+
+func (u *UseCase) ValidateEvaluationPeriod(start time.Time) error {
+	for _, model := range []*OnnxModel{u.CurrentModel(), u.CurrentRecoveryModel()} {
+		if model == nil {
+			continue
+		}
+		if model.TrainingDataEnd.IsZero() || !model.TrainingDataEnd.Before(start) {
+			return fmt.Errorf("model %s has unknown or overlapping training history; retrain with dated metadata and evaluate only after train_label_end, or disable ML", model.Version)
+		}
+	}
+	return nil
+}
+
 // SetModel swaps in a new correction-probability model (nil disables it, falling back to the
 // stub) and returns whichever model was active before the swap, so the caller can Close() it —
 // this package never closes a model out from under a request that's still using it, since the
 // swap itself is atomic, but the old session's resources still need releasing once no new
 // requests can observe it. Used by the Account page's model-activation flow.
 func (u *UseCase) SetModel(model *OnnxModel) *OnnxModel {
+	u.mu.Lock()
+	defer u.mu.Unlock()
 	return u.model.Swap(model)
 }
 
 // SetRecoveryModel is SetModel's counterpart for the independent recovery-probability model.
 func (u *UseCase) SetRecoveryModel(model *OnnxModel) *OnnxModel {
+	u.mu.Lock()
+	defer u.mu.Unlock()
 	return u.recoveryModel.Swap(model)
 }
 
@@ -126,6 +153,8 @@ const (
 // returned as-is rather than silently falling back to the stub — a broken model at request
 // time should be loud, not masked as a working prediction.
 func (u *UseCase) Predict(features ml.FeatureVector) (ml.Prediction, error) {
+	u.mu.RLock()
+	defer u.mu.RUnlock()
 	model := u.CurrentModel()
 	if model == nil {
 		return ml.Prediction{

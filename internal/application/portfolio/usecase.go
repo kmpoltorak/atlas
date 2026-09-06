@@ -28,6 +28,14 @@ type ExchangeRateSource interface {
 	ToBase(amount float64, code currency.Code) (float64, error)
 }
 
+// HistoricalExchangeRateSource converts using the rate published on a given date. Optional: a
+// source that only knows today still satisfies ExchangeRateSource, and RecordTransaction falls
+// back to it — saying so in the returned error rather than quietly recording a cost basis the
+// trade never had.
+type HistoricalExchangeRateSource interface {
+	ToBaseOn(amount float64, code currency.Code, date time.Time) (converted float64, exact bool, err error)
+}
+
 // UseCase keeps portfolio logic deterministic and testable. Positions/Transactions are an
 // in-memory working copy of ActivePortfolioID's data; when Repository is set, it's hydrated from
 // persisted state on construction and written through on every mutation, so state survives
@@ -291,14 +299,16 @@ func cloneWith[T any](s []T) []T {
 
 // RecordTransaction appends a transaction and updates the in-memory position state.
 func (u *UseCase) RecordTransaction(tx portfolio.Transaction) error {
+	tx.Symbol = strings.ToUpper(strings.TrimSpace(tx.Symbol))
+	portfolioID := u.ActivePortfolio()
 	if tx.Symbol == "" {
 		return errors.New("symbol is required")
 	}
-	if tx.Price <= 0 {
+	if tx.Price <= 0 || math.IsNaN(tx.Price) || math.IsInf(tx.Price, 0) {
 		return errors.New("transaction price must be positive")
 	}
-	if tx.Quantity == 0 {
-		return errors.New("transaction quantity must not be zero")
+	if tx.Quantity <= 0 || math.IsNaN(tx.Quantity) || math.IsInf(tx.Quantity, 0) {
+		return errors.New("transaction quantity must be positive and finite")
 	}
 	if tx.Type != "BUY" && tx.Type != "SELL" {
 		return errors.New("transaction type is unsupported")
@@ -317,44 +327,64 @@ func (u *UseCase) RecordTransaction(tx portfolio.Transaction) error {
 	if !currency.Valid(currency.Code(tx.Currency)) {
 		return fmt.Errorf("unsupported currency %q", tx.Currency)
 	}
+	// Parsed before conversion, not after: a transaction dated in the past has to be converted
+	// at the rate that applied then, so the timestamp is an input to the conversion rather than
+	// a field filled in afterwards.
+	tradedAt, err := parseTransactionTime(tx.Timestamp)
+	if err != nil {
+		return err
+	}
+	if tradedAt.After(time.Now().UTC().Add(24 * time.Hour)) {
+		return errors.New("transaction timestamp is in the future")
+	}
+	tx.Timestamp = tradedAt.Format(time.RFC3339Nano)
+
 	switch {
 	case currency.Code(tx.Currency) == currency.Base:
 		tx.PriceInPLN = tx.Price
 	case u.ExchangeRates == nil:
 		return fmt.Errorf("cannot record a %s transaction: no exchange rate source configured", tx.Currency)
 	default:
-		priceInPLN, err := u.ExchangeRates.ToBase(tx.Price, currency.Code(tx.Currency))
+		priceInPLN, err := u.convertToBase(tx.Price, currency.Code(tx.Currency), tradedAt)
 		if err != nil {
-			return fmt.Errorf("convert %s price to %s: %w", tx.Currency, currency.Base, err)
+			return err
 		}
 		tx.PriceInPLN = priceInPLN
 	}
 
-	// Locked from here on, not from the top of the function: everything above only validates tx
-	// and (for a non-PLN transaction) calls out to ExchangeRates.ToBase, an external HTTP round
-	// trip that must not hold mu — the point of ExchangeRateSource being pluggable is that
-	// currency conversion is a separate, potentially slow concern from the in-memory mutation
-	// below, and blocking every other portfolio request on a live NBP call would defeat that.
+	if tx.PriceInPLN <= 0 || math.IsNaN(tx.PriceInPLN) || math.IsInf(tx.PriceInPLN, 0) {
+		return errors.New("converted price must be positive and finite")
+	}
+	if tx.ID == "" {
+		tx.ID, err = randomTransactionID()
+	} else {
+		tx.ID, err = canonicalTransactionID(tx.ID)
+	}
+	if err != nil {
+		return err
+	}
 	u.mu.Lock()
 	defer u.mu.Unlock()
-
-	if u.Repository != nil {
-		id, err := u.Repository.SaveTransaction(u.ActivePortfolioID, tx)
-		if err != nil {
-			return err
-		}
-		tx.ID = id
-	} else {
-		id, err := randomTransactionID()
-		if err != nil {
-			return err
-		}
-		tx.ID = id
+	// The caller selected its target before FX I/O; never silently redirect a write.
+	if u.ActivePortfolioID != portfolioID {
+		return errors.New("portfolio changed during transaction; retry with an explicit portfolio")
 	}
-	u.Transactions = append(u.Transactions, tx)
-
-	position := applyTransaction(findPosition(u.Positions, tx.Symbol), tx)
-	return u.applyPositionUpdate(position)
+	return u.mutate(func(next *UseCase) error {
+		for _, existing := range next.Transactions {
+			if existing.ID == tx.ID {
+				if existing.Symbol == tx.Symbol && existing.Type == tx.Type && existing.Quantity == tx.Quantity && existing.Price == tx.Price && existing.Currency == tx.Currency {
+					return nil
+				}
+				return errors.New("transaction id already used with different data")
+			}
+		}
+		position := findPosition(next.Positions, tx.Symbol)
+		if tx.Type == "SELL" && tx.Quantity > position.Quantity {
+			return errors.New("cannot sell more than the held quantity")
+		}
+		next.Transactions = append(next.Transactions, tx)
+		return next.applyPositionUpdate(applyTransaction(position, tx))
+	})
 }
 
 // applyPositionUpdate folds a freshly computed position into u.Positions and the repository: a
@@ -372,9 +402,9 @@ func (u *UseCase) applyPositionUpdate(position portfolio.Position) error {
 	} else {
 		u.Positions = append(u.Positions, position)
 	}
-	if u.Repository != nil {
-		return u.Repository.SavePositions(u.ActivePortfolioID, u.Positions)
-	}
+	// No repository write here: this runs inside MutatePortfolio's callback (see mutate), which
+	// commits the whole resulting state in one transaction. Writing per position as well was the
+	// half-committed path the atomic mutation replaced.
 	return nil
 }
 
@@ -387,7 +417,7 @@ func (u *UseCase) applyPositionUpdate(position portfolio.Position) error {
 func (u *UseCase) RemovePosition(symbol string) error {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	return u.removePosition(symbol)
+	return u.mutate(func(next *UseCase) error { return next.removePosition(strings.ToUpper(strings.TrimSpace(symbol))) })
 }
 
 // removePosition is RemovePosition's lock-free core — also called by applyPositionUpdate
@@ -404,10 +434,7 @@ func (u *UseCase) removePosition(symbol string) error {
 		}
 	}
 	u.Positions = kept
-	if u.Repository != nil {
-		return u.Repository.DeletePosition(u.ActivePortfolioID, symbol)
-	}
-	return nil
+	return nil // persisted by MutatePortfolio, not per row — see applyPositionUpdate
 }
 
 // RemovePositions removes several positions at once (the dashboard's checkbox-select bulk
@@ -419,13 +446,14 @@ func (u *UseCase) removePosition(symbol string) error {
 func (u *UseCase) RemovePositions(symbols []string) error {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	var errs []error
-	for _, symbol := range symbols {
-		if err := u.removePosition(symbol); err != nil {
-			errs = append(errs, fmt.Errorf("remove position %s: %w", symbol, err))
+	return u.mutate(func(next *UseCase) error {
+		for _, symbol := range symbols {
+			if err := next.removePosition(symbol); err != nil {
+				return err
+			}
 		}
-	}
-	return errors.Join(errs...)
+		return nil
+	})
 }
 
 // RemoveTransaction deletes one historical transaction by id (e.g. a mis-entered trade) and
@@ -437,7 +465,7 @@ func (u *UseCase) RemovePositions(symbols []string) error {
 func (u *UseCase) RemoveTransaction(id string) error {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	return u.removeTransaction(id)
+	return u.mutate(func(next *UseCase) error { return next.removeTransaction(id) })
 }
 
 // removeTransaction is RemoveTransaction's lock-free core — also called by RemoveTransactions'
@@ -459,12 +487,8 @@ func (u *UseCase) removeTransaction(id string) error {
 	symbol := u.Transactions[index].Symbol
 	u.Transactions = append(u.Transactions[:index:index], u.Transactions[index+1:]...)
 
-	if u.Repository != nil {
-		if err := u.Repository.DeleteTransaction(id); err != nil {
-			return err
-		}
-	}
-
+	// The deletion is persisted by MutatePortfolio, which diffs the returned history against what
+	// it read — see persistence.MutatePortfolio.
 	return u.applyPositionUpdate(u.recomputePosition(symbol))
 }
 
@@ -480,13 +504,14 @@ func (u *UseCase) removeTransaction(id string) error {
 func (u *UseCase) RemoveTransactions(ids []string) error {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	var errs []error
-	for _, id := range ids {
-		if err := u.removeTransaction(id); err != nil {
-			errs = append(errs, fmt.Errorf("remove transaction %s: %w", id, err))
+	return u.mutate(func(next *UseCase) error {
+		for _, id := range ids {
+			if err := next.removeTransaction(id); err != nil {
+				return err
+			}
 		}
-	}
-	return errors.Join(errs...)
+		return nil
+	})
 }
 
 // recomputePosition rebuilds a symbol's position from scratch by replaying every remaining
@@ -549,7 +574,7 @@ func randomTransactionID() (string, error) {
 	if _, err := rand.Read(raw); err != nil {
 		return "", fmt.Errorf("generate transaction id: %w", err)
 	}
-	return hex.EncodeToString(raw), nil
+	return canonicalTransactionID(hex.EncodeToString(raw))
 }
 
 // ComputeRisk returns a lightweight risk snapshot for the live portfolio state (u.Positions —
@@ -618,4 +643,56 @@ func findPositionIndex(positions []portfolio.Position, symbol string) int {
 		}
 	}
 	return -1
+}
+
+// parseTransactionTime accepts the two shapes the API and the dashboard form actually send. A
+// date-only value is read as that date at midnight UTC, which is also the date its exchange rate
+// is looked up for.
+func parseTransactionTime(value string) (time.Time, error) {
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		return parsed.UTC(), nil
+	}
+	if parsed, err := time.Parse("2006-01-02", value); err == nil {
+		return parsed.UTC(), nil
+	}
+	return time.Time{}, errors.New("timestamp must be RFC3339 or YYYY-MM-DD")
+}
+
+// convertToBase prices a transaction in PLN at the rate that applied on its own date, falling
+// back to today's rate only when no dated rate can be had — and refusing to do so silently.
+//
+// The refusal is the point. A backfilled trade converted at today's rate records a cost basis
+// the trade never had, and every ROI, risk figure and recommendation derived from that position
+// inherits the error with nothing on screen to suggest it. Better to fail and let the operator
+// decide than to store a number that looks exactly like a correct one.
+func (u *UseCase) convertToBase(price float64, code currency.Code, tradedAt time.Time) (float64, error) {
+	historical, ok := u.ExchangeRates.(HistoricalExchangeRateSource)
+	if !ok {
+		converted, err := u.ExchangeRates.ToBase(price, code)
+		if err != nil {
+			return 0, fmt.Errorf("convert %s price to %s: %w", code, currency.Base, err)
+		}
+		return converted, nil
+	}
+	converted, exact, err := historical.ToBaseOn(price, code, tradedAt)
+	if err != nil {
+		return 0, fmt.Errorf("convert %s price to %s: %w", code, currency.Base, err)
+	}
+	if !exact {
+		return 0, fmt.Errorf("no %s exchange rate published for %s; record the transaction in %s, "+
+			"or retry once the rate is available", code, tradedAt.Format("2006-01-02"), currency.Base)
+	}
+	return converted, nil
+}
+
+func canonicalTransactionID(id string) (string, error) {
+	raw := strings.ReplaceAll(id, "-", "")
+	if len(raw) != 32 {
+		return "", errors.New("transaction id must be a UUID")
+	}
+	if _, err := hex.DecodeString(raw); err != nil {
+		return "", errors.New("transaction id must be a UUID")
+	}
+	raw = strings.ToLower(raw)
+	return raw[:8] + "-" + raw[8:12] + "-" + raw[12:16] + "-" + raw[16:20] + "-" + raw[20:], nil
 }

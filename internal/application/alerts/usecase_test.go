@@ -1,6 +1,7 @@
 package alerts
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -92,7 +93,7 @@ func TestEvaluateSurfacesNonHoldAlerts(t *testing.T) {
 	orchestrator := decisionUC.NewOrchestrator(analyzerUC.NewUseCase(), portfolioUC.NewUseCase(), decisionUC.NewUseCase())
 
 	uc := NewUseCase(watchlist, collector, orchestrator, 30)
-	result, err := uc.Evaluate()
+	result, err := uc.Evaluate(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -120,7 +121,7 @@ func TestEvaluateReturnsEmptyWhenWatchlistIsEmpty(t *testing.T) {
 	orchestrator := decisionUC.NewOrchestrator(analyzerUC.NewUseCase(), portfolioUC.NewUseCase(), decisionUC.NewUseCase())
 
 	uc := NewUseCase(watchlist, collector, orchestrator, 30)
-	result, err := uc.Evaluate()
+	result, err := uc.Evaluate(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -146,7 +147,7 @@ func TestEvaluateReportsProviderCallOutcomes(t *testing.T) {
 	outcomes := map[string]int{}
 	uc.OnProviderCall = func(outcome string) { outcomes[outcome]++ }
 
-	if _, err := uc.Evaluate(); err == nil {
+	if _, err := uc.Evaluate(context.Background()); err == nil {
 		t.Fatal("expected an aggregated error from the BAD symbol's failed fetch")
 	}
 	if outcomes["success"] != 1 || outcomes["error"] != 1 {

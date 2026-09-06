@@ -118,6 +118,19 @@ jobs:
       - name: go test
         run: go test -race ./...
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Only pandas/numpy, not training/requirements.txt: train.py defers its xgboost and
+      # onnxmltools imports into main() precisely so the split logic can be tested without
+      # installing ~500MB of training stack on every CI run. The versions match
+      # training/requirements.txt so a pandas behaviour change can't pass here and fail there.
+      - name: Test the training split
+        run: |
+          python -m pip install --quiet pandas==2.2.3 numpy==1.26.4
+          python -m unittest discover -s training -p 'test_*.py' -v
+
   security-scan:
     name: Vulnerability scan
     runs-on: ubuntu-latest
@@ -147,3 +160,18 @@ jobs:
           context: .
           push: false
           tags: atlas-api:ci
+
+  # The trainer is built from a different base image than atlas-api, installs its Python
+  # dependencies at runtime, and is only exercised when a human presses "Train new candidate" —
+  # so a broken Dockerfile or a dependency set that no longer resolves would otherwise be found
+  # by whoever eventually clicked the button. It does not train a model (that needs real
+  # collected history); it checks the things that break silently. See the script's own comment.
+  trainer-smoke-test:
+    name: Trainer container smoke test
+    runs-on: ubuntu-latest
+    needs: [lint-and-test]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Smoke test the trainer image
+        run: ./scripts/trainer-smoke-test.sh

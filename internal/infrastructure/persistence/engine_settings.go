@@ -1,7 +1,6 @@
 package persistence
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 )
@@ -11,7 +10,8 @@ import (
 // dashboard — the normal state before anyone has used it, not an error; the composition root
 // falls back to config.Config.MLEnabled in that case.
 func (t *TimescaleDB) GetMLEnabled() (enabled bool, ok bool, err error) {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	err = t.db.QueryRowxContext(ctx,
 		`SELECT ml_enabled FROM engine_settings WHERE id = TRUE`).Scan(&enabled)
@@ -28,7 +28,8 @@ func (t *TimescaleDB) GetMLEnabled() (enabled bool, ok bool, err error) {
 // called only after the in-memory orchestrator toggle (decision.Orchestrator.SetMLEnabled) has
 // already taken effect, same non-blocking-on-persistence stance as SetActiveModelSelection.
 func (t *TimescaleDB) SetMLEnabled(enabled bool) error {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	if _, err := t.db.ExecContext(ctx, `
 		INSERT INTO engine_settings (id, ml_enabled, updated_at)

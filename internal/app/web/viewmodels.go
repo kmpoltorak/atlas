@@ -222,6 +222,15 @@ type AccountPage struct {
 	Error       string
 	Success     string
 
+	// AuthEnabled gates the password re-entry fields on Restore and Flush. With no login gate
+	// configured there is no password to ask for, so the fields would be an unanswerable prompt
+	// rather than a safeguard (see auth.UseCase.Reauthenticate).
+	AuthEnabled bool
+	// Leader/LeaderIsSelf say which replica currently holds the polling lease, so "why is
+	// nothing polling" is answerable from the UI rather than a database session (see app.Leader).
+	Leader       string
+	LeaderIsSelf bool
+
 	// Portfolios/MaxPortfolios drive the "manage portfolios" section — create/rename/delete,
 	// capped at MaxPortfolios (see portfolio.MaxPortfolios). Switching which one is active
 	// happens via the dashboard's tabs, not here.

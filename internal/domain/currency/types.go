@@ -3,6 +3,8 @@
 // general ISO-4217 catalog.
 package currency
 
+import "errors"
+
 // Code is a supported transaction/display currency.
 type Code string
 
@@ -28,3 +30,11 @@ func All() []Code {
 func Valid(c Code) bool {
 	return c == PLN || c == EUR || c == USD
 }
+
+// ErrNoRateForDate means the rate source published nothing for the requested date — a weekend, a
+// public holiday, or a date before its history starts. It is not a failure: callers walk back to
+// the previous business day, which is the convention NBP itself documents.
+//
+// Declared here rather than in either the application port or the NBP adapter so neither has to
+// import the other to recognise it.
+var ErrNoRateForDate = errors.New("no exchange rate published for that date")

@@ -1,6 +1,7 @@
 package alerts
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -35,7 +36,25 @@ func NewUseCase(watchlist *watchlistUC.UseCase, collector *collectorUC.UseCase, 
 // Evaluate recomputes recommendations for every watchlist symbol. A per-symbol collection failure
 // (e.g. a transient provider error) does not abort the batch; it is aggregated and returned
 // alongside whatever alerts were successfully produced.
-func (u *UseCase) Evaluate() ([]alerts.Alert, error) {
+func (u *UseCase) Evaluate(ctx context.Context) ([]alerts.Alert, error) {
+	all, err := u.EvaluateAll(ctx)
+	result := make([]alerts.Alert, 0, len(all))
+	for _, item := range all {
+		if item.Recommendation.Action != "HOLD" {
+			result = append(result, item)
+		}
+	}
+	return result, err
+}
+
+// EvaluateAll includes HOLD so background polling can persist every state transition.
+//
+// ctx is the background caller's leadership term (see app.Leader.Term). Collecting bars for a few
+// dozen symbols takes as long as the provider does, which is easily longer than a lease: without
+// this check a demoted leader kept fetching and scoring on behalf of a lease somebody else held.
+// The check is between symbols rather than inside the provider call — one symbol's fetch is
+// already bounded by the HTTP client's own timeout.
+func (u *UseCase) EvaluateAll(ctx context.Context) ([]alerts.Alert, error) {
 	items, err := u.Watchlist.List()
 	if err != nil {
 		return nil, err
@@ -44,6 +63,9 @@ func (u *UseCase) Evaluate() ([]alerts.Alert, error) {
 	result := make([]alerts.Alert, 0)
 	var collected error
 	for _, item := range items {
+		if err := ctx.Err(); err != nil {
+			return result, errors.Join(collected, err)
+		}
 		bars, fromCache, err := u.Collector.Collect(item.Symbol, u.Window)
 		if !fromCache && u.OnProviderCall != nil {
 			if err != nil {
@@ -59,9 +81,6 @@ func (u *UseCase) Evaluate() ([]alerts.Alert, error) {
 		recommendation, err := u.Orchestrator.BuildRecommendationFromBars(item.Symbol, bars)
 		if err != nil {
 			collected = errors.Join(collected, err)
-			continue
-		}
-		if recommendation.Action == "HOLD" {
 			continue
 		}
 		result = append(result, alerts.Alert{

@@ -2,7 +2,9 @@ package persistence
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"github.com/jmoiron/sqlx"
 	"time"
 
 	"atlas/internal/domain/portfolio"
@@ -17,7 +19,8 @@ const defaultPortfolioName = "Main Portfolio"
 // ListPortfolios returns every portfolio, oldest first — bootstrap relies on that order to pick
 // "the" first portfolio when none is otherwise selected.
 func (t *TimescaleDB) ListPortfolios() ([]portfolio.Portfolio, error) {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 	var rows []struct {
 		ID   string `db:"id"`
 		Name string `db:"name"`
@@ -45,7 +48,8 @@ func (t *TimescaleDB) ListPortfolios() ([]portfolio.Portfolio, error) {
 }
 
 func (t *TimescaleDB) CreatePortfolio(name string) (portfolio.Portfolio, error) {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 	var id string
 	if err := t.db.GetContext(ctx, &id,
 		`INSERT INTO portfolios (name) VALUES ($1) RETURNING id`, name); err != nil {
@@ -55,7 +59,8 @@ func (t *TimescaleDB) CreatePortfolio(name string) (portfolio.Portfolio, error) 
 }
 
 func (t *TimescaleDB) RenamePortfolio(id, name string) error {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 	if _, err := t.db.ExecContext(ctx,
 		`UPDATE portfolios SET name = $1 WHERE id = $2`, name, id); err != nil {
 		return fmt.Errorf("rename portfolio %s: %w", id, err)
@@ -67,7 +72,8 @@ func (t *TimescaleDB) RenamePortfolio(id, name string) error {
 // transaction — positions/transactions have no ON DELETE CASCADE on their portfolio_id FK (see
 // migrations/001), so deleting the portfolio row first would fail with a foreign key violation.
 func (t *TimescaleDB) DeletePortfolio(id string) error {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 	tx, err := t.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
@@ -91,16 +97,54 @@ func (t *TimescaleDB) DeletePortfolio(id string) error {
 
 // GetPositions returns the persisted position snapshot for one portfolio.
 func (t *TimescaleDB) GetPositions(portfolioID string) ([]portfolio.Position, error) {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
+	return getPositions(ctx, t.db, portfolioID)
+}
 
-	var rows []struct {
-		Ticker       string  `db:"ticker"`
-		Quantity     float64 `db:"quantity"`
-		AvgCost      float64 `db:"avg_cost"`
-		CurrentPrice float64 `db:"current_price"`
+// positionRow is the shared shape behind both position queries, so the single-portfolio view,
+// the whole-account view and therefore the dashboard, the JSON API and the decision engine all
+// resolve a position's price the same way. Splitting that resolution across call sites is what
+// let the UI and the engine disagree about what a position was worth.
+type positionRow struct {
+	Ticker         string          `db:"ticker"`
+	Quantity       float64         `db:"quantity"`
+	AvgCost        float64         `db:"avg_cost"`
+	TradePrice     float64         `db:"trade_price"`
+	LastPrice      sql.NullFloat64 `db:"last_price"`
+	QuoteUpdatedAt sql.NullTime    `db:"quote_updated_at"`
+}
+
+// positionColumns is the one place the valuation inputs are selected. Both queries below use it
+// verbatim so neither can drift into pricing positions differently from the other.
+const positionColumns = `s.ticker, p.quantity, p.avg_cost,
+		 p.current_price AS trade_price, s.last_price, s.quote_updated_at`
+
+// toPosition applies the valuation rule: a real quote when there is one, otherwise the last
+// trade price, labelled as such. It never presents the fallback as a current market price.
+func (r positionRow) toPosition() portfolio.Position {
+	position := portfolio.Position{
+		Symbol:      r.Ticker,
+		Quantity:    r.Quantity,
+		AverageCost: r.AvgCost,
+		// The last recorded trade, which is a cost basis wearing a price's clothes.
+		CurrentPrice: r.TradePrice,
+		PriceSource:  portfolio.PriceFromTrade,
 	}
-	if err := t.db.SelectContext(ctx, &rows,
-		`SELECT s.ticker, p.quantity, p.avg_cost, p.current_price
+	if r.LastPrice.Valid && r.LastPrice.Float64 > 0 {
+		position.CurrentPrice = r.LastPrice.Float64
+		position.PriceSource = portfolio.PriceFromQuote
+		if r.QuoteUpdatedAt.Valid {
+			position.PricedAt = r.QuoteUpdatedAt.Time.UTC()
+		}
+	}
+	return position
+}
+
+func getPositions(ctx context.Context, q sqlx.QueryerContext, portfolioID string) ([]portfolio.Position, error) {
+	var rows []positionRow
+	if err := sqlx.SelectContext(ctx, q, &rows,
+		`SELECT `+positionColumns+`
 		 FROM positions p
 		 JOIN symbols s ON s.id = p.symbol_id
 		 WHERE p.portfolio_id = $1
@@ -110,10 +154,7 @@ func (t *TimescaleDB) GetPositions(portfolioID string) ([]portfolio.Position, er
 
 	positions := make([]portfolio.Position, 0, len(rows))
 	for _, row := range rows {
-		positions = append(positions, portfolio.Position{
-			Symbol: row.Ticker, Quantity: row.Quantity,
-			AverageCost: row.AvgCost, CurrentPrice: row.CurrentPrice,
-		})
+		positions = append(positions, row.toPosition())
 	}
 	return positions, nil
 }
@@ -125,16 +166,12 @@ func (t *TimescaleDB) GetPositions(portfolioID string) ([]portfolio.Position, er
 // on roughly the same current price anyway since it only ever reflects each portfolio's last
 // recorded trade for that symbol — see applyTransaction).
 func (t *TimescaleDB) GetAllPositions() ([]portfolio.Position, error) {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
-	var rows []struct {
-		Ticker       string  `db:"ticker"`
-		Quantity     float64 `db:"quantity"`
-		AvgCost      float64 `db:"avg_cost"`
-		CurrentPrice float64 `db:"current_price"`
-	}
+	var rows []positionRow
 	if err := t.db.SelectContext(ctx, &rows,
-		`SELECT s.ticker, p.quantity, p.avg_cost, p.current_price
+		`SELECT `+positionColumns+`
 		 FROM positions p
 		 JOIN symbols s ON s.id = p.symbol_id
 		 ORDER BY s.ticker ASC, p.quantity DESC`); err != nil {
@@ -146,7 +183,9 @@ func (t *TimescaleDB) GetAllPositions() ([]portfolio.Position, error) {
 	for _, row := range rows {
 		agg, ok := bySymbol[row.Ticker]
 		if !ok {
-			agg = &portfolio.Position{Symbol: row.Ticker, CurrentPrice: row.CurrentPrice}
+			valued := row.toPosition()
+			valued.Quantity, valued.AverageCost = 0, 0
+			agg = &valued
 			bySymbol[row.Ticker] = agg
 			order = append(order, row.Ticker)
 		}
@@ -164,11 +203,18 @@ func (t *TimescaleDB) GetAllPositions() ([]portfolio.Position, error) {
 	return positions, nil
 }
 
+// NOT part of the application write path. Every portfolio mutation goes through MutatePortfolio
+// (see portfolio_mutation.go), which commits the ledger and positions in one transaction; these
+// per-row methods are deliberately absent from portfolio.Repository so no use case can reach
+// them. They remain here for the constraint/round-trip tests, which need to write one row
+// directly to prove the database rejects or preserves it.
+//
 // SavePositions idempotently upserts the full position snapshot for one portfolio: same
 // (portfolio, symbol) overwrites in place, matching how the use case already recomputes the whole
 // slice per trade.
 func (t *TimescaleDB) SavePositions(portfolioID string, positions []portfolio.Position) error {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	tx, err := t.db.BeginTxx(ctx, nil)
 	if err != nil {
@@ -202,7 +248,8 @@ func (t *TimescaleDB) SavePositions(portfolioID string, positions []portfolio.Po
 // portfolio.UseCase.RemovePosition) — transactions are untouched, matching the append-only
 // audit-log stance the rest of this codebase takes with recommendations/predictions.
 func (t *TimescaleDB) DeletePosition(portfolioID, symbol string) error {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	if _, err := t.db.ExecContext(ctx, `
 		DELETE FROM positions
@@ -219,7 +266,8 @@ func (t *TimescaleDB) DeletePosition(portfolioID, symbol string) error {
 // migrations/003's `id` default). Transactions are append-only history, unlike positions, so
 // this is a plain insert rather than an upsert.
 func (t *TimescaleDB) SaveTransaction(portfolioID string, transaction portfolio.Transaction) (string, error) {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	tx, err := t.db.BeginTxx(ctx, nil)
 	if err != nil {
@@ -259,7 +307,12 @@ func (t *TimescaleDB) SaveTransaction(portfolioID string, transaction portfolio.
 // GetTransactions returns every persisted transaction in one portfolio across all symbols, most
 // recent first — the full activity log the dashboard's transaction history table renders.
 func (t *TimescaleDB) GetTransactions(portfolioID string) ([]portfolio.Transaction, error) {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
+	return getTransactions(ctx, t.db, portfolioID)
+}
+
+func getTransactions(ctx context.Context, q sqlx.QueryerContext, portfolioID string) ([]portfolio.Transaction, error) {
 
 	var rows []struct {
 		ID         string    `db:"id"`
@@ -271,7 +324,7 @@ func (t *TimescaleDB) GetTransactions(portfolioID string) ([]portfolio.Transacti
 		PriceInPLN float64   `db:"price_in_pln"`
 		Timestamp  time.Time `db:"timestamp"`
 	}
-	if err := t.db.SelectContext(ctx, &rows,
+	if err := sqlx.SelectContext(ctx, q, &rows,
 		`SELECT tr.id, s.ticker, tr.type, tr.quantity, tr.price, tr.currency, tr.price_in_pln, tr.timestamp
 		 FROM transactions tr
 		 JOIN symbols s ON s.id = tr.symbol_id
@@ -298,7 +351,8 @@ func (t *TimescaleDB) GetTransactions(portfolioID string) ([]portfolio.Transacti
 // afterward. Not scoped to a portfolioID: the id is already globally unique (see migrations/003),
 // and the caller already knows which portfolio it came from.
 func (t *TimescaleDB) DeleteTransaction(id string) error {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 	if _, err := t.db.ExecContext(ctx, `DELETE FROM transactions WHERE id = $1`, id); err != nil {
 		return fmt.Errorf("delete transaction %s: %w", id, err)
 	}

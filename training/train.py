@@ -16,9 +16,13 @@ score respectably by memorising "which symbol is this". It measurably did — se
 domain/ml.FeatureVector's doc comment, and the symbol-base-rate baseline this script now computes
 on every run to keep that failure mode visible instead of flattering.
 
-Validation is a per-symbol time-ordered holdout with an embargo gap (not full walk-forward
-validation, which is a separate, larger backtesting gap — see docs/backtesting.md), on whatever
-history Atlas has actually collected (see PROJECT_CONTEXT.md's Implementation status notes).
+Validation is a global time-ordered holdout: one timestamp boundary shared by every symbol, with
+every training row whose label window crosses that boundary purged (see time_ordered_split). The
+earlier per-symbol split was not a test of a future period at all — symbols with different history
+lengths cut at different dates, so one symbol's training rows could postdate another's holdout.
+It is still not full walk-forward validation, which is a separate, larger backtesting gap (see
+docs/backtesting.md), and it runs on whatever history Atlas has actually collected (see
+PROJECT_CONTEXT.md's Implementation status notes).
 Class balance, baselines and holdout metrics are always printed and written to the model's
 metadata sidecar so a degenerate or overconfident model is visible, not hidden.
 """
@@ -27,6 +31,7 @@ import json
 import random
 import sys
 import time
+from pathlib import Path
 
 import pandas as pd
 from onnxmltools.convert import convert_xgboost
@@ -34,40 +39,14 @@ from onnxmltools.convert.common.data_types import FloatTensorType
 from sklearn.metrics import accuracy_score, average_precision_score, brier_score_loss, roc_auc_score
 from xgboost import XGBClassifier
 
+# The split lives in its own module so it can be tested with pandas alone — see split.py for why
+# that is a module boundary rather than a lazy import. sys.path[0] is this file's directory when
+# run as a script (retrain.sh does exactly that), so the bare import resolves; the explicit
+# insert covers being invoked from elsewhere.
+sys.path.insert(0, str(Path(__file__).parent))
+from split import DEFAULT_EMBARGO_BARS, HOLDOUT_FRACTION, time_ordered_split  # noqa: E402
+
 FEATURE_ORDER = ["rsi", "ema_dist", "macd_pct", "tr_pct", "atr_pct", "rvol_20", "rvol_50", "volume"]
-HOLDOUT_FRACTION = 0.2
-
-# Bars to drop between each symbol's train and holdout segments. A label looks forward, so
-# without this gap the last training rows' labels are computed from bars that live in the
-# holdout — the train/holdout boundary leaks, and the holdout score is optimistic. The defaults
-# match cmd/export-training-data's own label horizons: HorizonBars for correction, and
-# HorizonBars + RecoveryHorizonBars for recovery, whose label can only resolve after the
-# correction it is conditional on has already played out.
-DEFAULT_EMBARGO_BARS = {"correction": 10, "recovery": 30}
-
-
-def time_ordered_split(df: pd.DataFrame, holdout_fraction: float, embargo_bars: int):
-    """Splits each symbol's rows by time (last `holdout_fraction` -> holdout), not randomly, and
-    drops `embargo_bars` rows at the boundary so no training row's forward-looking label window
-    reaches into a holdout row. A random shuffle split would leak future information wholesale;
-    a time split without the embargo leaks it only at the seam, which is subtler and was the
-    original version's actual bug.
-
-    Symbols too short to give up an embargo gap are put entirely in train rather than split
-    dishonestly — they still contribute signal, they just can't contribute a trustworthy holdout.
-    """
-    train_parts, holdout_parts, dropped = [], [], 0
-    for _, group in df.sort_values("ts").groupby("symbol"):
-        cut = max(1, int(len(group) * (1 - holdout_fraction)))
-        train_end = cut - embargo_bars
-        if train_end < 1 or cut >= len(group):
-            train_parts.append(group)
-            continue
-        train_parts.append(group.iloc[:train_end])
-        holdout_parts.append(group.iloc[cut:])
-        dropped += cut - train_end
-    holdout = pd.concat(holdout_parts) if holdout_parts else pd.DataFrame(columns=df.columns)
-    return pd.concat(train_parts), holdout, dropped
 
 
 def symbol_base_rate_scores(train_df: pd.DataFrame, holdout_df: pd.DataFrame):
@@ -144,7 +123,7 @@ def main() -> int:
     )
 
     df = pd.read_csv(args.input)
-    missing = [c for c in FEATURE_ORDER + ["label"] if c not in df.columns]
+    missing = [c for c in FEATURE_ORDER + ["label", "symbol", "ts", "label_end"] if c not in df.columns]
     if missing:
         print(f"input CSV is missing required columns: {missing}", file=sys.stderr)
         print("if this lists atr_pct/rvol_20/rvol_50, the CSV predates the volatility features; if it lists ema_dist/macd_pct/tr_pct, it predates the scale-free feature "
@@ -162,7 +141,7 @@ def main() -> int:
     train_df, holdout_df, embargoed = time_ordered_split(df, HOLDOUT_FRACTION, embargo_bars)
     print(f"split: {len(train_df)} train / {len(holdout_df)} holdout "
           f"({embargoed} rows dropped as a {embargo_bars}-bar embargo at the boundary)")
-    if len(holdout_df) == 0 or holdout_df["label"].nunique() < 2:
+    if train_df["label"].nunique() < 2 or len(holdout_df) == 0 or holdout_df["label"].nunique() < 2:
         print("holdout split ended up empty or single-class; the dataset is too small for a "
               "meaningful per-symbol time-ordered split with a "
               f"{embargo_bars}-bar embargo yet", file=sys.stderr)
@@ -239,6 +218,7 @@ def main() -> int:
               "a correction is actually likelier — which is what Atlas alerts on. Do not promote "
               "it from the Account page on the strength of its accuracy figure.", file=sys.stderr)
 
+    Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     onnx_model = convert_xgboost(
         model,
         initial_types=[("features", FloatTensorType([None, len(FEATURE_ORDER)]))],
@@ -254,6 +234,11 @@ def main() -> int:
     metadata = {
         "version": version,
         "trained_at": time.time(),
+        "train_start": train_df["ts"].min().isoformat(),
+        "train_label_end": train_df["label_end"].max().isoformat(),
+        "holdout_start": holdout_df["ts"].min().isoformat(),
+        "holdout_label_end": holdout_df["label_end"].max().isoformat(),
+        "validation_method": "global_time_holdout_with_label_end_purge",
         "feature_order": FEATURE_ORDER,
         "row_count": len(df),
         "train_row_count": len(train_df),

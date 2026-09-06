@@ -211,9 +211,28 @@
             <label class="form-label small mb-1">{{T .Lang "account.restore_file"}}</label>
             <input type="file" class="form-control form-control-sm" name="backup" accept="application/json" required>
           </div>
+          {{if .AuthEnabled}}
+          <div>
+            <label class="form-label small mb-1">{{T .Lang "account.confirm_password"}}</label>
+            <input type="password" class="form-control form-control-sm" name="password" autocomplete="current-password" required>
+          </div>
+          {{end}}
           <button type="submit" class="btn btn-outline-warning btn-sm text-nowrap"
                   onclick="return confirm('{{T .Lang "confirm.restore_backup"}}');">{{T .Lang "account.restore_submit"}}</button>
         </form>
+      </div>
+    </div>
+
+    <h2 class="h4 mt-5 mb-2">{{T .Lang "account.leader_heading"}}</h2>
+    <div class="card card-md">
+      <div class="card-body">
+        {{if .LeaderIsSelf}}
+        <p class="mb-0 small"><span class="badge text-bg-success">&#9679;</span> {{T .Lang "account.leader_self"}}</p>
+        {{else if .Leader}}
+        <p class="mb-0 small"><span class="badge text-bg-secondary">&#9679;</span> {{T .Lang "account.leader_other"}} <code>{{.Leader}}</code></p>
+        {{else}}
+        <p class="mb-0 small text-body-secondary">{{T .Lang "account.leader_none"}}</p>
+        {{end}}
       </div>
     </div>
 
@@ -225,7 +244,13 @@
         <p class="text-body-secondary small">{{T .Lang "account.last_backup"}} {{(localTime .LastBackupAt).Format "2006-01-02 15:04"}}</p>
         {{end}}
         {{if .HasBackup}}
-        <form method="post" action="/dashboard/account/flush" class="mb-0">
+        <form method="post" action="/dashboard/account/flush" class="mb-0 d-flex flex-wrap gap-2 align-items-end">
+          {{if .AuthEnabled}}
+          <div>
+            <label class="form-label small mb-1">{{T .Lang "account.confirm_password"}}</label>
+            <input type="password" class="form-control form-control-sm" name="password" autocomplete="current-password" required>
+          </div>
+          {{end}}
           <button type="submit" class="btn btn-danger"
                   onclick="return confirm('{{T .Lang "confirm.flush_all"}}');">{{T .Lang "account.flush_submit"}}</button>
         </form>

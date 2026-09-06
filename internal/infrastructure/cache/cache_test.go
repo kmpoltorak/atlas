@@ -20,7 +20,7 @@ func connectTestClient(t *testing.T) *RedisClient {
 	if err != nil {
 		t.Fatalf("invalid TEST_REDIS_ADDR %q: %v", addr, err)
 	}
-	client := NewRedisClient(host, port)
+	client := NewRedisClient(host, port, os.Getenv("TEST_REDIS_PASSWORD"), false)
 	t.Cleanup(func() { _ = client.Close() })
 	return client
 }

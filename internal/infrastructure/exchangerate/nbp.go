@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"atlas/internal/domain/currency"
@@ -15,7 +16,8 @@ import (
 // NBPProvider fetches NBP's Table A — the average/mid reference rate NBP itself publishes once
 // per business day (~11:45 CET), one rate per currency. Table A (not Table C, NBP's buy/sell
 // cash-exchange spread) is the standard choice for valuation rather than physical currency
-// exchange — see implementation-plan.md's Phase 3 status note.
+// exchange — see PROJECT_CONTEXT.md's "Market data providers" for what this endpoint actually
+// does and does not guarantee.
 type NBPProvider struct {
 	BaseURL string
 	Client  *http.Client
@@ -92,4 +94,62 @@ func (p *NBPProvider) FetchRates() (map[currency.Code]float64, error) {
 		}
 	}
 	return rates, nil
+}
+
+// nbpSingleRate is the shape of NBP's per-currency endpoint, which returns one currency's rate
+// for one date rather than the whole table.
+type nbpSingleRate struct {
+	Rates []struct {
+		No            string  `json:"no"`
+		EffectiveDate string  `json:"effectiveDate"`
+		Mid           float64 `json:"mid"`
+	} `json:"rates"`
+}
+
+// FetchRateOn returns the PLN-per-unit mid rate NBP published for code on a specific date, for
+// converting a transaction entered with a past timestamp.
+//
+// Using today's rate for a trade from three months ago is simply a wrong number: it records a
+// cost basis the trade never had, and every ROI and risk figure derived from it inherits the
+// error. NBP publishes Table A per date precisely so this can be looked up rather than guessed.
+func (p *NBPProvider) FetchRateOn(code currency.Code, date time.Time) (float64, error) {
+	if code == currency.Base {
+		return 1, nil
+	}
+	url := fmt.Sprintf("%s/rates/A/%s/%s/?format=json",
+		strings.TrimSuffix(p.BaseURL, "/tables/A"), strings.ToLower(string(code)),
+		date.UTC().Format("2006-01-02"))
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("User-Agent", nbpUserAgent)
+
+	resp, err := p.Client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("fetch NBP rate for %s on %s: %w", code, date.Format("2006-01-02"), err)
+	}
+	defer resp.Body.Close()
+
+	// 404 is NBP's answer for "no publication that day", which is the normal weekend/holiday
+	// case rather than a failure — see ErrNoRateForDate.
+	if resp.StatusCode == http.StatusNotFound {
+		return 0, currency.ErrNoRateForDate
+	}
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("unexpected NBP status for %s on %s: %d", code, date.Format("2006-01-02"), resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, fmt.Errorf("read NBP response: %w", err)
+	}
+	var payload nbpSingleRate
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return 0, fmt.Errorf("decode NBP response: %w", err)
+	}
+	if len(payload.Rates) == 0 || payload.Rates[0].Mid <= 0 {
+		return 0, currency.ErrNoRateForDate
+	}
+	return payload.Rates[0].Mid, nil
 }

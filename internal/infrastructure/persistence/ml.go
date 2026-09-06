@@ -1,7 +1,6 @@
 package persistence
 
 import (
-	"context"
 	"fmt"
 
 	"atlas/internal/domain/ml"
@@ -19,7 +18,8 @@ import (
 // follow the identical convention, gated on pred.RecoveryModelVersion instead — a genuinely
 // separate, independently-optional model from the correction one above.
 func (t *TimescaleDB) SavePrediction(pred ml.Prediction) error {
-	ctx := context.Background()
+	ctx, cancel := t.context()
+	defer cancel()
 
 	tx, err := t.db.BeginTxx(ctx, nil)
 	if err != nil {

@@ -1,6 +1,7 @@
 package notifications
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -13,10 +14,10 @@ var errFakeSend = errors.New("fake send failure")
 
 func TestSendEmbedRequiresContentAndClient(t *testing.T) {
 	uc := NewUseCase()
-	if _, err := uc.SendEmbed(notifications.Embed{}, nil); err == nil {
+	if _, err := uc.SendEmbed(context.Background(), notifications.Embed{}, nil); err == nil {
 		t.Fatal("expected empty embed to be rejected")
 	}
-	if _, err := uc.SendEmbed(notifications.Embed{Title: "hello"}, nil); err == nil {
+	if _, err := uc.SendEmbed(context.Background(), notifications.Embed{Title: "hello"}, nil); err == nil {
 		t.Fatal("expected missing client to be rejected")
 	}
 
@@ -28,20 +29,28 @@ func TestSendEmbedRequiresContentAndClient(t *testing.T) {
 	client := notifications.NewDiscordClient(server.URL)
 	client.Client = server.Client()
 	uc = NewUseCase(client)
-	if _, err := uc.SendEmbed(notifications.Embed{Title: "hello"}, nil); err != nil {
+	if _, err := uc.SendEmbed(context.Background(), notifications.Embed{Title: "hello"}, nil); err != nil {
 		t.Fatalf("expected informational embed to be accepted, got %v", err)
 	}
 }
 
 // fakeNotifier lets a test control per-call success/failure without a real HTTP server.
 type fakeNotifier struct {
+	name     string
 	embedErr error
 	sent     int
 }
 
-func (f *fakeNotifier) SendEmbed(notifications.Embed) error {
+func (f *fakeNotifier) SendEmbed(context.Context, notifications.Embed) error {
 	f.sent++
 	return f.embedErr
+}
+
+func (f *fakeNotifier) Name() string {
+	if f.name == "" {
+		return "fake"
+	}
+	return f.name
 }
 
 func TestSendEmbedFansOutAndOneFailureDoesNotBlockAnother(t *testing.T) {
@@ -49,7 +58,7 @@ func TestSendEmbedFansOutAndOneFailureDoesNotBlockAnother(t *testing.T) {
 	failing := &fakeNotifier{embedErr: errFakeSend}
 	uc := NewUseCase(failing, ok)
 
-	failed, err := uc.SendEmbed(notifications.Embed{Title: "hello"}, nil)
+	failed, err := uc.SendEmbed(context.Background(), notifications.Embed{Title: "hello"}, nil)
 	if err == nil {
 		t.Fatal("expected the failing client's error to surface")
 	}
@@ -70,7 +79,7 @@ func TestSendEmbedOnlyCallsExplicitTargets(t *testing.T) {
 	target := &fakeNotifier{}
 	uc := NewUseCase(untouched, target)
 
-	failed, err := uc.SendEmbed(notifications.Embed{Title: "hello"}, []notifications.Notifier{target})
+	failed, err := uc.SendEmbed(context.Background(), notifications.Embed{Title: "hello"}, []notifications.Notifier{target})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -90,7 +99,7 @@ func TestSendEmbedEmptyTargetsMeansEveryClient(t *testing.T) {
 	second := &fakeNotifier{}
 	uc := NewUseCase(first, second)
 
-	if _, err := uc.SendEmbed(notifications.Embed{Title: "hello"}, nil); err != nil {
+	if _, err := uc.SendEmbed(context.Background(), notifications.Embed{Title: "hello"}, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if first.sent != 1 || second.sent != 1 {

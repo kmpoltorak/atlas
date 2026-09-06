@@ -5,10 +5,9 @@
 // atlas-api's own image: retrain.sh needs the Go toolchain (to `go run
 // ./cmd/export-training-data`) and a Python virtualenv (to run training/train.py) at runtime,
 // and atlas-api's production image is explicitly not supposed to depend on either — see
-// PROMPT.md's "Do not create Python backend services" / "production system must not depend on
-// Python runtime" and skills/ml.md. Training a candidate never changes what's live; promoting
-// one is still the separate, human, Account-page action from ml.ListModels/SetModel — this
-// binary only ever runs training/retrain.sh, nothing more.
+// CLAUDE.md's "Python trains, Go infers" rule. Training a candidate never changes what's live;
+// promoting one is still the separate, human, Account-page action from ml.ListModels/SetModel —
+// this binary only ever runs training/retrain.sh, nothing more.
 package main
 
 import (

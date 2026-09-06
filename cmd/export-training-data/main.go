@@ -61,7 +61,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	dsn := persistence.DSN(cfg.DatabaseHost, cfg.DatabasePort, cfg.DatabaseName, cfg.DatabaseUser, cfg.DatabasePassword)
+	dsn := persistence.DSN(cfg.DatabaseHost, cfg.DatabasePort, cfg.DatabaseName, cfg.DatabaseUser, cfg.DatabasePassword, cfg.DatabaseSSLMode)
 	storage, err := persistence.NewTimescaleDB(ctx, dsn)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "connect to timescaledb:", err)
@@ -95,7 +95,7 @@ func main() {
 	// Column names must match ml.FeatureOrder / train.py's FEATURE_ORDER exactly — train.py
 	// selects its feature columns by name, so a mismatch here fails the run loudly rather than
 	// silently training on the wrong columns.
-	if err := writer.Write([]string{"symbol", "ts", "rsi", "ema_dist", "macd_pct", "tr_pct", "atr_pct", "rvol_20", "rvol_50", "volume", "label"}); err != nil {
+	if err := writer.Write([]string{"symbol", "ts", "rsi", "ema_dist", "macd_pct", "tr_pct", "atr_pct", "rvol_20", "rvol_50", "volume", "label", "label_end"}); err != nil {
 		fmt.Fprintln(os.Stderr, "write header:", err)
 		os.Exit(1)
 	}
@@ -113,6 +113,13 @@ func main() {
 			if !ok {
 				continue
 			}
+			labelEnd := i + *horizonBars
+			if *labelType == "recovery" {
+				labelEnd += *recoveryHorizonBars
+			}
+			if labelEnd >= len(bars) {
+				continue
+			}
 			feature := mlUC.BuildFeatureVector(analyzer, symbol, bars[:i+1])
 			if err := writer.Write([]string{
 				symbol,
@@ -126,6 +133,7 @@ func main() {
 				strconv.FormatFloat(feature.RealizedVol50, 'f', -1, 64),
 				strconv.FormatFloat(feature.Volume, 'f', -1, 64),
 				strconv.Itoa(label),
+				bars[labelEnd].Timestamp.Add(time.Hour).UTC().Format(time.RFC3339),
 			}); err != nil {
 				fmt.Fprintln(os.Stderr, "write row:", err)
 				os.Exit(1)
@@ -134,5 +142,10 @@ func main() {
 		}
 	}
 
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		fmt.Fprintln(os.Stderr, "flush CSV:", err)
+		os.Exit(1)
+	}
 	fmt.Fprintf(os.Stderr, "wrote %d rows across %d symbols to %s\n", rows, len(symbols), *outputPath)
 }

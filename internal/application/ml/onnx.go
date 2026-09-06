@@ -2,9 +2,13 @@ package ml
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	domainml "atlas/internal/domain/ml"
 
@@ -37,13 +41,21 @@ type onnxSession interface {
 
 // OnnxModel wraps a loaded ONNX correction-probability model (see training/train.py).
 type OnnxModel struct {
+	mu      sync.RWMutex
+	closed  bool
 	session onnxSession
 	Version string
+	// Filename is the file this model was loaded from, relative to ML_MODELS_DIR. It is what the
+	// durable Account-page selection records, so it is also how a replica answers "am I already
+	// serving the selected model" without reloading it to compare versions.
+	Filename        string
+	TrainingDataEnd time.Time
 }
 
 type modelMetadata struct {
-	Version      string   `json:"version"`
-	FeatureOrder []string `json:"feature_order"`
+	Version         string   `json:"version"`
+	FeatureOrder    []string `json:"feature_order"`
+	TrainingDataEnd string   `json:"train_label_end"`
 }
 
 // LoadOnnxModel loads an ONNX model file and its metadata sidecar (same path with .json instead
@@ -78,7 +90,18 @@ func LoadOnnxModel(modelPath, libPath string) (*OnnxModel, error) {
 		return nil, fmt.Errorf("load onnx model %s: %w", modelPath, err)
 	}
 
-	return &OnnxModel{session: session, Version: metadata.Version}, nil
+	var trainingEnd time.Time
+	if metadata.TrainingDataEnd != "" {
+		trainingEnd, err = time.Parse(time.RFC3339Nano, metadata.TrainingDataEnd)
+		if err != nil {
+			_ = session.Destroy()
+			return nil, fmt.Errorf("invalid train_label_end: %w", err)
+		}
+	}
+	return &OnnxModel{
+		session: session, Version: metadata.Version,
+		Filename: filepath.Base(modelPath), TrainingDataEnd: trainingEnd,
+	}, nil
 }
 
 // graphFeatureWidthMatches checks the model graph's own declared input width against FeatureOrder.
@@ -147,6 +170,12 @@ func featureOrderMatches(order []string) bool {
 
 // Close releases the underlying onnxruntime session.
 func (m *OnnxModel) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return nil
+	}
+	m.closed = true
 	return m.session.Destroy()
 }
 
@@ -154,6 +183,11 @@ func (m *OnnxModel) Close() error {
 // correction-probability output (column 1 of the 2-class "probabilities" output, per
 // training/train.py's zipmap=False XGBoost export).
 func (m *OnnxModel) PredictCorrectionProbability(fv domainml.FeatureVector) (float64, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.closed {
+		return 0, errors.New("model is closed")
+	}
 	input := []float32{
 		float32(fv.RSI), float32(fv.EMADist), float32(fv.MACDPct), float32(fv.TRPct),
 		float32(fv.ATRPct), float32(fv.RealizedVol20), float32(fv.RealizedVol50), float32(fv.Volume),

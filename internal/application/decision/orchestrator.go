@@ -2,7 +2,10 @@ package decision
 
 import (
 	"math"
+	"sort"
+	"strings"
 	"sync/atomic"
+	"time"
 
 	analyzerUC "atlas/internal/application/analyzer"
 	mlUC "atlas/internal/application/ml"
@@ -34,7 +37,8 @@ type Orchestrator struct {
 	// immediately, with no restart needed, unlike the ML_ENABLED env var it defaults from
 	// (config.Config.MLEnabled). Defaults true: unset, it preserves NewOrchestratorWithML's
 	// existing behavior exactly.
-	mlEnabled atomic.Bool
+	mlEnabled            atomic.Bool
+	portfolioRiskEnabled atomic.Bool
 }
 
 func NewOrchestrator(analyzerUC *analyzerUC.UseCase, portfolioUC *portfolioUC.UseCase, decisionUC *UseCase) *Orchestrator {
@@ -53,11 +57,15 @@ func NewOrchestrator(analyzerUC *analyzerUC.UseCase, portfolioUC *portfolioUC.Us
 func NewOrchestratorWithML(analyzerUC *analyzerUC.UseCase, portfolioUC *portfolioUC.UseCase, decisionUC *UseCase, mlUC *mlUC.UseCase) *Orchestrator {
 	o := NewOrchestrator(analyzerUC, portfolioUC, decisionUC)
 	o.ML = mlUC
+	o.portfolioRiskEnabled.Store(true)
 	return o
 }
 
 // MLEnabled reports whether the ML+Portfolio+Risk blend is currently switched on (see
 // mlEnabled) — read by the Account page to render the toggle's current state.
+func (o *Orchestrator) PortfolioRiskEnabled() bool           { return o.portfolioRiskEnabled.Load() }
+func (o *Orchestrator) SetPortfolioRiskEnabled(enabled bool) { o.portfolioRiskEnabled.Store(enabled) }
+
 func (o *Orchestrator) MLEnabled() bool {
 	return o.mlEnabled.Load()
 }
@@ -100,6 +108,7 @@ func (o *Orchestrator) BuildRecommendationFromBars(symbol string, bars []market.
 	recommendation.PortfolioScore = blend.PortfolioScore
 	recommendation.RiskScore = blend.RiskScore
 	recommendation.RiskDataAvailable = blend.RiskDataAvailable
+	recommendation.Degraded = blend.Degraded
 	recommendation.MarketCondition = mlUC.ClassifyMarketCondition(o.Analyzer, symbol, bars)
 	recommendation.ModelVersion = EngineVersion
 	recommendation.MLModelVersion = blend.MLModelVersion
@@ -221,6 +230,11 @@ type blendResult struct {
 	MLModelVersion string
 	HasPosition    bool
 	Reasons        []string
+	// Degraded marks a recommendation produced with one of its inputs missing — an ML prediction
+	// that errored, or a portfolio that could not be read. The score is still returned (a
+	// technical signal is better than nothing) but it is not the same claim as a full one, and
+	// the difference has to reach the reader rather than being inferred from an absence.
+	Degraded bool
 }
 
 // mlScoreFromPrediction turns the ML models' raw outputs into the bullish-lean term the blend
@@ -305,7 +319,14 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 
 	if mlActive {
 		feature := mlUC.BuildFeatureVector(o.Analyzer, symbol, bars)
-		if prediction, err := o.ML.Predict(feature); err == nil {
+		prediction, err := o.ML.Predict(feature)
+		if err != nil {
+			// Swallowing this used to produce a recommendation that looked exactly like one made
+			// with a healthy model — same shape, same fields, silently missing a whole input.
+			// Say so instead: the score below is technical-only whether the reader knows it or not.
+			result.Degraded = true
+			result.Reasons = append(result.Reasons, "ML signal unavailable: "+err.Error())
+		} else {
 			result.MLScore = mlScoreFromPrediction(prediction)
 			result.MLConfidence = prediction.Confidence
 			result.MLModelVersion = prediction.ModelVersion
@@ -317,34 +338,41 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 	// overall exposure" are whole-account questions. A symbol bought in one portfolio should
 	// still read as ACCUMULATE, not BUY, while a different portfolio tab happens to be active.
 	if o.Portfolio != nil {
-		if positions, err := o.Portfolio.GetAllPositions(); err == nil {
+		positions, err := o.Portfolio.GetAllPositions()
+		if err != nil {
+			// Same reasoning as the ML branch: an unreadable portfolio is not an empty one, and
+			// scoring as though it were turns "I don't know what you hold" into BUY rather than
+			// ACCUMULATE, with no penalty applied for a position that may well exist.
+			result.Degraded = true
+			result.Reasons = append(result.Reasons, "Portfolio state unavailable: "+err.Error())
+		} else {
 			result.PortfolioScore = portfolioRiskSignal(symbol, positions)
 			result.HasPosition = hasPosition(symbol, positions)
 
 			risk := portfolioUC.ComputeRiskSnapshot(positions)
 			result.RiskScore = computeRiskScore(risk, positions)
 			result.RiskDataAvailable = risk.Exposure > 0
+			// Every risk number above is computed against CurrentPrice. For a position with no
+			// live quote that price is the last trade, so its unrealized P&L is exactly zero by
+			// construction — which the risk terms read as "nothing wrong" when it means "not
+			// valued". Say so rather than scoring a stale book as a healthy one.
+			if stale := stalelyPricedSymbols(positions, asOf(bars)); len(stale) > 0 {
+				result.RiskDataAvailable = false
+				result.Degraded = true
+				result.Reasons = append(result.Reasons,
+					"Portfolio risk computed without current prices for "+strings.Join(stale, ", "))
+			}
 		}
 	}
 
-	// Gated on ML specifically (not "ML or Portfolio"): every existing NewOrchestrator call
-	// site already passes a non-nil Portfolio, so gating on either would have silently changed
-	// behavior everywhere instead of only where NewOrchestratorWithML opts in — Portfolio's
-	// non-nil-ness on its own does not enable the blend.
+	// ML and portfolio risk are independent factors: an ML ablation must not remove risk.
 	if mlActive {
-		// Technical stays dominant; ML/Portfolio/Risk are secondary signals. ML is currently
-		// RSI-derived too (see ml.UseCase.Predict) when no trained model is loaded, so this is
-		// partly redundant with the RSI blend in buildTechnicalScore until a real model exists —
-		// wiring the composition now means Atlas picks up a genuine ML signal automatically the
-		// moment Predict() stops being a stub, with no further orchestration changes.
-		// portfolioRiskSignal lives on a [0.3, 0.5] scale where 0.5 is "nothing to say", so it is
-		// rescaled to a factor here rather than being used raw. The other two already run 0..1
-		// with 1 meaning no penalty.
-		result.Overall = clamp01(technical.Overall *
-			riskFactor(result.MLScore) *
-			riskFactor(result.PortfolioScore/0.5) *
-			riskFactor(result.RiskScore))
+		result.Overall *= riskFactor(result.MLScore)
 	}
+	if o.PortfolioRiskEnabled() {
+		result.Overall *= riskFactor(result.PortfolioScore/0.5) * riskFactor(result.RiskScore)
+	}
+	result.Overall = clamp01(result.Overall)
 
 	// Only the cautious direction is reported. "ML signal supportive" used to fire whenever the
 	// correction model was quiet, which is almost always — it told the reader that a model with
@@ -385,6 +413,31 @@ func computeRiskScore(risk portfolio.RiskSnapshot, positions []portfolio.Positio
 	}
 
 	return clamp01((drawdownComponent + volatilityComponent) / 2)
+}
+
+// asOf is the clock a recommendation is being made against: the timestamp of the most recent bar
+// it can see. For live scoring that is a few minutes ago; for a backtest it is the simulation's
+// own position in history, which is why this is not time.Now() — a simulated 2024 position must
+// not be called stale for having a 2024 price.
+func asOf(bars []market.Bar) time.Time {
+	if len(bars) == 0 {
+		return time.Now().UTC()
+	}
+	return bars[len(bars)-1].Timestamp.UTC()
+}
+
+// stalelyPricedSymbols lists held symbols whose CurrentPrice is not a current market quote —
+// either never quoted, or last quoted longer ago than portfolio.QuoteMaxAge, measured against
+// now. Sorted so the reason string is stable between runs rather than reordering with the map.
+func stalelyPricedSymbols(positions []portfolio.Position, now time.Time) []string {
+	var stale []string
+	for _, position := range positions {
+		if position.Quantity > 0 && !position.IsLive(now, portfolio.QuoteMaxAge) {
+			stale = append(stale, position.Symbol)
+		}
+	}
+	sort.Strings(stale)
+	return stale
 }
 
 func averageCurrentPrice(positions []portfolio.Position) float64 {
