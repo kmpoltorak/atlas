@@ -2,14 +2,34 @@ package app
 
 import (
 	backtestingUC "atlas/internal/application/backtesting"
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	backtestingDomain "atlas/internal/domain/backtesting"
 
 	"go.uber.org/zap"
 )
+
+// backtestRequestBudget bounds a whole backtest request: the wait for an admission slot (30s, see
+// backtesting.Admission) plus the simulation that follows it. The server's WriteTimeout is 10s —
+// shorter than the queue wait alone — so a queued request could wait, run a full simulation, and
+// only then discover the connection's write deadline had expired, with the simulation itself
+// never cancelled because WriteTimeout does not touch the request context.
+//
+// One number, applied to both, so the queue, the simulation and the response agree on when the
+// request is over. Generous rather than tight: the alternative to waiting is an asynchronous job
+// resource, which is a lot of machinery for a page a person is sitting in front of.
+const backtestRequestBudget = 90 * time.Second
+
+// beginBacktest gives a backtest request its full budget and returns the context every stage of
+// it runs under. Callers must defer the returned cancel.
+func (a *Application) beginBacktest(w http.ResponseWriter, r *http.Request) (context.Context, context.CancelFunc) {
+	a.extendWriteDeadline(w, backtestRequestBudget)
+	return context.WithTimeout(r.Context(), backtestRequestBudget)
+}
 
 // JSON API for backtesting: single runs, walk-forward analysis, and the persisted run history.
 // Split out of handlers.go by resource. Read docs/backtesting.md's "Execution model" before
@@ -41,6 +61,8 @@ func (a *Application) backtestsHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("symbol query parameter is required"))
 		return
 	}
+	ctx, cancel := a.beginBacktest(w, r)
+	defer cancel()
 
 	window := backtestDefaultWindow
 	if raw := r.URL.Query().Get("window"); raw != "" {
@@ -63,12 +85,12 @@ func (a *Application) backtestsHandler(w http.ResponseWriter, r *http.Request) {
 		strategyVersion = "v1"
 	}
 
-	bars, err := a.collectBars(symbol, window)
+	bars, err := a.collectBars(ctx, symbol, window)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
-	result, err := a.Backtesting.WithContext(r.Context()).Run(symbol, bars, capital, strategyName, strategyVersion)
+	result, err := a.Backtesting.WithContext(ctx).Run(symbol, bars, capital, strategyName, strategyVersion)
 	if errors.Is(err, backtestingUC.ErrBusy) {
 		// A load signal, not a failure: 503 with Retry-After is what a client can act on, and it
 		// keeps a saturated instance out of the 5xx error rate as a bug.
@@ -115,6 +137,8 @@ func (a *Application) backtestWalkForwardHandler(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, errors.New("symbol query parameter is required"))
 		return
 	}
+	ctx, cancel := a.beginBacktest(w, r)
+	defer cancel()
 
 	window := backtestWalkForwardDefaultWindow
 	if raw := r.URL.Query().Get("window"); raw != "" {
@@ -137,12 +161,12 @@ func (a *Application) backtestWalkForwardHandler(w http.ResponseWriter, r *http.
 		strategyVersion = "v1"
 	}
 
-	bars, err := a.collectBars(symbol, window)
+	bars, err := a.collectBars(ctx, symbol, window)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
-	result, err := a.Backtesting.WithContext(r.Context()).RunWalkForward(symbol, bars, capital, strategyName, strategyVersion)
+	result, err := a.Backtesting.WithContext(ctx).RunWalkForward(symbol, bars, capital, strategyName, strategyVersion)
 	if errors.Is(err, backtestingUC.ErrBusy) {
 		w.Header().Set("Retry-After", "30") // walk-forward runs long; do not invite an immediate retry
 		writeError(w, http.StatusServiceUnavailable, err)

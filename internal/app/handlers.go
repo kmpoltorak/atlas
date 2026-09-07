@@ -4,12 +4,14 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
+	collectorUC "atlas/internal/application/collector"
 	mlUC "atlas/internal/application/ml"
 	"atlas/internal/domain/decision"
 	"atlas/internal/domain/market"
@@ -47,8 +49,8 @@ func (a *Application) windowFromQuery(r *http.Request) int {
 // HTTP entry point into the market data path needs, so those concerns live in one place.
 // Cache hits are deliberately excluded from atlas_provider_requests_total — that metric
 // exists to show real load/rate-limit exposure on the live provider, not request volume.
-func (a *Application) collectBars(symbol string, window int) ([]market.Bar, error) {
-	bars, fromCache, err := a.Collector.Collect(symbol, window)
+func (a *Application) collectBars(ctx context.Context, symbol string, window int) ([]market.Bar, error) {
+	bars, fromCache, err := a.collectorFor(ctx).Collect(ctx, symbol, window)
 	if fromCache {
 		return bars, nil
 	}
@@ -63,6 +65,19 @@ func (a *Application) collectBars(symbol string, window int) ([]market.Bar, erro
 	}
 	a.Metrics.ProviderRequests.WithLabelValues(marketProviderLabel, outcome, "bars").Inc()
 	return bars, err
+}
+
+// collectorFor returns a collector whose database writes are cancelled with ctx, the way every
+// other repository a handler touches is scoped (see persistence.TimescaleDB.WithContext). The
+// shared collector holds the process-wide storage handle, so without this the bars fetched for a
+// request that had already gone away were still written on its behalf.
+func (a *Application) collectorFor(ctx context.Context) *collectorUC.UseCase {
+	if a.Collector == nil || a.Storage == nil || a.Collector.Storage == nil {
+		return a.Collector
+	}
+	scoped := *a.Collector
+	scoped.Storage = a.Storage.WithContext(ctx)
+	return &scoped
 }
 
 // persistRecommendation best-effort writes a recommendation to the history log (see
@@ -194,7 +209,7 @@ func (a *Application) pricesHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("symbol query parameter is required"))
 		return
 	}
-	bars, err := a.collectBars(symbol, a.windowFromQuery(r))
+	bars, err := a.collectBars(r.Context(), symbol, a.windowFromQuery(r))
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return
@@ -226,7 +241,7 @@ func (a *Application) recommendationsHandler(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, errors.New("symbol query parameter is required"))
 		return
 	}
-	bars, err := a.collectBars(symbol, a.windowFromQuery(r))
+	bars, err := a.collectBars(r.Context(), symbol, a.windowFromQuery(r))
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return
@@ -265,7 +280,7 @@ func (a *Application) predictionsHandler(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, errors.New("symbol query parameter is required"))
 		return
 	}
-	bars, err := a.collectBars(symbol, a.windowFromQuery(r))
+	bars, err := a.collectBars(r.Context(), symbol, a.windowFromQuery(r))
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return

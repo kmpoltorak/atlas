@@ -36,7 +36,7 @@ func connectOutboxDB(t *testing.T) *persistence.TimescaleDB {
 	if dsn == "" {
 		t.Skip("TEST_DATABASE_DSN not set; skipping alert outbox integration test")
 	}
-	db, err := persistence.NewTimescaleDB(context.Background(), dsn)
+	db, err := persistence.NewTimescaleDB(context.Background(), dsn, persistence.PoolLimits{})
 	if err != nil {
 		t.Fatalf("connect to test database: %v", err)
 	}

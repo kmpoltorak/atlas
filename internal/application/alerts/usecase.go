@@ -49,11 +49,11 @@ func (u *UseCase) Evaluate(ctx context.Context) ([]alerts.Alert, error) {
 
 // EvaluateAll includes HOLD so background polling can persist every state transition.
 //
-// ctx is the background caller's leadership term (see app.Leader.Term). Collecting bars for a few
-// dozen symbols takes as long as the provider does, which is easily longer than a lease: without
-// this check a demoted leader kept fetching and scoring on behalf of a lease somebody else held.
-// The check is between symbols rather than inside the provider call — one symbol's fetch is
-// already bounded by the HTTP client's own timeout.
+// ctx is the background caller's leadership term (see app.Leader.Snapshot). Collecting bars for a
+// few dozen symbols takes as long as the provider does, which is easily longer than a lease:
+// without this a demoted leader kept fetching and scoring on behalf of a lease somebody else held.
+// It is checked between symbols *and* handed to Collect, so losing the lease stops the fetch
+// already in flight too, rather than only the next one.
 func (u *UseCase) EvaluateAll(ctx context.Context) ([]alerts.Alert, error) {
 	items, err := u.Watchlist.List()
 	if err != nil {
@@ -66,7 +66,7 @@ func (u *UseCase) EvaluateAll(ctx context.Context) ([]alerts.Alert, error) {
 		if err := ctx.Err(); err != nil {
 			return result, errors.Join(collected, err)
 		}
-		bars, fromCache, err := u.Collector.Collect(item.Symbol, u.Window)
+		bars, fromCache, err := u.Collector.Collect(ctx, item.Symbol, u.Window)
 		if !fromCache && u.OnProviderCall != nil {
 			if err != nil {
 				u.OnProviderCall("error")

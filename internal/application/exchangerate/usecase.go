@@ -119,15 +119,22 @@ func (u *UseCase) ToBaseOn(amount float64, code currency.Code, date time.Time) (
 	if code == currency.Base {
 		return amount, true, nil
 	}
+	// A date in the future, today, or unset has no published historical rate to look up, so the
+	// current rate *is* the right answer rather than a fallback — and a past date answered with
+	// the current rate is a fallback however capable the provider is. exact tracks the date, not
+	// the provider's capabilities: reporting it as !ok made the production NBP provider (which
+	// does implement HistoricalProvider) return exact=false for every trade entered today, and
+	// portfolio.convertToBase rejects those, so no same-day foreign-currency trade could be
+	// recorded at all. The same inversion let a today-only provider price a backdated trade at
+	// today's rate while claiming it was exact.
+	current := date.IsZero() || !date.Before(time.Now().UTC().Truncate(24*time.Hour))
 	historical, ok := u.Provider.(HistoricalProvider)
-	// A date in the future or today has no published rate yet, so today's is the right answer
-	// rather than a fallback.
-	if !ok || date.IsZero() || !date.Before(time.Now().UTC().Truncate(24*time.Hour)) {
+	if !ok || current {
 		rate, err := u.rateFor(code)
 		if err != nil {
 			return 0, false, err
 		}
-		return amount * rate, !ok, nil
+		return amount * rate, current, nil
 	}
 	for day := 0; day <= maxRateLookback; day++ {
 		rate, err := historical.FetchRateOn(code, date.AddDate(0, 0, -day))

@@ -31,11 +31,11 @@ import (
 
 type loopStubProvider struct{}
 
-func (loopStubProvider) FetchInstrumentInfo(symbol string) (market.InstrumentInfo, error) {
+func (loopStubProvider) FetchInstrumentInfo(_ context.Context, symbol string) (market.InstrumentInfo, error) {
 	return market.InstrumentInfo{Symbol: symbol}, nil
 }
 
-func (loopStubProvider) FetchQuote(symbol string) (market.Quote, error) {
+func (loopStubProvider) FetchQuote(_ context.Context, symbol string) (market.Quote, error) {
 	return market.Quote{Symbol: symbol}, nil
 }
 
@@ -43,7 +43,7 @@ func (loopStubProvider) FetchQuote(symbol string) (market.Quote, error) {
 // needs more than that term's lookback window, and the per-bar returns must vary, since a
 // perfectly uniform climb has zero realized volatility to normalize against and reads as no
 // signal. Volume is flat at the series average so volume confirmation stays at full weight.
-func (loopStubProvider) FetchBars(symbol string, window int) ([]market.Bar, error) {
+func (loopStubProvider) FetchBars(_ context.Context, symbol string, window int) ([]market.Bar, error) {
 	base := time.Now().Add(-30 * time.Hour)
 	bars := make([]market.Bar, 0, 30)
 	price := 100.0

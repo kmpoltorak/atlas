@@ -8,25 +8,31 @@ import (
 )
 
 type Config struct {
-	AuthDisabled      bool
-	HTTPAddr          string
-	LogLevel          string
-	DatabaseHost      string
-	DatabasePort      string
-	DatabaseName      string
-	DatabaseUser      string
-	DatabasePassword  string
-	DatabaseSSLMode   string
-	RedisHost         string
-	RedisPort         string
-	RedisPassword     string
-	RedisTLS          bool
-	DiscordWebhookURL string
-	SlackWebhookURL   string
-	TelegramBotToken  string
-	TelegramChatID    string
-	CollectorWindow   int
-	AlertPollSeconds  int
+	AuthDisabled     bool
+	HTTPAddr         string
+	LogLevel         string
+	DatabaseHost     string
+	DatabasePort     string
+	DatabaseName     string
+	DatabaseUser     string
+	DatabasePassword string
+	DatabaseSSLMode  string
+	// Connection-pool bounds. database/sql leaves open connections unlimited by default, which
+	// is how a burst of slow queries turns into Postgres refusing connections to everything
+	// else on the box. 0 means "use persistence.PoolLimits' default".
+	DatabaseMaxOpenConns        int
+	DatabaseMaxIdleConns        int
+	DatabaseConnMaxLifetimeMins int
+	RedisHost                   string
+	RedisPort                   string
+	RedisPassword               string
+	RedisTLS                    bool
+	DiscordWebhookURL           string
+	SlackWebhookURL             string
+	TelegramBotToken            string
+	TelegramChatID              string
+	CollectorWindow             int
+	AlertPollSeconds            int
 	// DerivedRetentionDays bounds how long recomputable history (indicators, recommendations,
 	// predictions) is kept. 0 — the default — keeps everything: automatic deletion of data the
 	// operator can still look at is opt-in, never something an upgrade turns on silently.
@@ -59,15 +65,21 @@ func Load() Config {
 		// no server certificate) working out of the box. Validate refuses it once COOKIE_SECURE
 		// is true, i.e. in any deployment actually served over TLS — see deploy/configmap.yaml,
 		// which sets "require".
-		DatabaseSSLMode:   envOrDefault("DATABASE_SSLMODE", "disable"),
-		RedisHost:         envOrDefault("REDIS_HOST", "redis"),
-		RedisPort:         envOrDefault("REDIS_PORT", "6379"),
-		RedisPassword:     envOrDefault("REDIS_PASSWORD", ""),
-		RedisTLS:          envOrDefault("REDIS_TLS", "false") == "true",
-		DiscordWebhookURL: envOrDefault("DISCORD_WEBHOOK_URL", ""),
-		SlackWebhookURL:   envOrDefault("SLACK_WEBHOOK_URL", ""),
-		TelegramBotToken:  envOrDefault("TELEGRAM_BOT_TOKEN", ""),
-		TelegramChatID:    envOrDefault("TELEGRAM_CHAT_ID", ""),
+		DatabaseSSLMode: envOrDefault("DATABASE_SSLMODE", "disable"),
+		// 0 defers to persistence.PoolLimits' documented defaults, which is what an unset
+		// environment gets. Set these when a real deployment shows connection contention — the
+		// defaults are conservative, not measured.
+		DatabaseMaxOpenConns:        envOrDefaultInt("DATABASE_MAX_OPEN_CONNS", 0),
+		DatabaseMaxIdleConns:        envOrDefaultInt("DATABASE_MAX_IDLE_CONNS", 0),
+		DatabaseConnMaxLifetimeMins: envOrDefaultInt("DATABASE_CONN_MAX_LIFETIME_MINUTES", 0),
+		RedisHost:                   envOrDefault("REDIS_HOST", "redis"),
+		RedisPort:                   envOrDefault("REDIS_PORT", "6379"),
+		RedisPassword:               envOrDefault("REDIS_PASSWORD", ""),
+		RedisTLS:                    envOrDefault("REDIS_TLS", "false") == "true",
+		DiscordWebhookURL:           envOrDefault("DISCORD_WEBHOOK_URL", ""),
+		SlackWebhookURL:             envOrDefault("SLACK_WEBHOOK_URL", ""),
+		TelegramBotToken:            envOrDefault("TELEGRAM_BOT_TOKEN", ""),
+		TelegramChatID:              envOrDefault("TELEGRAM_CHAT_ID", ""),
 		// 30 days comfortably covers the 15-bar RSI warm-up (analyzer.ComputeRSI) with room
 		// left for the decision/backtesting pipeline. Providers also fall back to 30 when
 		// called directly with window<=0 (e.g. in tests) — kept in sync manually since
@@ -79,8 +91,9 @@ func Load() Config {
 		AlertPollSeconds: envOrDefaultInt("ALERT_POLL_INTERVAL_SECONDS", 300),
 		// The alert loop writes one recommendation per watched symbol per poll (HOLD included),
 		// so these tables grow without bound at ~288 rows/symbol/day. Set this to e.g. 365 on a
-		// long-lived instance; BackupAll builds the whole database as one in-memory JSON
-		// document, and that is what eventually hits the container memory limit.
+		// long-lived instance: the tables are still queried, restored and backed up in full, and
+		// unbounded growth costs disk and query time even now that WriteBackup streams row by row
+		// rather than buffering a table at a time.
 		DerivedRetentionDays: envOrDefaultInt("DERIVED_RETENTION_DAYS", 0),
 		// True by default (unchanged behavior). Set ML_ENABLED=false to make the decision engine
 		// score BUY/SELL/HOLD from the technical term alone (RSI/MACD/Bollinger/momentum, see

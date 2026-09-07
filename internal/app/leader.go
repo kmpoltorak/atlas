@@ -38,6 +38,15 @@ type Leader struct {
 	// epoch is the fencing token from the current lease (see persistence.requireLeadership). It
 	// is what makes a write refuse to land after this process has been superseded.
 	epoch atomic.Int64
+	// expiry is when the currently held lease runs out, in Unix nanoseconds; 0 means unbounded,
+	// which is the no-database case where there is nothing to coordinate through.
+	//
+	// Without it, leadership was a boolean that only changed when the renewal loop got around to
+	// noticing — so a process whose renewals had stalled (a hung query, a paused container, a
+	// partitioned network) kept answering "yes, I am the leader" for as long as the stall lasted,
+	// while the database had already let someone else take the lease. Fenced writes still failed,
+	// but everything unfenced — evaluating the watchlist, sending notifications — carried on.
+	expiry atomic.Int64
 
 	// mu guards term/cancelTerm, which are replaced on every acquisition.
 	mu sync.Mutex
@@ -49,6 +58,10 @@ type Leader struct {
 	// termEpoch is the fencing token this term was acquired under, kept beside the term so the
 	// two can be read as a pair. See Snapshot.
 	termEpoch int64
+	// leaseWatch stands this process down when the lease expires without a renewal, so the term
+	// has a deadline of its own rather than depending on the renewal loop being healthy enough to
+	// report its own failure. Armed by setLease, disarmed by endTerm.
+	leaseWatch *time.Timer
 }
 
 // newLeader builds a per-process identity. It is deliberately not just the hostname: two pods can
@@ -74,10 +87,55 @@ func hostname() string {
 
 // IsLeader reports whether this process should be doing the singleton work right now.
 //
-// This is a hint for deciding whether to *start* a batch, never a guarantee that it may finish:
-// the lease can be lost at any point after it returns true. Work already running is stopped by
-// Term()'s cancellation, and writes are fenced by the epoch — see persistence.requireLeadership.
-func (l *Leader) IsLeader() bool { return l != nil && l.holding.Load() }
+// It is the lease that decides, not a flag: a held lease whose expiry has passed is not
+// leadership, however recently the renewal loop believed otherwise. That distinction is the
+// difference between "we lost the lease and know it" and "we lost the lease and are still
+// sending notifications about it".
+//
+// This remains a hint for deciding whether to *start* a batch, never a guarantee that it may
+// finish: the lease can be lost at any point after it returns true. Work already running is
+// stopped by the term's cancellation, and writes are fenced by the epoch — see
+// persistence.requireLeadership.
+func (l *Leader) IsLeader() bool {
+	if l == nil || !l.holding.Load() {
+		return false
+	}
+	expiry := l.expiry.Load()
+	// 0 is the no-database case: nothing to coordinate through, so nothing to expire.
+	return expiry == 0 || time.Now().UnixNano() < expiry
+}
+
+// setLease records when the held lease runs out and arms the watchdog that stands this process
+// down if no renewal lands before then. Called on every successful acquisition *and* renewal —
+// a renewal is exactly the event that pushes the deadline out.
+//
+// onExpiry runs only if the watchdog actually fires while this process still believes it leads.
+func (l *Leader) setLease(until time.Time, onExpiry func()) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.expiry.Store(until.UnixNano())
+	if l.leaseWatch != nil {
+		l.leaseWatch.Stop()
+	}
+	l.leaseWatch = time.AfterFunc(time.Until(until), func() {
+		if l.standDown() && onExpiry != nil {
+			onExpiry()
+		}
+	})
+}
+
+// standDown gives up leadership locally — stops the singleton work and makes IsLeader false —
+// without touching the database. The lease in the database is left to expire on its own, which
+// is the point: this path exists for when the database cannot be reached or answered in time.
+// Reports whether this process was leading, so callers only log a real transition.
+func (l *Leader) standDown() bool {
+	if l == nil || !l.holding.Swap(false) {
+		return false
+	}
+	l.expiry.Store(0)
+	l.endTerm()
+	return true
+}
 
 // Snapshot returns the leadership term together with the fencing epoch that term was acquired
 // under. The term is a context cancelled when this process stops being leader, so a batch stops
@@ -122,13 +180,18 @@ func (l *Leader) beginTerm(epoch int64) {
 	l.termEpoch = epoch
 }
 
-// endTerm cancels the current term, stopping any batch running under it.
+// endTerm cancels the current term, stopping any batch running under it, and disarms the lease
+// watchdog with it — a term that has ended has no deadline left to enforce.
 func (l *Leader) endTerm() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.cancelTerm != nil {
 		l.cancelTerm()
 		l.cancelTerm = nil
+	}
+	if l.leaseWatch != nil {
+		l.leaseWatch.Stop()
+		l.leaseWatch = nil
 	}
 	l.term = nil
 	l.termEpoch = 0
@@ -168,14 +231,19 @@ func (a *Application) startLeaderElection(stop <-chan struct{}) func() {
 			// A database error is not evidence that someone else is leading, but continuing to
 			// act as leader without a renewed lease is exactly the split brain the lease exists
 			// to prevent — so step down, cancelling whatever is running, and retry.
-			if a.Leader.holding.Swap(false) {
-				a.Leader.endTerm()
-			}
+			a.Leader.standDown()
 			a.Logger.Warn("leader election failed; standing down until the next attempt", zap.Error(err))
 			return leaderRetryInterval
 		}
 		was := a.Leader.holding.Swap(acquired)
 		if acquired {
+			// Arm the term's own deadline before anything acts on the lease. If this loop stalls
+			// past `until` — a hung query, a paused container — the watchdog stands the process
+			// down without waiting for the loop to come back and notice.
+			a.Leader.setLease(until, func() {
+				a.Logger.Warn("the polling lease expired without a renewal; stood down",
+					zap.String("holder", a.Leader.identity), zap.Time("expired", until))
+			})
 			// A new epoch means the lease changed hands — including back to this process after a
 			// gap, which is a different term and must not reuse the old one's context. A renewal
 			// keeps the same epoch and therefore the same term, so in-flight work is not aborted.

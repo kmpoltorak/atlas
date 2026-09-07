@@ -15,6 +15,12 @@ data:
   # "require" encrypts without verifying the server certificate; use "verify-full" once the
   # database presents a certificate signed by a CA the pod trusts.
   DATABASE_SSLMODE: "require"
+  # Connection-pool bounds. Empty means the defaults in persistence.PoolLimits (20 open, 5 idle,
+  # 30 minute lifetime) — conservative starting points, not measured optima. Keep the total across
+  # every replica and every other client below the database's own max_connections.
+  DATABASE_MAX_OPEN_CONNS: ""
+  DATABASE_MAX_IDLE_CONNS: ""
+  DATABASE_CONN_MAX_LIFETIME_MINUTES: ""
   REDIS_HOST: "redis"
   REDIS_PORT: "6379"
   REDIS_TLS: "true"

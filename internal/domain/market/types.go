@@ -1,6 +1,9 @@
 package market
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type Bar struct {
 	Symbol    string    `json:"symbol"`
@@ -40,11 +43,15 @@ type Quote struct {
 	Currency string
 }
 
+// Every method takes a context: these are outbound HTTP calls to a third party, and without one
+// the only bound on a hung request was the provider client's own timeout. A cancelled request or
+// a lost leadership term now stops the fetch it started instead of leaving it to run for someone
+// who is no longer waiting.
 type MarketProvider interface {
-	FetchBars(symbol string, window int) ([]Bar, error)
+	FetchBars(ctx context.Context, symbol string, window int) ([]Bar, error)
 	// FetchInstrumentInfo returns descriptive metadata for symbol, for a human reading the
 	// watchlist — not consumed by the decision engine.
-	FetchInstrumentInfo(symbol string) (InstrumentInfo, error)
+	FetchInstrumentInfo(ctx context.Context, symbol string) (InstrumentInfo, error)
 	// FetchQuote returns symbol's current live price and prior close — see Quote.
-	FetchQuote(symbol string) (Quote, error)
+	FetchQuote(ctx context.Context, symbol string) (Quote, error)
 }

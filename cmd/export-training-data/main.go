@@ -62,7 +62,8 @@ func main() {
 	defer cancel()
 
 	dsn := persistence.DSN(cfg.DatabaseHost, cfg.DatabasePort, cfg.DatabaseName, cfg.DatabaseUser, cfg.DatabasePassword, cfg.DatabaseSSLMode)
-	storage, err := persistence.NewTimescaleDB(ctx, dsn)
+	// A one-shot exporter reads one table at a time; the pool defaults are more than it needs.
+	storage, err := persistence.NewTimescaleDB(ctx, dsn, persistence.PoolLimits{})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "connect to timescaledb:", err)
 		os.Exit(1)

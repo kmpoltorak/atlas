@@ -18,6 +18,12 @@ services:
       # real credentials never end up tracked in Git. DATABASE_PASSWORD must match
       # timescaledb's POSTGRES_PASSWORD below — they're the same variable for that reason.
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-atlas}
+      # Empty means the pool defaults in persistence.PoolLimits (20 open, 5 idle, 30 minute
+      # lifetime) — conservative starting points, not measured optima. Override in .env only if
+      # a real deployment shows requests queuing for a connection.
+      DATABASE_MAX_OPEN_CONNS: ${DATABASE_MAX_OPEN_CONNS:-}
+      DATABASE_MAX_IDLE_CONNS: ${DATABASE_MAX_IDLE_CONNS:-}
+      DATABASE_CONN_MAX_LIFETIME_MINUTES: ${DATABASE_CONN_MAX_LIFETIME_MINUTES:-}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       # Empty by default: this stack's Redis is on a private Compose network, published on
