@@ -11,7 +11,7 @@ import (
 
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 
-	_ "atlas/docs" // registers the generated OpenAPI spec with swaggo/swag — see docs/README (swag init)
+	_ "atlas/docs" // registers the generated OpenAPI spec with swaggo/swag — see docs/api.md
 )
 
 // scoped adapts a handler method so it runs against a request-scoped Application — one whose

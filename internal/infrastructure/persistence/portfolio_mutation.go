@@ -45,7 +45,13 @@ func (t *TimescaleDB) MutatePortfolio(id string, apply func([]portfolio.Position
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO transactions (id,portfolio_id,symbol_id,type,quantity,price,currency,price_in_pln,timestamp) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, item.ID, id, symbolID, item.Type, item.Quantity, item.Price, item.Currency, item.PriceInPLN, item.Timestamp); err != nil {
+		// created_at carries the acceptance order (migrations/021); NULL takes the column's
+		// NOW() default, which is what a caller that never set one means.
+		var recordedAt any
+		if item.RecordedAt != "" {
+			recordedAt = item.RecordedAt
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO transactions (id,portfolio_id,symbol_id,type,quantity,price,currency,price_in_pln,timestamp,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,COALESCE($10::timestamptz, NOW()))`, item.ID, id, symbolID, item.Type, item.Quantity, item.Price, item.Currency, item.PriceInPLN, item.Timestamp, recordedAt); err != nil {
 			return fmt.Errorf("insert portfolio transaction: %w", err)
 		}
 	}

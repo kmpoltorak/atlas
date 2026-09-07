@@ -45,12 +45,23 @@ func NewUseCaseWithModels(model, recoveryModel *OnnxModel) *UseCase {
 
 // CurrentModel returns the correction-probability model currently in effect, or nil when none is
 // loaded (the deterministic stub applies).
+//
+// Nil-safe on the receiver too: ML is an optional dependency like every other external one here,
+// and a caller holding a nil use case means "no ML configured", not a crash — the Account page
+// reads this to render its model picker and must still render without one.
 func (u *UseCase) CurrentModel() *OnnxModel {
+	if u == nil {
+		return nil
+	}
 	return u.model.Load()
 }
 
-// CurrentRecoveryModel returns the recovery-probability model currently in effect, or nil.
+// CurrentRecoveryModel returns the recovery-probability model currently in effect, or nil. Same
+// nil-receiver stance as CurrentModel.
 func (u *UseCase) CurrentRecoveryModel() *OnnxModel {
+	if u == nil {
+		return nil
+	}
 	return u.recoveryModel.Load()
 }
 

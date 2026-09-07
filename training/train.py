@@ -94,6 +94,23 @@ def unseen_symbol_auc(df: pd.DataFrame, model_factory, seed: int = 42) -> float:
     return roc_auc_score(test_part["label"], model.predict_proba(test_part[FEATURE_ORDER].values)[:, 1])
 
 
+def read_label_params(csv_path: str):
+    """Reads the label parameters cmd/export-training-data wrote next to its CSV.
+
+    Returns None when the sidecar is absent — an older CSV, or one produced by hand — rather than
+    failing: the training run is still valid, the model just cannot state which barrier produced
+    its labels, and a null in the metadata says exactly that.
+    """
+    sidecar = Path(f"{csv_path}.params.json")
+    if not sidecar.exists():
+        print(f"no label parameter sidecar at {sidecar}; the model metadata will not state the "
+              "barrier its labels came from — re-export with cmd/export-training-data to get one",
+              file=sys.stderr)
+        return None
+    with open(sidecar) as f:
+        return json.load(f)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", default="training/data/features.csv")
@@ -112,6 +129,7 @@ def main() -> int:
     embargo_bars = args.embargo_bars if args.embargo_bars is not None else DEFAULT_EMBARGO_BARS[args.target]
 
     model_prefix = "atlas-ml" if args.target == "correction" else "atlas-ml-recovery"
+    label_params = read_label_params(args.input)
     label_definition = (
         "close drops below the feature bar's close by more than the barrier within horizon_bars "
         "forward bars, where the barrier is volatility-scaled per instrument "
@@ -258,6 +276,11 @@ def main() -> int:
         "unseen_symbol_auc": None if unseen_auc != unseen_auc else unseen_auc,
         "beats_symbol_base_rate": beats_baseline,
         "label_definition": label_definition,
+        # The parameters the export actually used, not a description of what the defaults are
+        # supposed to be. A CSV exported with a fixed percentage barrier once shipped under a
+        # "volatility-scaled" description because nothing carried the real numbers across the
+        # Go/Python boundary; None means the CSV predates the sidecar.
+        "label_params": label_params,
     }
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)

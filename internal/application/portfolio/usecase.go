@@ -319,7 +319,15 @@ func (u *UseCase) RecordTransaction(tx portfolio.Transaction) error {
 	// the in-memory Transactions slice (what GetTransactions/the dashboard actually reads until
 	// the next restart) kept the empty string, rendering as the zero time "0001-01-01 00:00".
 	if tx.Timestamp == "" {
-		tx.Timestamp = time.Now().UTC().Format(time.RFC3339)
+		// RFC3339Nano, not RFC3339: a second's resolution made two trades entered in the same
+		// second indistinguishable, and replay then had to guess their order (see RecordedAt).
+		tx.Timestamp = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	// RecordedAt is set here, not in the repository, because it must be the same value in memory
+	// and in the database — it is the tie-break replay depends on, so a value the repository
+	// invented on its own would order this process's ledger differently from a reloaded one.
+	if tx.RecordedAt == "" {
+		tx.RecordedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	}
 	if tx.Currency == "" {
 		tx.Currency = string(currency.Base)
@@ -483,22 +491,31 @@ func (u *UseCase) RemoveTransaction(id string) error {
 
 // removeTransaction is RemoveTransaction's lock-free core — also called by RemoveTransactions'
 // batch loop, which already holds mu itself.
-func (u *UseCase) removeTransaction(id string) error {
+// dropTransaction removes one id from the ledger and reports which symbol it belonged to,
+// without replaying anything. Split out so a batch can delete its whole selection first and
+// replay each affected symbol once — replaying between deletions validated intermediate
+// histories the operator never asked to exist. An unknown id is a no-op and reports "".
+func (u *UseCase) dropTransaction(id string) (symbol string, err error) {
 	if id == "" {
-		return errors.New("id is required")
+		return "", errors.New("id is required")
 	}
-	index := -1
 	for i, t := range u.Transactions {
 		if t.ID == id {
-			index = i
-			break
+			u.Transactions = append(u.Transactions[:i:i], u.Transactions[i+1:]...)
+			return t.Symbol, nil
 		}
 	}
-	if index < 0 {
-		return nil
+	return "", nil
+}
+
+func (u *UseCase) removeTransaction(id string) error {
+	symbol, err := u.dropTransaction(id)
+	if err != nil {
+		return err
 	}
-	symbol := u.Transactions[index].Symbol
-	u.Transactions = append(u.Transactions[:index:index], u.Transactions[index+1:]...)
+	if symbol == "" {
+		return nil // unknown id: a no-op, matching RemovePosition's convention
+	}
 
 	// A removal that leaves an impossible history (deleting the only BUY under a SELL) fails here
 	// rather than being flattened to a zero quantity — the caller has to delete the SELL first.
@@ -512,24 +529,50 @@ func (u *UseCase) removeTransaction(id string) error {
 }
 
 // RemoveTransactions deletes several historical transactions by id (bulk delete from the
-// dashboard's checkbox selection). Each id goes through the same per-id logic as
-// RemoveTransaction — not a single batched repository call — because it's the affected symbols'
-// *position recompute* that matters, not the delete itself: recomputePosition already replays
-// whatever remains after each removal, so deleting one-at-a-time keeps that invariant trivially
-// correct even when a batch spans several symbols. The whole batch runs under one lock
-// acquisition, not one per id, so it can't interleave with a concurrent SwitchPortfolio
-// mid-batch. A failure on one id doesn't stop the rest; all errors are joined and returned
-// together so the caller can report exactly which ones failed.
+// dashboard's checkbox selection). The whole batch runs under one lock acquisition, not one per
+// id, so it can't interleave with a concurrent SwitchPortfolio mid-batch.
+//
+// The selection is removed in full *before* anything is replayed, and each affected symbol is
+// then replayed once. Removing and validating one id at a time made the result depend on the
+// order the form happened to submit: selecting a BUY and the SELL it funded is a valid batch —
+// the history it leaves behind is empty — but deleting the BUY first left an intermediate
+// history where the SELL oversells, which replay rejects, taking the whole batch down with it.
+// The dashboard's sortable table can produce either order, so the same two checkboxes worked or
+// failed depending on how the table was sorted.
+//
+// Only the intended end state is validated, which is the only state that is ever published: the
+// mutation commits once (see mutate).
 func (u *UseCase) RemoveTransactions(ids []string) error {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return u.mutate(func(next *UseCase) error {
+		symbols := make([]string, 0, len(ids))
+		seen := make(map[string]bool, len(ids))
 		for _, id := range ids {
-			if err := next.removeTransaction(id); err != nil {
+			symbol, err := next.dropTransaction(id)
+			if err != nil {
 				return err
 			}
+			if symbol != "" && !seen[symbol] {
+				seen[symbol] = true
+				symbols = append(symbols, symbol)
+			}
 		}
-		return nil
+		// Replay failures are joined rather than aborting at the first symbol, so a batch
+		// spanning several symbols reports every one it could not leave in a valid state instead
+		// of only the first.
+		var errs []error
+		for _, symbol := range symbols {
+			position, err := next.recomputePosition(symbol)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			if err := next.applyPositionUpdate(position); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		return errors.Join(errs...)
 	})
 }
 
@@ -564,10 +607,24 @@ func (u *UseCase) recomputePosition(symbol string) (portfolio.Position, error) {
 		if iErr != nil || jErr != nil {
 			return false
 		}
-		if ti.Equal(tj) {
-			return symbolTx[i].ID < symbolTx[j].ID
+		if !ti.Equal(tj) {
+			return ti.Before(tj)
 		}
-		return ti.Before(tj)
+		// Equal trade dates are ordered by when Atlas accepted them, which is the order the
+		// operator entered them in. Ordering by id here instead ordered a same-day BUY and SELL
+		// by a random UUID, so half the time the sell replayed first and the whole entry was
+		// rejected as an oversell.
+		//
+		// Compared as times, not as strings: RFC3339Nano trims trailing zeros from the fraction,
+		// so ".5Z" sorts after ".55Z" lexicographically while being the earlier instant.
+		ri, riErr := time.Parse(time.RFC3339, symbolTx[i].RecordedAt)
+		rj, rjErr := time.Parse(time.RFC3339, symbolTx[j].RecordedAt)
+		if riErr == nil && rjErr == nil && !ri.Equal(rj) {
+			return ri.Before(rj)
+		}
+		// No acceptance order to go on (history predating migrations/021, or a caller-built
+		// transaction): the id is at least stable, which beats leaving the order undefined.
+		return symbolTx[i].ID < symbolTx[j].ID
 	})
 
 	position := portfolio.Position{Symbol: symbol}

@@ -63,7 +63,9 @@ Use:
 **Implementation status**: `ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH` (both optional — see
 implementation-plan.md's Phase 8 status note) gate the web dashboard and REST API behind a
 single-account login when set; generate the hash with `go run ./cmd/generate-admin-credentials`
-rather than hand-writing one. Unset, Atlas runs with no login gate at all. 2FA is not an env var
+rather than hand-writing one. Left unset, Atlas refuses to start unless `AUTH_DISABLED=true` is
+also set: running with no login gate is a deliberate local-use choice, not what an incomplete
+configuration silently falls back to (`config.Validate`). 2FA is not an env var
 at all — it's enabled from the dashboard after logging in (Account → Set up 2FA), via real
 QR-code enrollment against a durable database setting (migrations/008).
 ---

@@ -1,13 +1,13 @@
-# Go build output. One entry per cmd/ binary, because `go build ./cmd/<name>` drops the binary in
-# whatever directory you ran it from — usually the repo root. Only atlas-api was listed here, so a
-# plain `go build ./cmd/export-training-data` left an untracked 20MB binary sitting in the tree.
-atlas-api
-export-training-data
-generate-admin-credentials
-trainer
+# Go build output in the repository root. Anchor binary names so source directories such as
+# cmd/trainer and internal/infrastructure/trainer remain visible to Git and file searches.
+/api
+/atlas-api
+/export-training-data
+/generate-admin-credentials
+/trainer
 *.exe
 /bin/
-atlas
+/atlas
 
 # Go test output: `go test -c` binaries and coverage profiles.
 *.test
@@ -24,9 +24,16 @@ coverage.out
 # Local backup dumps (e.g. from rehearsing deploy/RUNBOOK.md's restore procedure)
 *.dump
 
-# IDE
+# IDE and editor leftovers
 .vscode/
+.idea/
+*.swp
 .DS_Store
+
+# Merge/backup leftovers — a stray .orig or .bak is never source
+*.orig
+*.bak
+*.rej
 
 # Chat history
 chat.json

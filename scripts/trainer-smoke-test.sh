@@ -59,15 +59,22 @@ print(\"xgboost\", xgboost.__version__, \"onnx\", onnx.__version__, \"onnxmltool
      # The data is synthetic and the model is thrown away; what is tested is that every code path
      # from CSV to exported .onnx executes.
      /tmp/venv/bin/python training/make_synthetic_features.py --output /tmp/synthetic.csv
+     # A label-parameter sidecar of the shape cmd/export-training-data writes, so the run covers
+     # the path that carries the real barrier into the model metadata — a model that cannot say
+     # which barrier produced its labels is how a fixed-5% dataset once shipped described as
+     # volatility-scaled.
+     printf "%s\n" "{\"label_type\":\"correction\",\"horizon_bars\":10,\"threshold_pct\":0.05,\"volatility_multiple\":4.0,\"volatility_window\":20,\"min_threshold_pct\":0.02}" > /tmp/synthetic.csv.params.json
      /tmp/venv/bin/python training/train.py \
        --input /tmp/synthetic.csv --output-dir /tmp/smoke-models --target correction
      test -n "$(ls /tmp/smoke-models/*.onnx 2>/dev/null)" || { echo "no ONNX model was exported"; exit 1; }
      /tmp/venv/bin/python -c "
 import json, glob, sys
 meta = json.load(open(sorted(glob.glob(\"/tmp/smoke-models/*.json\"))[-1]))
-for key in (\"version\", \"feature_order\", \"train_label_end\", \"holdout_start\", \"validation_method\"):
+for key in (\"version\", \"feature_order\", \"train_label_end\", \"holdout_start\", \"validation_method\", \"label_params\"):
     if key not in meta:
         sys.exit(f\"metadata sidecar is missing {key}\")
+if (meta[\"label_params\"] or {}).get(\"volatility_multiple\") != 4.0:
+    sys.exit(\"the model metadata does not carry the label parameters the export used\")
 print(\"metadata ok:\", meta[\"version\"], meta[\"validation_method\"])
 "'
 
