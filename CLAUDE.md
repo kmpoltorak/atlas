@@ -5,8 +5,12 @@ exists because the alternative was tried and cost something measurable. Where a 
 was verified live, it was.
 
 Scope and hard product constraints: [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md). How the system
-works: [docs/](docs/). Why the expensive decisions were made: [docs/adr/](docs/adr/). What is
-built and what isn't: [implementation-plan.md](implementation-plan.md).
+works: [docs/](docs/). Why the expensive decisions were made: [docs/adr/](docs/adr/).
+
+[implementation-plan.md](implementation-plan.md) is **not** a status document any more — the
+project diverged from the plan it describes. Read `docs/` and the code for what exists; don't
+treat a gap between that file and the codebase as a defect, and don't update it as part of a
+change.
 
 ## Working method
 
@@ -30,8 +34,11 @@ A signal measured on one window is a hypothesis, not a finding.
   package-level singletons.
 - Every optional external dependency (market provider, ML model, Discord webhook, NBP exchange
   rates, admin auth) is nil-safe and non-fatal when unconfigured — the app always starts and
-  degrades gracefully (deterministic stub prediction, no login gate, etc.) rather than refusing
-  to boot. Only TimescaleDB/Redis connection failures are fatal at startup.
+  degrades gracefully (deterministic stub prediction, no Discord delivery, etc.) rather than
+  refusing to boot. Two exceptions are deliberate and both are startup-fatal: TimescaleDB/Redis
+  connection failures, and admin credentials left unset without an explicit `AUTH_DISABLED=true`
+  — an unauthenticated dashboard has to be asked for, not arrived at by omission
+  (`config.Validate`).
 - Concurrency-shared state that changes after startup uses `atomic.Pointer[T]`, not a plain
   field guarded by convention — e.g. `ml.UseCase`'s `model`/`recoveryModel` fields, swapped live
   from the Account dashboard's model picker while `Predict()` runs concurrently on other
@@ -66,10 +73,20 @@ A signal measured on one window is a hypothesis, not a finding.
 - Six real actions, not five: `BUY`, `ACCUMULATE`, `HOLD`, `REDUCE`, `SELL`, `WAIT`
   (`internal/domain/decision`). `ACCUMULATE`/`REDUCE` vs `BUY`/`SELL` are gated on whether a real
   portfolio position already exists, not just score severity — see `docs/decision_engine.md`.
-- The score is a real four-term blend — Technical (0.50) + ML (0.25) + Portfolio P&L (0.15) +
-  Portfolio-wide Risk (0.10), `internal/application/decision`'s `Orchestrator`. These weights are
-  documented first-pass heuristics (`docs/decision_engine.md` says so explicitly), not tuned or
-  backtested-optimal — don't treat them as settled without checking that doc first.
+- The score is **not** a weighted sum. Technical is the only opportunity term; ML, portfolio P&L
+  and portfolio-wide risk are multiplicative factors that can only lower it
+  (`internal/application/decision`'s `Orchestrator.blendMLAndPortfolio`, each defaulting to
+  "no penalty" rather than "neutral" when its signal never ran). It used to be a 0.50/0.25/0.15/
+  0.10 average, and that shape is what let a term carrying no information — an empty portfolio's
+  risk score, pinned at its maximum — read as good news and lift every symbol's score. Don't
+  restore the weights; `docs/decision_engine.md` has the current design.
+- **A ledger is ordered by two clocks, not one.** `Timestamp` is when the trade happened and may
+  be backdated; `RecordedAt` (`transactions.created_at`, migrations/021) is when Atlas accepted
+  it, and it is what breaks ties — the dashboard form submits a date with no time, so same-day
+  entries are genuinely equal on the first. Ordering ties by transaction id ordered them by a
+  random UUID, which reordered a BUY and the SELL it funded and rejected the pair as an oversell.
+  Replay (`portfolio.UseCase.recomputePosition`) is the single path both recording and deleting
+  go through; keep it that way.
 - Every recommendation persists with a real `Reason []string` explanation, confidence score, and
   `RiskScore`/`MarketCondition` fields — never just an action label. `GET /recommendations`'s
   response and the `recommendations` table (migrations/001/007) both carry the full explanation,
@@ -113,6 +130,15 @@ A signal measured on one window is a hypothesis, not a finding.
   it by close (or bound it) in `ml.BuildFeatureVector`, and rename it if you changed an existing
   one's meaning — the `feature_order` guard compares names, so reusing a name silently loads stale
   models against new semantics.
+- **The exporter and the evaluator must be given the same label parameters, not just call the
+  same function.** `cmd/export-training-data` builds `CorrectionLabelParams` from the full
+  `DefaultCorrectionLabelParams()`, because leaving `VolatilityMultiple` at its zero value is
+  what silently reverts the barrier to a fixed percentage — the exporter and
+  `backtesting.evaluateML` then agreed on every function call and disagreed on the arguments, so
+  the model was trained on one event and scored against another. Every export writes a
+  `<csv>.params.json` sidecar and `training/train.py` copies it into the model's metadata, so a
+  model states the barrier its labels actually came from rather than the one the defaults are
+  supposed to be.
 - `cmd/export-training-data` reuses the exact same Go feature-computation code
   (`ml.BuildFeatureVector`) the live inference path uses — normalisation included, which is why
   it lives there and not in the exporter. Never reimplement indicator math in Python; that's

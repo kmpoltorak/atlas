@@ -36,6 +36,16 @@ func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, 
 	if successMsg == "" {
 		successMsg = readFlash(w, r)
 	}
+	// The request-scoped portfolio view, like every other page that shows portfolio state. The
+	// shared use case is loaded once at startup, so reading its list here showed a snapshot from
+	// then: a portfolio created a moment earlier — by this very page's own form, which does use a
+	// scoped view — was missing from the list the redirect landed on, and renames and deletions
+	// could be just as invisible.
+	if scoped, err := a.forPortfolio(r); err == nil {
+		a = scoped
+	} else {
+		a.Logger.Warn("could not load the current portfolio list for the account page", zap.Error(err))
+	}
 	enabled, err := a.Auth.TOTPStatus()
 	if err != nil {
 		a.renderError(w, r, http.StatusInternalServerError, err.Error())
@@ -142,14 +152,21 @@ func (a *Application) mlEngineToggleHandler(w http.ResponseWriter, r *http.Reque
 	}
 	enabled := r.FormValue("enabled") == "true"
 
-	a.Orchestrator.SetMLEnabled(enabled)
-	if err := a.Storage.SetMLEnabled(enabled); err != nil {
-		// The toggle already took effect in memory; only the durable record failed, so this
-		// warns rather than rolling the toggle back — a restart would just re-read ML_ENABLED's
-		// default in that case, not silently lose the running setting, same stance as
-		// mlModelActivateHandler's SetActiveModelSelection failure below.
-		a.Logger.Warn("failed to persist ML-enabled setting", zap.Bool("enabled", enabled), zap.Error(err))
+	// Persist BEFORE changing the running engine, the same order mlModelActivateHandler uses and
+	// for the same reason: the durable setting is what every replica reconciles against and what
+	// survives a restart, so a write that failed while the toggle flipped anyway leaves the
+	// operator told "done" and the background refresh free to flip it back. Failing first changes
+	// nothing anywhere and says so.
+	// No storage configured is a degraded-but-supported state elsewhere on this page, so the
+	// toggle still works in memory there rather than refusing outright.
+	if a.Storage != nil {
+		if err := a.Storage.SetMLEnabled(enabled); err != nil {
+			a.Logger.Error("failed to persist ML-enabled setting", zap.Bool("enabled", enabled), zap.Error(err))
+			a.renderAccountPage(w, r, "Could not save the ML setting: "+err.Error(), "")
+			return
+		}
 	}
+	a.Orchestrator.SetMLEnabled(enabled)
 
 	if enabled {
 		a.renderAccountPage(w, r, "", "ML blend enabled — recommendations now factor in ML/portfolio/risk again.")

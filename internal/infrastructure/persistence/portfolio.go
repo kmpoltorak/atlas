@@ -288,13 +288,20 @@ func (t *TimescaleDB) SaveTransaction(portfolioID string, transaction portfolio.
 		timestamp = time.Now().UTC()
 	}
 
+	// created_at is the acceptance order replay breaks ties on (migrations/021). NULL lets the
+	// column default to NOW(), which is the right answer for a caller that did not set one.
+	var recordedAt any
+	if transaction.RecordedAt != "" {
+		recordedAt = transaction.RecordedAt
+	}
+
 	var id string
 	if err := tx.GetContext(ctx, &id,
-		`INSERT INTO transactions (portfolio_id, symbol_id, type, quantity, price, currency, price_in_pln, timestamp)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`INSERT INTO transactions (portfolio_id, symbol_id, type, quantity, price, currency, price_in_pln, timestamp, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9::timestamptz, NOW()))
 		 RETURNING id`,
 		portfolioID, symbolID, transaction.Type, transaction.Quantity, transaction.Price,
-		transaction.Currency, transaction.PriceInPLN, timestamp); err != nil {
+		transaction.Currency, transaction.PriceInPLN, timestamp, recordedAt); err != nil {
 		return "", fmt.Errorf("insert transaction for %s: %w", transaction.Symbol, err)
 	}
 
@@ -323,13 +330,16 @@ func getTransactions(ctx context.Context, q sqlx.QueryerContext, portfolioID str
 		Currency   string    `db:"currency"`
 		PriceInPLN float64   `db:"price_in_pln"`
 		Timestamp  time.Time `db:"timestamp"`
+		CreatedAt  time.Time `db:"created_at"`
 	}
+	// Ordered on all three keys, not just the trade date: rows sharing a timestamp used to come
+	// back in whatever order the database chose, which is exactly the order replay depends on.
 	if err := sqlx.SelectContext(ctx, q, &rows,
-		`SELECT tr.id, s.ticker, tr.type, tr.quantity, tr.price, tr.currency, tr.price_in_pln, tr.timestamp
+		`SELECT tr.id, s.ticker, tr.type, tr.quantity, tr.price, tr.currency, tr.price_in_pln, tr.timestamp, tr.created_at
 		 FROM transactions tr
 		 JOIN symbols s ON s.id = tr.symbol_id
 		 WHERE tr.portfolio_id = $1
-		 ORDER BY tr.timestamp DESC`, portfolioID); err != nil {
+		 ORDER BY tr.timestamp DESC, tr.created_at DESC, tr.id DESC`, portfolioID); err != nil {
 		return nil, fmt.Errorf("select transactions: %w", err)
 	}
 
@@ -339,7 +349,10 @@ func getTransactions(ctx context.Context, q sqlx.QueryerContext, portfolioID str
 			ID: row.ID, Symbol: row.Ticker, Type: row.Type,
 			Quantity: row.Quantity, Price: row.Price,
 			Currency: row.Currency, PriceInPLN: row.PriceInPLN,
-			Timestamp: row.Timestamp.UTC().Format(time.RFC3339),
+			// RFC3339Nano, not RFC3339: the column keeps sub-second precision and truncating it
+			// on the way out manufactured ties between trades that had none.
+			Timestamp:  row.Timestamp.UTC().Format(time.RFC3339Nano),
+			RecordedAt: row.CreatedAt.UTC().Format(time.RFC3339Nano),
 		})
 	}
 	return transactions, nil

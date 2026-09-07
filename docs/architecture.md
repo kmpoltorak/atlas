@@ -24,10 +24,13 @@ docs/ml.md. Extending past those five is the leading open lead for the correctio
 currently loses to a per-symbol base-rate baseline. ADX is consumed too,
 but only by the deterministic market-condition classifier (ADX+EMA, see docs/ml.md), not blended
 into scoring or the ML feature vector either.
-Recovery probability has a real, tested label definition but no trained model (too little
-historical data to train one honestly — see docs/ml.md); market condition is real and live
+Recovery probability is trained and loadable like correction probability — the recovery model
+in `training/models/` is the one that beat its own baseline once the features were made
+scale-free (see docs/ml.md); it stays optional, and with no model loaded the probability is left
+at 0 rather than guessed. Market condition is real and live
 (`ml.ClassifyMarketCondition`, a deterministic rule, not a trained model). The Risk Engine is
-real and blended into scoring (`computeRiskScore`, weight 0.10) but still computed inline in the
+real and applied to the score as a multiplicative factor (`computeRiskScore`, which can only
+lower it — the 0.10 weight it used to carry is gone) but still computed inline in the
 Orchestrator rather than as a separate pipeline stage. Indicators are now persisted from every
 live-recommendation path — `GET /recommendations`, `GET /alerts`, and the background alert-poll
 loop — but deliberately not from backtesting, whose bars are historical/simulated rather than
@@ -93,8 +96,9 @@ ML models are trained externally using Python.
 Implementation status: correction probability and confidence score are real (XGBoost, exported
 to ONNX, loaded via `github.com/yalue/onnxruntime_go` — see docs/ml.md and training/README.md).
 Market condition is real too, but deliberately not ML — a deterministic ADX+EMA rule (see
-docs/ml.md). Recovery probability has a real, tested label definition but no trained model yet
-— real accumulated history is still too thin to train one honestly.
+docs/ml.md). Recovery probability is a second, independent model of the same shape — trained,
+exported and loadable (`RECOVERY_MODEL_PATH` or the Account page's picker), and optional in
+exactly the same way: with none loaded the probability stays 0 instead of being invented.
 
 
 ### Portfolio Engine

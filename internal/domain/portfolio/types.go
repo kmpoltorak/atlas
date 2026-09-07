@@ -78,7 +78,23 @@ type Transaction struct {
 	// Currency is PLN.
 	PriceInPLN float64 `json:"price_in_pln"`
 
+	// Timestamp is when the trade happened — the economic date, which the caller may backdate.
 	Timestamp string `json:"timestamp"`
+
+	// RecordedAt is when Atlas accepted this transaction, which is a different question from
+	// when the trade happened and is what breaks ties between them.
+	//
+	// Two trades can share a Timestamp honestly: the dashboard form submits a date with no time,
+	// and two entries made on the same day are then identical to the second. Replay has to order
+	// them anyway, because BUY-then-SELL and SELL-then-BUY are not the same history — the second
+	// is an oversell. Ordering by transaction id instead ordered them by a random UUID, so the
+	// same two trades could replay either way, and after a reload the database's own row order
+	// decided. RecordedAt is the acceptance order, persisted (migrations/021) so it survives that
+	// reload.
+	//
+	// Empty on a transaction that predates the column or was built by a caller directly;
+	// ordering then falls back to the id, which is at least stable.
+	RecordedAt string `json:"recorded_at,omitempty"`
 }
 
 // RiskSnapshot is a cheap, single-portfolio-scan risk heuristic (see UseCase.ComputeRisk) — not

@@ -24,6 +24,16 @@ Interactive, always-current documentation for every route above — request/resp
 `publicPaths`, so it needs the same session as the API itself when auth is enabled; log into the
 dashboard first and "Try it out" reuses that session's cookie automatically.
 
+The committed specification is `docs/docs.go`, embedded in the API binary. Regenerate it
+after changing handler annotations or response types:
+
+```sh
+go run github.com/swaggo/swag/cmd/swag@v1.16.6 init -g cmd/api/main.go --output docs --outputTypes go
+```
+
+The Swagger handler serves the JSON specification at `/swagger/doc.json` from this embedded
+definition. Separate generated JSON/YAML copies are unnecessary for the application build.
+
 **Implementation status**: this list covers the raw JSON API only (`internal/app/handlers.go`) —
 see `internal/app/http_handler.go` for the full route table including the server-rendered
 dashboard (`/dashboard/*`) and its form-submitted delete actions, which have no JSON API
