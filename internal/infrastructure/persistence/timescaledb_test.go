@@ -26,7 +26,7 @@ func connectTestDB(t *testing.T) *TimescaleDB {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	db, err := NewTimescaleDB(ctx, dsn)
+	db, err := NewTimescaleDB(ctx, dsn, PoolLimits{})
 	if err != nil {
 		t.Fatalf("failed to connect to test database: %v", err)
 	}

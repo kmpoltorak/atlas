@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"testing"
+
+	"atlas/internal/domain/portfolio"
 )
 
 // The streamed document and the buffered one must be byte-identical: BackupAll is now a thin
@@ -58,5 +60,57 @@ func TestStreamedBackupPassesValidation(t *testing.T) {
 		if _, ok := tables[table]; !ok {
 			t.Fatalf("streamed backup is missing table %q", table)
 		}
+	}
+}
+
+// Row-by-row streaming builds the JSON array by hand, so the separators are code now rather than
+// something Postgres' json_agg guaranteed. A table with several rows is what catches a missing or
+// doubled comma; one row cannot.
+func TestStreamedBackupSeparatesEveryRow(t *testing.T) {
+	db := connectTestDB(t)
+
+	portfolioID := testPortfolioID(t, db)
+	want := []portfolio.Position{
+		{Symbol: "TESTSEP1", Quantity: 1, AverageCost: 10, CurrentPrice: 11},
+		{Symbol: "TESTSEP2", Quantity: 2, AverageCost: 20, CurrentPrice: 21},
+		{Symbol: "TESTSEP3", Quantity: 3, AverageCost: 30, CurrentPrice: 31},
+	}
+	if err := db.SavePositions(portfolioID, want); err != nil {
+		t.Fatalf("seed positions: %v", err)
+	}
+	t.Cleanup(func() {
+		for _, position := range want {
+			if err := db.DeletePosition(portfolioID, position.Symbol); err != nil {
+				t.Errorf("clean up %s: %v", position.Symbol, err)
+			}
+		}
+	})
+
+	var streamed bytes.Buffer
+	if err := db.WriteBackup(&streamed); err != nil {
+		t.Fatalf("WriteBackup: %v", err)
+	}
+
+	// Rows are dumped as raw table columns (positions carries symbol_id, not the ticker), so the
+	// check is on how many rows came back for this portfolio, which is what separator handling
+	// actually affects.
+	var document struct {
+		Tables struct {
+			Positions []struct {
+				PortfolioID string `json:"portfolio_id"`
+			} `json:"positions"`
+		} `json:"tables"`
+	}
+	if err := json.Unmarshal(streamed.Bytes(), &document); err != nil {
+		t.Fatalf("streamed backup is not valid JSON: %v", err)
+	}
+	seeded := 0
+	for _, row := range document.Tables.Positions {
+		if row.PortfolioID == portfolioID {
+			seeded++
+		}
+	}
+	if seeded != len(want) {
+		t.Fatalf("expected all %d seeded rows in the streamed array, got %d", len(want), seeded)
 	}
 }

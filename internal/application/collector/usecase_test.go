@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"context"
 	"errors"
 	"strconv"
 	"testing"
@@ -51,15 +52,15 @@ func (s *stubStorage) GetBars(symbol string) ([]market.Bar, error) {
 	return s.storedBars, s.err
 }
 
-func (s stubProvider) FetchInstrumentInfo(symbol string) (market.InstrumentInfo, error) {
+func (s stubProvider) FetchInstrumentInfo(_ context.Context, symbol string) (market.InstrumentInfo, error) {
 	return market.InstrumentInfo{Symbol: symbol}, nil
 }
 
-func (s stubProvider) FetchQuote(symbol string) (market.Quote, error) {
+func (s stubProvider) FetchQuote(_ context.Context, symbol string) (market.Quote, error) {
 	return market.Quote{Symbol: symbol}, nil
 }
 
-func (s stubProvider) FetchBars(symbol string, window int) ([]market.Bar, error) {
+func (s stubProvider) FetchBars(_ context.Context, symbol string, window int) ([]market.Bar, error) {
 	if s.callCount != nil {
 		*s.callCount++
 	}
@@ -73,7 +74,7 @@ func TestCollectReturnsBarsWhenProviderConfigured(t *testing.T) {
 	provider := stubProvider{bars: []market.Bar{{Symbol: "AAPL", Close: 100, Timestamp: time.Now()}}}
 	uc := &UseCase{Provider: provider}
 
-	bars, fromCache, err := uc.Collect("AAPL", 1)
+	bars, fromCache, err := uc.Collect(context.Background(), "AAPL", 1)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -90,7 +91,7 @@ func TestCollectPersistsBarsWhenStorageEnabled(t *testing.T) {
 	storage := &stubStorage{}
 	uc := &UseCase{Provider: provider, Storage: storage}
 
-	bars, _, err := uc.Collect("AAPL", 1)
+	bars, _, err := uc.Collect(context.Background(), "AAPL", 1)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -110,14 +111,14 @@ func TestCollectServesFromCacheWithoutCallingProviderAgain(t *testing.T) {
 	provider := stubProvider{bars: []market.Bar{{Symbol: "AAPL", Close: 100, Timestamp: time.Now()}}, callCount: &calls}
 	uc := &UseCase{Provider: provider, Cache: &stubCache{}}
 
-	_, fromCache1, err := uc.Collect("AAPL", 30)
+	_, fromCache1, err := uc.Collect(context.Background(), "AAPL", 30)
 	if err != nil {
 		t.Fatalf("unexpected error on first collect: %v", err)
 	}
 	if fromCache1 {
 		t.Fatal("expected the first collect to be a cache miss")
 	}
-	_, fromCache2, err := uc.Collect("AAPL", 30)
+	_, fromCache2, err := uc.Collect(context.Background(), "AAPL", 30)
 	if err != nil {
 		t.Fatalf("unexpected error on second collect: %v", err)
 	}
@@ -132,13 +133,13 @@ func TestCollectServesFromCacheWithoutCallingProviderAgain(t *testing.T) {
 
 func TestCollectRejectsMissingProviderOrSymbol(t *testing.T) {
 	uc := &UseCase{}
-	if _, _, err := uc.Collect("AAPL", 1); err == nil {
+	if _, _, err := uc.Collect(context.Background(), "AAPL", 1); err == nil {
 		t.Fatal("expected provider error")
 	}
 
 	provider := stubProvider{err: errors.New("boom")}
 	uc = &UseCase{Provider: provider}
-	if _, _, err := uc.Collect("", 1); err == nil {
+	if _, _, err := uc.Collect(context.Background(), "", 1); err == nil {
 		t.Fatal("expected symbol validation error")
 	}
 }

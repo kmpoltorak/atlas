@@ -57,14 +57,70 @@ func DSN(host, port, dbName, user, pass, sslMode string) string {
 	return u.String()
 }
 
+// PoolLimits bounds the connection pool. database/sql defaults to *unlimited* open connections,
+// so nothing but Postgres' own max_connections stood between a burst of slow queries and
+// "sorry, too many clients already" — and query deadlines don't help: they bound how long a
+// connection is held, not how many get opened.
+//
+// A zero field takes the default below, so a caller that has no opinion still gets a bounded
+// pool rather than an unbounded one.
+type PoolLimits struct {
+	MaxOpen     int
+	MaxIdle     int
+	MaxLifetime time.Duration
+	MaxIdleTime time.Duration
+}
+
+// Defaults, deliberately conservative rather than measured — no load test has been run against
+// this deployment, and a number nobody measured should not look like one somebody did. They are
+// sized by what the process can actually use concurrently (HTTP handlers, one alert poll loop,
+// and backtests already bounded to GOMAXPROCS-1) against a stock Postgres max_connections of
+// 100 that psql, backups and the trainer also draw on. Raise them from config if a real
+// deployment shows contention; that is what the env vars are for.
+const (
+	defaultMaxOpenConns    = 20
+	defaultMaxIdleConns    = 5
+	defaultConnMaxLifetime = 30 * time.Minute
+	defaultConnMaxIdleTime = 5 * time.Minute
+)
+
+func (p PoolLimits) withDefaults() PoolLimits {
+	if p.MaxOpen <= 0 {
+		p.MaxOpen = defaultMaxOpenConns
+	}
+	if p.MaxIdle <= 0 {
+		p.MaxIdle = defaultMaxIdleConns
+	}
+	// More idle than open is not a configuration, it is a typo: database/sql would silently
+	// reduce it anyway, so say so here instead of leaving the two numbers disagreeing.
+	if p.MaxIdle > p.MaxOpen {
+		p.MaxIdle = p.MaxOpen
+	}
+	if p.MaxLifetime <= 0 {
+		p.MaxLifetime = defaultConnMaxLifetime
+	}
+	if p.MaxIdleTime <= 0 {
+		p.MaxIdleTime = defaultConnMaxIdleTime
+	}
+	return p
+}
+
 // NewTimescaleDB opens and verifies a connection. Failing fast here (rather than lazily on
 // first query) matches the rest of the app's stance: Atlas can't give a truthful
 // recommendation without real historical data, so a broken DB connection should be loud.
-func NewTimescaleDB(ctx context.Context, dsn string) (*TimescaleDB, error) {
+func NewTimescaleDB(ctx context.Context, dsn string, pool PoolLimits) (*TimescaleDB, error) {
 	db, err := sqlx.ConnectContext(ctx, "pgx", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("connect to timescaledb: %w", err)
 	}
+	pool = pool.withDefaults()
+	db.SetMaxOpenConns(pool.MaxOpen)
+	db.SetMaxIdleConns(pool.MaxIdle)
+	// A lifetime bound is what lets a connection pool notice the world changed: after a failover
+	// or a restart of the database behind a stable address, connections that were fine when
+	// opened are held forever otherwise.
+	db.SetConnMaxLifetime(pool.MaxLifetime)
+	db.SetConnMaxIdleTime(pool.MaxIdleTime)
 	return &TimescaleDB{db: db}, nil
 }
 

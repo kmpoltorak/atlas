@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	alertsUC "atlas/internal/application/alerts"
 	analyzerUC "atlas/internal/application/analyzer"
@@ -92,7 +93,11 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 	dsn := persistence.DSN(cfg.DatabaseHost, cfg.DatabasePort, cfg.DatabaseName, cfg.DatabaseUser, cfg.DatabasePassword, cfg.DatabaseSSLMode)
-	storage, err := persistence.NewTimescaleDB(ctx, dsn)
+	storage, err := persistence.NewTimescaleDB(ctx, dsn, persistence.PoolLimits{
+		MaxOpen:     cfg.DatabaseMaxOpenConns,
+		MaxIdle:     cfg.DatabaseMaxIdleConns,
+		MaxLifetime: time.Duration(cfg.DatabaseConnMaxLifetimeMins) * time.Minute,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("connect to timescaledb: %w", err)
 	}

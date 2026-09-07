@@ -378,12 +378,18 @@ func (u *UseCase) RecordTransaction(tx portfolio.Transaction) error {
 				return errors.New("transaction id already used with different data")
 			}
 		}
-		position := findPosition(next.Positions, tx.Symbol)
-		if tx.Type == "SELL" && tx.Quantity > position.Quantity {
-			return errors.New("cannot sell more than the held quantity")
-		}
 		next.Transactions = append(next.Transactions, tx)
-		return next.applyPositionUpdate(applyTransaction(position, tx))
+		// Replayed from the ledger rather than folded onto the materialized position, and the
+		// same replay the delete path uses. Folding applied a backdated trade in *entry* order
+		// while a delete replayed in *timestamp* order, so the same remaining history produced
+		// two different cost bases depending on which operation you reached it by: BUY 10@100 on
+		// Jan 3, SELL 5 on Jan 4, then a backdated BUY 10@200 on Jan 2 stored 166.67 for 15
+		// shares whose chronological weighted average is 150.
+		position, err := next.recomputePosition(tx.Symbol)
+		if err != nil {
+			return err
+		}
+		return next.applyPositionUpdate(position)
 	})
 }
 
@@ -414,6 +420,13 @@ func (u *UseCase) applyPositionUpdate(position portfolio.Position) error {
 // history for that symbol is deliberately left untouched (an append-only audit log, matching
 // recommendations/predictions elsewhere in this codebase), so this only clears the current
 // aggregate, not the record of what happened.
+//
+// Because the aggregate is derived from the ledger by recomputePosition, clearing it without
+// clearing the ledger is not a durable state: the next transaction recorded for that symbol (or
+// the next one deleted) replays the whole remaining history and brings the earlier trades back.
+// That was already true of the delete path before recording shared the same replay. Use it to
+// tidy a stale aggregate, not to disown trades that really happened — for those, delete the
+// transactions.
 func (u *UseCase) RemovePosition(symbol string) error {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -487,9 +500,15 @@ func (u *UseCase) removeTransaction(id string) error {
 	symbol := u.Transactions[index].Symbol
 	u.Transactions = append(u.Transactions[:index:index], u.Transactions[index+1:]...)
 
+	// A removal that leaves an impossible history (deleting the only BUY under a SELL) fails here
+	// rather than being flattened to a zero quantity — the caller has to delete the SELL first.
+	position, err := u.recomputePosition(symbol)
+	if err != nil {
+		return err
+	}
 	// The deletion is persisted by MutatePortfolio, which diffs the returned history against what
 	// it read — see persistence.MutatePortfolio.
-	return u.applyPositionUpdate(u.recomputePosition(symbol))
+	return u.applyPositionUpdate(position)
 }
 
 // RemoveTransactions deletes several historical transactions by id (bulk delete from the
@@ -514,16 +533,25 @@ func (u *UseCase) RemoveTransactions(ids []string) error {
 	})
 }
 
-// recomputePosition rebuilds a symbol's position from scratch by replaying every remaining
-// transaction for that symbol in chronological order — pure and side-effect free; callers pass
-// the result to applyPositionUpdate to fold it back into u.Positions/the repository. Transactions
-// with an unparseable timestamp keep their existing relative order (stable sort) rather than
-// being dropped or erroring — the same "don't fail a trade record over a cosmetic field" stance
-// RecordTransaction already takes for persistence. A symbol with no transactions left at all
-// naturally comes back as the zero-quantity Position{Symbol: symbol}, which applyPositionUpdate
-// treats as "remove it" — the same rule a real SELL-to-zero follows. Lock-free: its one caller,
-// removeTransaction, already holds mu.
-func (u *UseCase) recomputePosition(symbol string) portfolio.Position {
+// recomputePosition rebuilds a symbol's position from scratch by replaying every transaction for
+// that symbol in chronological order — pure and side-effect free; callers pass the result to
+// applyPositionUpdate to fold it back into u.Positions/the repository. It is the *only* way a
+// position is derived, shared by RecordTransaction (append) and removeTransaction (delete), so
+// the two can't imply different cost bases for the same history.
+//
+// Equal timestamps are broken by transaction id so the order is stable across a reload from the
+// database, where the slice order is whatever the query returned. Transactions with an
+// unparseable timestamp keep their existing relative order (stable sort) rather than being
+// dropped or erroring — the same "don't fail a trade record over a cosmetic field" stance
+// RecordTransaction already takes for persistence.
+//
+// Replay validates: a SELL exceeding the quantity held *at that point in the history* is an
+// impossible ledger and comes back as an error, so the mutation publishes nothing (see mutate)
+// instead of storing a position flattened to zero. A symbol with no transactions left at all
+// comes back as the zero-quantity Position{Symbol: symbol}, which applyPositionUpdate treats as
+// "remove it" — the same rule a real SELL-to-zero follows. Lock-free: both callers already
+// hold mu.
+func (u *UseCase) recomputePosition(symbol string) (portfolio.Position, error) {
 	var symbolTx []portfolio.Transaction
 	for _, t := range u.Transactions {
 		if t.Symbol == symbol {
@@ -536,24 +564,38 @@ func (u *UseCase) recomputePosition(symbol string) portfolio.Position {
 		if iErr != nil || jErr != nil {
 			return false
 		}
+		if ti.Equal(tj) {
+			return symbolTx[i].ID < symbolTx[j].ID
+		}
 		return ti.Before(tj)
 	})
 
 	position := portfolio.Position{Symbol: symbol}
 	for _, t := range symbolTx {
+		// quantityEpsilon, not a bare >: fractional shares accumulate binary rounding error, and
+		// selling everything you hold in two parts must not be refused because 0.3 - 0.1 lands on
+		// 0.19999999999999998. The tolerance is far below any tradeable quantity.
+		if t.Type == "SELL" && t.Quantity > position.Quantity+quantityEpsilon {
+			return portfolio.Position{}, fmt.Errorf("cannot sell more than the held quantity: SELL %g of %s against %g held on %s",
+				t.Quantity, symbol, position.Quantity, t.Timestamp)
+		}
 		position = applyTransaction(position, t)
 	}
-	return position
+	return position, nil
 }
 
+// quantityEpsilon is the tolerance replay allows when checking a SELL against the quantity held.
+const quantityEpsilon = 1e-9
+
 // applyTransaction folds one transaction's effect into a position: weighted-average cost on
-// BUY, quantity reduction floored at zero on SELL. Uses PriceInPLN, not Price — position math
-// always happens in currency.Base regardless of what currency individual transactions were
-// recorded in (see domain/portfolio.Transaction's doc comment), so a symbol bought partly in USD
-// and partly in PLN still has one mathematically coherent cost basis. Shared between
-// RecordTransaction (append path) and recomputePosition (replay-after-delete path) so the two
-// can never drift apart. Callers are responsible for validating tx.Type beforehand
-// (RecordTransaction does); any other type is a no-op here.
+// BUY, quantity reduction on SELL. The floor at zero is a backstop for the epsilon
+// recomputePosition allows, not a way to absorb an oversell — replay rejects those before they
+// get here. Uses PriceInPLN, not Price — position math always happens in currency.Base regardless
+// of what currency individual transactions were recorded in (see domain/portfolio.Transaction's
+// doc comment), so a symbol bought partly in USD and partly in PLN still has one mathematically
+// coherent cost basis. Called only from recomputePosition's replay, which is the single path both
+// recording and deleting a transaction go through. Callers are responsible for validating tx.Type
+// beforehand (RecordTransaction does); any other type is a no-op here.
 func applyTransaction(position portfolio.Position, tx portfolio.Transaction) portfolio.Position {
 	switch tx.Type {
 	case "BUY":
@@ -625,15 +667,6 @@ func ComputeRiskSnapshot(positions []portfolio.Position) portfolio.RiskSnapshot 
 		Drawdown:   drawdown,
 		Volatility: volatility / float64(len(positions)),
 	}
-}
-
-func findPosition(positions []portfolio.Position, symbol string) portfolio.Position {
-	for _, position := range positions {
-		if position.Symbol == symbol {
-			return position
-		}
-	}
-	return portfolio.Position{Symbol: symbol, Quantity: 0, AverageCost: 0, CurrentPrice: 0}
 }
 
 func findPositionIndex(positions []portfolio.Position, symbol string) int {

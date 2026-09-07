@@ -31,7 +31,7 @@ func (a *Application) recommendationsPageHandler(w http.ResponseWriter, r *http.
 		data.Symbols = symbols
 	}
 	if symbol != "" {
-		bars, err := a.collectBars(symbol, a.windowFromQuery(r))
+		bars, err := a.collectBars(r.Context(), symbol, a.windowFromQuery(r))
 		if err != nil {
 			data.Error = err.Error()
 		} else if rec, err := a.Orchestrator.BuildRecommendationFromBars(symbol, bars); err != nil {
@@ -123,10 +123,14 @@ func (a *Application) backtestsPageHandler(w http.ResponseWriter, r *http.Reques
 		data.Symbols = symbols
 	}
 	if symbol != "" {
-		bars, err := a.collectBars(symbol, window)
+		// Same budget as the JSON API: queue wait, simulation and write deadline agree, so a
+		// queued page render can't come back after the connection's deadline has passed.
+		ctx, cancel := a.beginBacktest(w, r)
+		defer cancel()
+		bars, err := a.collectBars(ctx, symbol, window)
 		if err != nil {
 			data.Error = err.Error()
-		} else if result, err := a.Backtesting.WithContext(r.Context()).Run(symbol, bars, capital, "atlas-orchestrator", "v1"); err != nil {
+		} else if result, err := a.Backtesting.WithContext(ctx).Run(symbol, bars, capital, "atlas-orchestrator", "v1"); err != nil {
 			data.Error = err.Error()
 		} else {
 			a.persistBacktestRun(result)

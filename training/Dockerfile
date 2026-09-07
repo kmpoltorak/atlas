@@ -6,7 +6,7 @@
 # image rebuild needed to pick up a training-pipeline change. This is dev/ops tooling, not the
 # production atlas-api image; it never depends on this and stays off the host network entirely
 # (no published port — see docker-compose.yml's Scope note on that service).
-FROM golang:1.26.1-bookworm
+FROM golang:1.26.8-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 python3-venv python3-pip \

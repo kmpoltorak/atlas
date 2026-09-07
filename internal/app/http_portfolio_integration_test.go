@@ -29,7 +29,7 @@ func newHTTPTestApplication(t *testing.T) (*Application, http.Handler) {
 	if dsn == "" {
 		t.Skip("TEST_DATABASE_DSN not set; skipping HTTP portfolio integration test")
 	}
-	storage, err := persistence.NewTimescaleDB(context.Background(), dsn)
+	storage, err := persistence.NewTimescaleDB(context.Background(), dsn, persistence.PoolLimits{})
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}

@@ -232,7 +232,7 @@ A signal measured on one window is a hypothesis, not a finding.
   showing a nonstop "unhealthy" status despite `/health` genuinely returning 200 (fixed by adding
   `curl` to the Dockerfile's package list). atlas-trainer's own healthcheck still uses
   `wget -qO- http://localhost:8091/health`, which is fine there: its image is the full
-  `golang:1.26.1-bookworm` (not `-slim`), which does ship `wget`.
+  `golang:1.26.8-bookworm` (not `-slim`), which does ship `wget`.
 - Volumes: `timescaledb-data`/`redis-data`/`prometheus-data`/`grafana-data`/`alertmanager-data`
   are named/persistent, plus `trainer-gomod-cache` holding atlas-trainer's Go module cache (that
   service runs via `go run`, so without it every container recreation re-downloads the same

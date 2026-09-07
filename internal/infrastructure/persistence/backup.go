@@ -59,13 +59,17 @@ func (t *TimescaleDB) BackupAll() ([]byte, error) {
 	return buffer.Bytes(), nil
 }
 
-// WriteBackup streams the same document straight to w, one table at a time, so the process never
-// holds more than the largest single table at once.
+// WriteBackup streams the document straight to w, a row at a time, so the process never holds
+// more than one row of it (plus bufio's fixed buffer) at once.
 //
 // This is the difference between a backup that works and one that OOMs the container: BackupAll
 // used to build every table plus the assembled document in memory, roughly three copies of the
-// whole database at peak. On a long-lived instance the prices and recommendations tables are the
-// bulk of it and they only grow (see PruneDerivedData).
+// whole database at peak. Writing table by table fixed the "whole database" half but left peak
+// memory proportional to the largest single table, which on a long-lived instance is prices or
+// recommendations — the two that only grow (see PruneDerivedData). Row by row, nothing about how
+// long the instance has been running changes the memory this needs. Note that BackupAll itself
+// still buffers the whole document by definition; the streaming path is what
+// accountBackupHandler uses.
 //
 // The snapshot is still one REPEATABLE READ transaction, so streaming does not cost consistency:
 // every table is read at the same point in time regardless of how long the write takes.
@@ -91,19 +95,9 @@ func (t *TimescaleDB) WriteBackup(w io.Writer) error {
 		if _, err := fmt.Fprintf(buffered, `%s%q:`, separator, table); err != nil {
 			return fmt.Errorf("write backup table %s: %w", table, err)
 		}
-		// json_agg builds the array inside Postgres, which is also where the type-to-JSON
-		// encoding belongs (timestamps, UUIDs, jsonb, NULLs) — the mirror of RestoreAll's
-		// json_populate_recordset. Streaming here is about not holding every table at once, not
-		// about avoiding that.
-		var rows []byte
-		query := fmt.Sprintf(`SELECT COALESCE(json_agg(row_to_json(t)), '[]') FROM %s t`, table)
-		if err := tx.QueryRowxContext(ctx, query).Scan(&rows); err != nil {
-			return fmt.Errorf("dump %s: %w", table, err)
+		if err := writeTableRows(ctx, tx, buffered, table); err != nil {
+			return err
 		}
-		if _, err := buffered.Write(rows); err != nil {
-			return fmt.Errorf("write backup table %s: %w", table, err)
-		}
-		rows = nil // release before the next, larger table is read
 	}
 	if _, err := buffered.WriteString("}}"); err != nil {
 		return fmt.Errorf("write backup footer: %w", err)
@@ -113,6 +107,49 @@ func (t *TimescaleDB) WriteBackup(w io.Writer) error {
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit backup snapshot: %w", err)
+	}
+	return nil
+}
+
+// writeTableRows streams one table's rows as a JSON array, a row at a time.
+//
+// row_to_json per row rather than json_agg over the table: the aggregate built the entire array
+// inside Postgres and handed it back as one value, so peak memory was the largest single table —
+// on a long-lived instance that is prices or recommendations, the two that only grow. Row by row
+// the bound is the largest single *row* instead, which no growth in row count can change.
+//
+// The type-to-JSON encoding still happens in Postgres (timestamps, UUIDs, jsonb, NULLs), which
+// is the half that matters for round-tripping through RestoreAll's json_populate_recordset.
+func writeTableRows(ctx context.Context, tx *sqlx.Tx, w io.Writer, table string) error {
+	// The table name is a compile-time constant from backupTables, never user input.
+	rows, err := tx.QueryxContext(ctx, fmt.Sprintf(`SELECT row_to_json(t) FROM %s t`, table))
+	if err != nil {
+		return fmt.Errorf("dump %s: %w", table, err)
+	}
+	defer rows.Close()
+
+	if _, err := io.WriteString(w, "["); err != nil {
+		return fmt.Errorf("write backup table %s: %w", table, err)
+	}
+	for first := true; rows.Next(); first = false {
+		var row []byte
+		if err := rows.Scan(&row); err != nil {
+			return fmt.Errorf("dump %s: %w", table, err)
+		}
+		if !first {
+			if _, err := io.WriteString(w, ","); err != nil {
+				return fmt.Errorf("write backup table %s: %w", table, err)
+			}
+		}
+		if _, err := w.Write(row); err != nil {
+			return fmt.Errorf("write backup table %s: %w", table, err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("dump %s: %w", table, err)
+	}
+	if _, err := io.WriteString(w, "]"); err != nil {
+		return fmt.Errorf("write backup table %s: %w", table, err)
 	}
 	return nil
 }

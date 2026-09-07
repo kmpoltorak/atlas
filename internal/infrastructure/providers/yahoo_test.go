@@ -1,6 +1,8 @@
 package providers
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -34,7 +36,7 @@ func TestFetchBarsParsesProviderResponse(t *testing.T) {
 	provider.BaseURL = server.URL + "/v8/finance/chart"
 	provider.Client = server.Client()
 
-	bars, err := provider.FetchBars("AAPL", 2)
+	bars, err := provider.FetchBars(context.Background(), "AAPL", 2)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -71,7 +73,7 @@ func TestFetchInstrumentInfoParsesMeta(t *testing.T) {
 	provider.BaseURL = server.URL + "/v8/finance/chart"
 	provider.Client = server.Client()
 
-	info, err := provider.FetchInstrumentInfo("SPY")
+	info, err := provider.FetchInstrumentInfo(context.Background(), "SPY")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -105,7 +107,7 @@ func TestFetchInstrumentInfoFallsBackToShortNameWhenLongNameIsEmpty(t *testing.T
 	provider.BaseURL = server.URL + "/v8/finance/chart"
 	provider.Client = server.Client()
 
-	info, err := provider.FetchInstrumentInfo("CL=F")
+	info, err := provider.FetchInstrumentInfo(context.Background(), "CL=F")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -135,7 +137,7 @@ func TestFetchQuoteParsesMeta(t *testing.T) {
 	provider.BaseURL = server.URL + "/v8/finance/chart"
 	provider.Client = server.Client()
 
-	quote, err := provider.FetchQuote("ORCL")
+	quote, err := provider.FetchQuote(context.Background(), "ORCL")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -179,7 +181,7 @@ func TestFetchBarsDropsTheUnclosedTrailingBar(t *testing.T) {
 	// One second past the live quote: the first candle has closed, the second has not.
 	provider.Now = func() time.Time { return time.Unix(liveQuoteAt+1, 0) }
 
-	bars, err := provider.FetchBars("AAPL", 2)
+	bars, err := provider.FetchBars(context.Background(), "AAPL", 2)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -214,7 +216,7 @@ func TestFetchBarsKeepsTheNewestClosedBar(t *testing.T) {
 	// Exactly at the close boundary — the candle is finished, not forming.
 	provider.Now = func() time.Time { return time.Unix(barStart, 0).Add(time.Hour) }
 
-	bars, err := provider.FetchBars("AAPL", 2)
+	bars, err := provider.FetchBars(context.Background(), "AAPL", 2)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -244,7 +246,7 @@ func TestFetchBarsKeepsAFlatClosedBar(t *testing.T) {
 	provider.Client = server.Client()
 	provider.Now = func() time.Time { return time.Unix(barStart, 0).Add(2 * time.Hour) }
 
-	bars, err := provider.FetchBars("AAPL", 2)
+	bars, err := provider.FetchBars(context.Background(), "AAPL", 2)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -266,7 +268,7 @@ func TestFetchBarsRequestsHourlyInterval(t *testing.T) {
 	provider.BaseURL = server.URL + "/v8/finance/chart"
 	provider.Client = server.Client()
 
-	if _, err := provider.FetchBars("AAPL", 5); err != nil {
+	if _, err := provider.FetchBars(context.Background(), "AAPL", 5); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	// Daily bars are too coarse for trading — Atlas requests hourly candles.
@@ -288,7 +290,7 @@ func TestFetchBarsSendsBrowserUserAgent(t *testing.T) {
 	provider.BaseURL = server.URL + "/v8/finance/chart"
 	provider.Client = server.Client()
 
-	if _, err := provider.FetchBars("AAPL", 5); err != nil {
+	if _, err := provider.FetchBars(context.Background(), "AAPL", 5); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if gotUserAgent == "" {
@@ -325,7 +327,7 @@ func TestFetchBarsDropsHolidayBarsWithNullPrices(t *testing.T) {
 	provider.Client = server.Client()
 	provider.Now = func() time.Time { return time.Unix(barStart+7200, 0).Add(2 * time.Hour) }
 
-	bars, err := provider.FetchBars("PKN.WA", 2)
+	bars, err := provider.FetchBars(context.Background(), "PKN.WA", 2)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -340,5 +342,43 @@ func TestFetchBarsDropsHolidayBarsWithNullPrices(t *testing.T) {
 	// The bars either side of the hole must be untouched — this drops holidays, not history.
 	if bars[0].Close != 104 || bars[1].Close != 107 {
 		t.Fatalf("expected the real bars to pass through unchanged, got %v and %v", bars[0].Close, bars[1].Close)
+	}
+}
+
+// The 2026-09-06 verification's second operational gap: provider calls took no context, so a
+// caller that had gone away — a cancelled HTTP request, a leadership term that ended — left the
+// fetch running until the client's own timeout. Cancelling must stop the request in flight.
+func TestFetchBarsStopsWhenTheCallerCancels(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-release // hold the response open until the test lets go
+	}))
+	defer server.Close()
+	defer close(release)
+
+	provider := NewYahooFinanceProvider()
+	provider.BaseURL = server.URL + "/v8/finance/chart"
+	// A client timeout far beyond the test's patience: if cancellation did not reach the request,
+	// nothing else would end it in time.
+	provider.Client = &http.Client{Timeout: time.Minute}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	failed := make(chan error, 1)
+	go func() {
+		_, err := provider.FetchBars(ctx, "AAPL", 2)
+		failed <- err
+	}()
+
+	<-started
+	cancel()
+	select {
+	case err := <-failed:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected the cancelled context to end the fetch, got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancelling the caller did not stop the provider request")
 	}
 }

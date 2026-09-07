@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -35,7 +36,7 @@ func (a *Application) watchlistPageHandler(w http.ResponseWriter, r *http.Reques
 			a.renderWatchlistPage(w, r, err.Error(), "")
 			return
 		}
-		if err := a.fetchAndSaveSymbolInfo(symbol); err != nil {
+		if err := a.fetchAndSaveSymbolInfo(r.Context(), symbol); err != nil {
 			a.Logger.Warn("failed to fetch symbol info for newly added watchlist item", zap.String("symbol", symbol), zap.Error(err))
 		}
 		a.renderWatchlistPage(w, r, "", "Added "+symbol+" to the watchlist.")
@@ -51,11 +52,11 @@ func (a *Application) watchlistPageHandler(w http.ResponseWriter, r *http.Reques
 // watchlistRefreshInfoHandler for symbols added before this existed. Best-effort: the watchlist
 // item itself is already saved by the time this runs, so a lookup failure here should leave that
 // row's Name/Type blank, not fail the request — same non-fatal stance as persistIndicatorSnapshot.
-func (a *Application) fetchAndSaveSymbolInfo(symbol string) error {
+func (a *Application) fetchAndSaveSymbolInfo(ctx context.Context, symbol string) error {
 	if a.Collector == nil || a.Collector.Provider == nil || a.Storage == nil {
 		return nil
 	}
-	info, err := a.Collector.Provider.FetchInstrumentInfo(symbol)
+	info, err := a.Collector.Provider.FetchInstrumentInfo(ctx, symbol)
 	if err != nil {
 		return err
 	}
@@ -88,7 +89,7 @@ func (a *Application) watchlistRefreshInfoHandler(w http.ResponseWriter, r *http
 	missing := symbolsMissingInfo(items, existing)
 	updated, failed := 0, 0
 	for _, symbol := range missing {
-		if err := a.fetchAndSaveSymbolInfo(symbol); err != nil {
+		if err := a.fetchAndSaveSymbolInfo(r.Context(), symbol); err != nil {
 			a.Logger.Warn("failed to fetch symbol info", zap.String("symbol", symbol), zap.Error(err))
 			failed++
 			continue
@@ -197,10 +198,16 @@ func (a *Application) watchlistImportPageHandler(w http.ResponseWriter, r *http.
 		methodNotAllowed(w)
 		return
 	}
-	if err := r.ParseMultipartForm(maxWatchlistImportBytes); err != nil {
+	// MaxBytesReader before parsing, not ParseMultipartForm's own argument: that argument bounds
+	// how much the parser keeps in memory, and everything past it spills to a temp file, so on its
+	// own it capped nothing. The extra MiB is headroom for the multipart envelope (boundaries,
+	// headers, the mode field) around a file that is allowed to be maxWatchlistImportBytes.
+	r.Body = http.MaxBytesReader(w, r.Body, maxWatchlistImportBytes+(1<<20))
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
 		a.renderWatchlistPage(w, r, web.T(a.resolveLang(r), "watchlist.import_invalid"), "")
 		return
 	}
+	defer r.MultipartForm.RemoveAll()
 	mode, err := watchlistUC.ParseImportMode(r.FormValue("mode"))
 	if err != nil {
 		a.renderWatchlistPage(w, r, err.Error(), "")
@@ -213,9 +220,16 @@ func (a *Application) watchlistImportPageHandler(w http.ResponseWriter, r *http.
 	}
 	defer file.Close()
 
-	body, err := io.ReadAll(io.LimitReader(file, maxWatchlistImportBytes))
+	// Read one byte past the limit so an oversized file is detected rather than silently
+	// truncated: a truncated read can leave a valid JSON prefix, which would import a file whose
+	// remainder was thrown away without anyone being told.
+	body, err := io.ReadAll(io.LimitReader(file, maxWatchlistImportBytes+1))
 	if err != nil {
 		a.renderWatchlistPage(w, r, err.Error(), "")
+		return
+	}
+	if len(body) > maxWatchlistImportBytes {
+		a.renderWatchlistPage(w, r, web.T(a.resolveLang(r), "watchlist.import_too_large"), "")
 		return
 	}
 	items, err := decodeWatchlistImport(body)

@@ -482,7 +482,7 @@ func (a *Application) refreshWatchlistQuotes(ctx context.Context) {
 			a.Logger.Info("stopped mid-refresh: no longer the polling leader")
 			return
 		}
-		quote, err := a.Collector.Provider.FetchQuote(symbol)
+		quote, err := a.Collector.Provider.FetchQuote(ctx, symbol)
 		outcome := "success"
 		if err != nil {
 			outcome = "error"

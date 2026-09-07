@@ -298,6 +298,7 @@ var translations = map[string]map[Lang]string{
 	"watchlist.export_empty":        {LangEN: "Nothing to export yet.", LangPL: "Nie ma jeszcze czego eksportować.", LangDE: "Noch nichts zu exportieren.", LangFR: "Rien à exporter pour l'instant.", LangES: "Aún no hay nada que exportar."},
 	"watchlist.import_no_file":      {LangEN: "Choose a file to import.", LangPL: "Wybierz plik do zaimportowania.", LangDE: "Wähle eine Datei zum Importieren.", LangFR: "Choisissez un fichier à importer.", LangES: "Elige un archivo para importar."},
 	"watchlist.import_invalid":      {LangEN: "Invalid upload.", LangPL: "Nieprawidłowy plik.", LangDE: "Ungültiger Upload.", LangFR: "Fichier importé invalide.", LangES: "Archivo no válido."},
+	"watchlist.import_too_large":    {LangEN: "That file is too large to import.", LangPL: "Ten plik jest za duży, aby go zaimportować.", LangDE: "Diese Datei ist zu groß für den Import.", LangFR: "Ce fichier est trop volumineux pour être importé.", LangES: "Ese archivo es demasiado grande para importarlo."},
 	"watchlist.import_done": {
 		LangEN: "Imported: %d added, %d already tracked, %d removed.",
 		LangPL: "Zaimportowano: %d dodanych, %d już obserwowanych, %d usuniętych.",

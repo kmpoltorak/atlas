@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"atlas/internal/application/exchangerate"
 	"atlas/internal/domain/currency"
 	"atlas/internal/domain/portfolio"
 )
@@ -89,6 +90,76 @@ func TestRecordTransactionAcceptsATodayOnlyRateSource(t *testing.T) {
 	if got := uc.Transactions[0].PriceInPLN; got != 400 {
 		t.Fatalf("expected today's rate to apply, got %v", got)
 	}
+}
+
+// nbpShapedProvider answers today's rates and a fixed set of dated ones — the shape of the real
+// NBP provider, which implements exchangerate.HistoricalProvider.
+type nbpShapedProvider struct {
+	today map[currency.Code]float64
+	dated map[string]float64
+}
+
+func (p nbpShapedProvider) FetchRates() (map[currency.Code]float64, error) { return p.today, nil }
+
+func (p nbpShapedProvider) FetchRateOn(code currency.Code, date time.Time) (float64, error) {
+	if rate, ok := p.dated[date.Format("2006-01-02")]; ok {
+		return rate, nil
+	}
+	return 0, currency.ErrNoRateForDate
+}
+
+// The fakes above each implement one side of the boundary, which is exactly how a mismatch
+// between the two survived: exchangerate.UseCase reported a same-day conversion as inexact
+// whenever its provider *was* capable of historical rates, and convertToBase rejects inexact
+// conversions — so with the production NBP provider no foreign-currency trade entered today could
+// be recorded at all. These three cases run the real FX use case through the real portfolio one.
+func TestRecordTransactionWithTheRealExchangeRateUseCase(t *testing.T) {
+	provider := nbpShapedProvider{
+		today: map[currency.Code]float64{currency.USD: 4.0},
+		dated: map[string]float64{"2026-03-10": 3.9},
+	}
+
+	t.Run("a trade entered today is priced at today's rate", func(t *testing.T) {
+		uc := NewUseCase()
+		uc.ExchangeRates = exchangerate.NewUseCase(provider, nil)
+
+		if err := uc.RecordTransaction(portfolio.Transaction{
+			Symbol: "AAPL", Type: "BUY", Quantity: 1, Price: 100, Currency: "USD",
+		}); err != nil {
+			t.Fatalf("record: %v", err)
+		}
+		if got := uc.Transactions[0].PriceInPLN; got != 400 {
+			t.Fatalf("expected 400 PLN at today's rate, got %v", got)
+		}
+	})
+
+	t.Run("a backdated trade is priced at that date's rate", func(t *testing.T) {
+		uc := NewUseCase()
+		uc.ExchangeRates = exchangerate.NewUseCase(provider, nil)
+
+		if err := uc.RecordTransaction(portfolio.Transaction{
+			Symbol: "AAPL", Type: "BUY", Quantity: 1, Price: 100, Currency: "USD",
+			Timestamp: "2026-03-10T14:00:00Z",
+		}); err != nil {
+			t.Fatalf("record: %v", err)
+		}
+		if got := uc.Transactions[0].PriceInPLN; got != 390 {
+			t.Fatalf("expected 390 PLN at the 2026-03-10 rate, got %v", got)
+		}
+	})
+
+	t.Run("a backdated trade with no published rate is refused", func(t *testing.T) {
+		uc := NewUseCase()
+		uc.ExchangeRates = exchangerate.NewUseCase(provider, nil)
+
+		err := uc.RecordTransaction(portfolio.Transaction{
+			Symbol: "AAPL", Type: "BUY", Quantity: 1, Price: 100, Currency: "USD",
+			Timestamp: "2025-01-06T14:00:00Z",
+		})
+		if err == nil || !strings.Contains(err.Error(), "2025-01-06") {
+			t.Fatalf("expected the trade to be refused for its own date, got %v", err)
+		}
+	})
 }
 
 // A trade cannot have happened tomorrow. Accepting one would also mean asking for an exchange

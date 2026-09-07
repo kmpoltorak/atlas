@@ -161,7 +161,7 @@ Docker healthcheck must verify:
 health`, not `wget` — its runtime base (`debian:bookworm-slim`) doesn't ship `wget`, a real bug
 once (`docker inspect` showed a nonstop "unhealthy" status despite `/health` genuinely returning
 200) fixed by adding `curl` to the Dockerfile. `atlas-trainer` still uses `wget`, which is fine
-there: its image is the full `golang:1.26.1-bookworm`, which does ship it. See `CLAUDE.md`.
+there: its image is the full `golang:1.26.8-bookworm`, which does ship it. See `CLAUDE.md`.
 ---
 # Monitoring
 Every deployment must expose:
@@ -292,8 +292,12 @@ existed. Both are the same failure: a deployment claim that the code did not sup
    token. Shutdown cancels the term, **joins the polling worker**, and only then releases —
    cancelling aborts in-flight I/O, but "aborted" is not "returned". Cancellation reaches the
    notification clients themselves (`Notifier.SendEmbed` takes a context), the watchlist
-   evaluation loop, and the quote refresh, so a demoted leader stops rather than finishing its
-   pass.
+   evaluation loop, the quote refresh, and now the market provider itself
+   (`market.MarketProvider`'s methods take a context, so a fetch already in flight ends with the
+   term rather than running on to the HTTP client's own timeout). Leadership is also no longer a
+   flag the renewal loop flips: the lease carries an expiry, `Leader.IsLeader` refuses a lease
+   whose deadline has passed, and a watchdog stands the process down if a renewal never lands —
+   so a stalled renewal loop cannot leave singleton work running under an expired term.
 2. ~~**The notification cursor is not a notification cursor.**~~ `alert_cursor` (migrations/019)
    records what was actually announced, and is written in the same transaction as the outbox
    entry that announced it — neither can exist without the other. It is read fresh at the start

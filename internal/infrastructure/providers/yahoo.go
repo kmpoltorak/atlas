@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -44,7 +45,7 @@ const yahooUserAgent = "Mozilla/5.0"
 // requesting further back than Yahoo retains just returns whatever it still has, not an error.
 const yahooInterval = "1h"
 
-func (p *YahooFinanceProvider) FetchBars(symbol string, window int) ([]market.Bar, error) {
+func (p *YahooFinanceProvider) FetchBars(ctx context.Context, symbol string, window int) ([]market.Bar, error) {
 	if window <= 0 {
 		window = 30 // mirrors config.Load's COLLECTOR_WINDOW_DAYS default; guards direct calls (e.g. tests) that skip it
 	}
@@ -52,7 +53,7 @@ func (p *YahooFinanceProvider) FetchBars(symbol string, window int) ([]market.Ba
 	period1 := period2.AddDate(0, 0, -window)
 	url := fmt.Sprintf("%s/%s?interval=%s&period1=%d&period2=%d&events=history", p.BaseURL, symbol, yahooInterval, period1.Unix(), period2.Unix())
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -144,10 +145,10 @@ type chartMeta struct {
 // request — no bars, no window — shared by FetchInstrumentInfo (name/type, fetched rarely) and
 // FetchQuote (live price, fetched every poll): both want fields from the same small response,
 // just at different cadences, so there's no reason to duplicate the request/parse plumbing.
-func (p *YahooFinanceProvider) fetchChartMeta(symbol string) (chartMeta, error) {
+func (p *YahooFinanceProvider) fetchChartMeta(ctx context.Context, symbol string) (chartMeta, error) {
 	url := fmt.Sprintf("%s/%s?interval=1d&range=1d", p.BaseURL, symbol)
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return chartMeta{}, err
 	}
@@ -188,8 +189,8 @@ func (p *YahooFinanceProvider) fetchChartMeta(symbol string) (chartMeta, error) 
 // called far less often than FetchBars (once per symbol, at watchlist-add time or from the
 // Watchlist page's "Refresh info" button — see internal/app/web_handlers.go — not on every
 // poll), so there's no reason to pay for hourly history just to read a few metadata fields.
-func (p *YahooFinanceProvider) FetchInstrumentInfo(symbol string) (market.InstrumentInfo, error) {
-	meta, err := p.fetchChartMeta(symbol)
+func (p *YahooFinanceProvider) FetchInstrumentInfo(ctx context.Context, symbol string) (market.InstrumentInfo, error) {
+	meta, err := p.fetchChartMeta(ctx, symbol)
 	if err != nil {
 		return market.InstrumentInfo{}, err
 	}
@@ -212,8 +213,8 @@ func (p *YahooFinanceProvider) FetchInstrumentInfo(symbol string) (market.Instru
 // market.Quote) — called once per alert-poll cycle for every watchlist symbol (see
 // internal/app/alerts_loop.go), independent of and much cheaper than FetchBars' full window, so
 // "how is this doing today" stays current without waiting for an hourly candle to close.
-func (p *YahooFinanceProvider) FetchQuote(symbol string) (market.Quote, error) {
-	meta, err := p.fetchChartMeta(symbol)
+func (p *YahooFinanceProvider) FetchQuote(ctx context.Context, symbol string) (market.Quote, error) {
+	meta, err := p.fetchChartMeta(ctx, symbol)
 	if err != nil {
 		return market.Quote{}, err
 	}

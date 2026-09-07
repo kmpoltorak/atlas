@@ -3,7 +3,7 @@
 # risk, not just a compatibility warning — see docs/ml.md). This is also the repo's first cgo
 # dependency (github.com/yalue/onnxruntime_go, needed to dlopen libonnxruntime at runtime), so
 # both stages moved off Alpine to a consistent glibc toolchain end to end.
-FROM golang:1.26.1-bookworm AS builder
+FROM golang:1.26.8-bookworm AS builder
 
 WORKDIR /src
 

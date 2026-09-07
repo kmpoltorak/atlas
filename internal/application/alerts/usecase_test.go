@@ -18,15 +18,15 @@ type stubProvider struct {
 	bars map[string][]market.Bar
 }
 
-func (s stubProvider) FetchBars(symbol string, window int) ([]market.Bar, error) {
+func (s stubProvider) FetchBars(_ context.Context, symbol string, window int) ([]market.Bar, error) {
 	return s.bars[symbol], nil
 }
 
-func (s stubProvider) FetchInstrumentInfo(symbol string) (market.InstrumentInfo, error) {
+func (s stubProvider) FetchInstrumentInfo(_ context.Context, symbol string) (market.InstrumentInfo, error) {
 	return market.InstrumentInfo{Symbol: symbol}, nil
 }
 
-func (s stubProvider) FetchQuote(symbol string) (market.Quote, error) {
+func (s stubProvider) FetchQuote(_ context.Context, symbol string) (market.Quote, error) {
 	return market.Quote{Symbol: symbol}, nil
 }
 
@@ -36,18 +36,18 @@ type failingProvider struct {
 	failFor map[string]bool
 }
 
-func (f failingProvider) FetchBars(symbol string, window int) ([]market.Bar, error) {
+func (f failingProvider) FetchBars(_ context.Context, symbol string, window int) ([]market.Bar, error) {
 	if f.failFor[symbol] {
 		return nil, errors.New("provider unavailable")
 	}
 	return flatBars(symbol), nil
 }
 
-func (f failingProvider) FetchInstrumentInfo(symbol string) (market.InstrumentInfo, error) {
+func (f failingProvider) FetchInstrumentInfo(_ context.Context, symbol string) (market.InstrumentInfo, error) {
 	return market.InstrumentInfo{Symbol: symbol}, nil
 }
 
-func (f failingProvider) FetchQuote(symbol string) (market.Quote, error) {
+func (f failingProvider) FetchQuote(_ context.Context, symbol string) (market.Quote, error) {
 	return market.Quote{Symbol: symbol}, nil
 }
 

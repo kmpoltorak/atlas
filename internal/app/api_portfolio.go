@@ -2,14 +2,21 @@ package app
 
 import (
 	portfolioUC "atlas/internal/application/portfolio"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"atlas/internal/domain/portfolio"
 
 	"go.uber.org/zap"
 )
+
+// refreshRecommendationTimeout bounds the background recommendation refresh below. Generous
+// rather than tuned: it exists so a wedged provider or database call cannot pin a goroutine
+// forever, not to make the refresh fast.
+const refreshRecommendationTimeout = 60 * time.Second
 
 // JSON API for positions and transactions. Every handler here is request-scoped to one portfolio
 // (see forPortfolio) rather than reading a process-wide "active portfolio" — the bug the
@@ -166,7 +173,13 @@ func (a *Application) refreshRecommendation(symbol string) {
 	if a.Orchestrator == nil || a.Collector == nil {
 		return
 	}
-	bars, err := a.collectBars(symbol, a.Config.CollectorWindow)
+	// Its own bounded context, not the request's: this deliberately outlives the transaction that
+	// triggered it (see the comment above), so the request's context would cancel it the moment
+	// the response was written. The bound exists so a wedged provider call cannot leave this
+	// goroutine running for the life of the process.
+	ctx, cancel := context.WithTimeout(context.Background(), refreshRecommendationTimeout)
+	defer cancel()
+	bars, err := a.collectBars(ctx, symbol, a.Config.CollectorWindow)
 	if err != nil {
 		a.Logger.Warn("failed to refresh recommendation after transaction", zap.String("symbol", symbol), zap.Error(err))
 		return
