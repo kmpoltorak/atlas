@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -519,6 +520,10 @@ func (a *Application) totpSetupHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	secret, err := a.Auth.BeginTOTPEnrollment(r.Context(), cookie.Value)
+	if errors.Is(err, authUC.ErrTOTPAlreadyEnabled) {
+		a.renderAccountPage(w, r, err.Error(), "")
+		return
+	}
 	if err != nil {
 		a.renderError(w, r, http.StatusInternalServerError, err.Error())
 		return
@@ -579,12 +584,18 @@ func (a *Application) totpConfirmHandler(w http.ResponseWriter, r *http.Request)
 		web.Render(w, "totp_enroll", web.TOTPEnrollPage{Lang: a.resolveLang(r), Error: "Invalid form submission."})
 		return
 	}
-	if err := a.Auth.ConfirmTOTPEnrollment(r.Context(), cookie.Value, r.FormValue("code")); err != nil {
+	token, err := a.Auth.ConfirmTOTPEnrollment(r.Context(), cookie.Value, r.FormValue("code"))
+	if errors.Is(err, authUC.ErrTOTPAlreadyEnabled) {
+		a.renderAccountPage(w, r, err.Error(), "")
+		return
+	}
+	if err != nil {
 		secret, _, _ := a.Auth.PendingTOTPSecret(r.Context(), cookie.Value)
 		web.Render(w, "totp_enroll", web.TOTPEnrollPage{Lang: a.resolveLang(r), Secret: secret, Error: "Incorrect code — try again."})
 		return
 	}
-	a.renderAccountPage(w, r, "", "Two-factor authentication is now enabled.")
+	a.setSessionCookie(w, token)
+	a.flashRedirect(w, r, "/dashboard/account", "Two-factor authentication is now enabled. Every other session has been signed out.")
 }
 
 // totpDisableHandler turns 2FA off after re-verifying the current password (authUC.UseCase.
@@ -599,9 +610,20 @@ func (a *Application) totpDisableHandler(w http.ResponseWriter, r *http.Request)
 		a.renderAccountPage(w, r, "Invalid form submission.", "")
 		return
 	}
-	if err := a.Auth.DisableTOTP(r.FormValue("password")); err != nil {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	token, err := a.Auth.DisableTOTP(r.Context(), cookie.Value, r.FormValue("password"))
+	if errors.Is(err, authUC.ErrInvalidCredentials) {
 		a.renderAccountPage(w, r, "Incorrect password.", "")
 		return
 	}
-	a.renderAccountPage(w, r, "", "Two-factor authentication has been disabled.")
+	if err != nil {
+		a.renderAccountPage(w, r, err.Error(), "")
+		return
+	}
+	a.setSessionCookie(w, token)
+	a.flashRedirect(w, r, "/dashboard/account", "Two-factor authentication has been disabled. Every other session has been signed out.")
 }

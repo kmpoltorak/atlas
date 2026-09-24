@@ -94,11 +94,7 @@ func (a *Application) loginPageHandler(w http.ResponseWriter, r *http.Request) {
 			web.Render(w, "login", web.LoginPage{Lang: lang, Error: message, RequiresTOTP: requiresTOTP})
 			return
 		}
-		http.SetCookie(w, &http.Cookie{
-			Name: sessionCookieName, Value: token, Path: "/",
-			HttpOnly: true, Secure: a.Config.CookieSecure, SameSite: http.SameSiteLaxMode,
-			MaxAge: int(authUC.SessionTTL.Seconds()),
-		})
+		a.setSessionCookie(w, token)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	default:
 		methodNotAllowed(w)

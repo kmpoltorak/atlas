@@ -26,6 +26,10 @@ const (
 	sessionKeyPrefix     = "auth:session:"
 	pendingTOTPKeyPrefix = "auth:pending-totp:"
 	loginFailureKey      = "auth:login-failures"
+	// securityEpochKey counts changes to the account's second factor. Every session records the
+	// epoch it was issued in, and a session from an earlier epoch is no longer valid — see
+	// revokeOtherSessions.
+	securityEpochKey = "auth:security-epoch"
 )
 
 // maxLoginFailures and loginLockoutWindow bound brute-forcing the single admin password: Atlas
@@ -46,6 +50,12 @@ var ErrInvalidCredentials = errors.New("invalid username, password, or verificat
 // hit — distinct on purpose, so the one legitimate operator knows to wait rather than assuming
 // their password changed.
 var ErrTooManyAttempts = errors.New("too many failed login attempts — wait a few minutes and try again")
+
+// ErrTOTPAlreadyEnabled refuses a new enrollment while a second factor is active. Replacing the
+// factor has to go through DisableTOTP, which asks for the password: otherwise anyone holding a
+// session could swap in their own authenticator and lock the owner out, while turning 2FA off —
+// the weaker change — was the one that asked for a password.
+var ErrTOTPAlreadyEnabled = errors.New("two-factor authentication is already enabled — disable it with your password before enrolling a new authenticator")
 
 // TOTPStore persists the account's 2FA settings — implemented by
 // infrastructure/persistence.TimescaleDB (migrations/008's auth_settings table). Unlike
@@ -156,24 +166,69 @@ func (u *UseCase) verifyPassword(username, password string) bool {
 }
 
 func (u *UseCase) createSession(ctx context.Context) (token string, err error) {
+	epoch, err := u.securityEpoch(ctx)
+	if err != nil {
+		return "", err
+	}
 	token, err = randomToken()
 	if err != nil {
 		return "", err
 	}
-	if err := u.Sessions.Set(ctx, sessionKeyPrefix+token, u.Username, SessionTTL); err != nil {
+	if err := u.Sessions.Set(ctx, sessionKeyPrefix+token, epoch, SessionTTL); err != nil {
 		return "", fmt.Errorf("store session: %w", err)
 	}
 	return token, nil
 }
 
-// ValidateSession reports whether token is a live, unexpired session. Always false when auth
-// isn't Enabled — there is nothing valid to check a token against.
+// securityEpoch is the current value of securityEpochKey, "0" before the first change.
+func (u *UseCase) securityEpoch(ctx context.Context) (string, error) {
+	epoch, found, err := u.Sessions.Get(ctx, securityEpochKey)
+	if err != nil {
+		return "", fmt.Errorf("read security epoch: %w", err)
+	}
+	if !found {
+		return "0", nil
+	}
+	return epoch, nil
+}
+
+// revokeOtherSessions ends every session issued before a change to the second factor and returns
+// a fresh session for the caller, who has just proved the change was theirs.
+//
+// Enabling 2FA is how an owner locks out someone who got hold of their password; a session that
+// person already opened would otherwise survive for up to SessionTTL. Disabling it is the same
+// security boundary in the other direction. Bumping an epoch rather than deleting keys needs no
+// scan of the keyspace and cannot miss a session.
+func (u *UseCase) revokeOtherSessions(ctx context.Context, currentToken string) (string, error) {
+	if _, err := u.Sessions.Increment(ctx, securityEpochKey, 0); err != nil {
+		return "", fmt.Errorf("revoke sessions: %w", err)
+	}
+	_ = u.Sessions.Delete(ctx, sessionKeyPrefix+currentToken)
+	return u.createSession(ctx)
+}
+
+// ValidateSession reports whether token is a live, unexpired session from the current security
+// epoch (see revokeOtherSessions). Always false when auth isn't Enabled — there is nothing valid
+// to check a token against.
+//
+// A session stored before epochs existed holds the username instead of an epoch; it counts as
+// epoch "0", so an upgrade does not log anyone out until the first 2FA change.
 func (u *UseCase) ValidateSession(ctx context.Context, token string) bool {
 	if !u.Enabled() || token == "" {
 		return false
 	}
-	_, found, err := u.Sessions.Get(ctx, sessionKeyPrefix+token)
-	return err == nil && found
+	value, found, err := u.Sessions.Get(ctx, sessionKeyPrefix+token)
+	if err != nil || !found {
+		return false
+	}
+	epoch, err := u.securityEpoch(ctx)
+	if err != nil {
+		return false
+	}
+	if _, numeric := strconv.Atoi(value); numeric != nil {
+		value = "0"
+	}
+	return value == epoch
 }
 
 // DeleteSession invalidates a session (logout) — best-effort, a missing/already-expired key is
@@ -188,6 +243,9 @@ func (u *UseCase) DeleteSession(ctx context.Context, token string) error {
 // (TOTPProvisioningURI) for an authenticator app to scan; nothing is durably activated until
 // ConfirmTOTPEnrollment proves the app actually has it.
 func (u *UseCase) BeginTOTPEnrollment(ctx context.Context, sessionToken string) (secret string, err error) {
+	if err := u.refuseIfTOTPEnabled(); err != nil {
+		return "", err
+	}
 	secret, err = GenerateTOTPSecret()
 	if err != nil {
 		return "", err
@@ -209,28 +267,53 @@ func (u *UseCase) PendingTOTPSecret(ctx context.Context, sessionToken string) (s
 // durably activates it as the real second factor via TOTPStore — proving the operator's
 // authenticator app actually has the secret before 2FA starts being enforced on login, not just
 // that a QR code was displayed on screen once.
-func (u *UseCase) ConfirmTOTPEnrollment(ctx context.Context, sessionToken, code string) error {
+//
+// The enabled check is repeated here, not only in BeginTOTPEnrollment: an enrollment started
+// before 2FA was switched on elsewhere, or a confirmation posted directly, must not overwrite the
+// active secret. On success every other session is revoked and newToken replaces the caller's.
+func (u *UseCase) ConfirmTOTPEnrollment(ctx context.Context, sessionToken, code string) (newToken string, err error) {
+	if err := u.refuseIfTOTPEnabled(); err != nil {
+		return "", err
+	}
 	secret, found, err := u.Sessions.Get(ctx, pendingTOTPKeyPrefix+sessionToken)
 	if err != nil {
-		return err
+		return "", fmt.Errorf("read pending totp secret: %w", err)
 	}
 	if !found || !ValidateTOTP(secret, code, time.Now()) {
-		return ErrInvalidCredentials
+		return "", ErrInvalidCredentials
 	}
 	if err := u.TOTP.SetTOTP(secret, true); err != nil {
-		return err
+		return "", fmt.Errorf("enable totp: %w", err)
 	}
-	return u.Sessions.Delete(ctx, pendingTOTPKeyPrefix+sessionToken)
+	if err := u.Sessions.Delete(ctx, pendingTOTPKeyPrefix+sessionToken); err != nil {
+		return "", fmt.Errorf("clear pending totp secret: %w", err)
+	}
+	return u.revokeOtherSessions(ctx, sessionToken)
+}
+
+func (u *UseCase) refuseIfTOTPEnabled() error {
+	_, enabled, err := u.TOTP.GetTOTP()
+	if err != nil {
+		return fmt.Errorf("load totp settings: %w", err)
+	}
+	if enabled {
+		return ErrTOTPAlreadyEnabled
+	}
+	return nil
 }
 
 // DisableTOTP requires the current password again — a real re-authentication check, not just
 // "does a valid session cookie exist" — before turning off the second factor, since doing so
-// weakens the account.
-func (u *UseCase) DisableTOTP(currentPassword string) error {
+// weakens the account. This is also the only way to replace the factor: disable, then enroll.
+// On success every other session is revoked and newToken replaces the caller's.
+func (u *UseCase) DisableTOTP(ctx context.Context, sessionToken, currentPassword string) (newToken string, err error) {
 	if !u.verifyPassword(u.Username, currentPassword) {
-		return ErrInvalidCredentials
+		return "", ErrInvalidCredentials
 	}
-	return u.TOTP.SetTOTP("", false)
+	if err := u.TOTP.SetTOTP("", false); err != nil {
+		return "", fmt.Errorf("disable totp: %w", err)
+	}
+	return u.revokeOtherSessions(ctx, sessionToken)
 }
 
 // Reauthenticate re-checks the account password for an operation that a valid session alone

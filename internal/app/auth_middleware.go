@@ -1,6 +1,7 @@
 package app
 
 import (
+	authUC "atlas/internal/application/auth"
 	"errors"
 	"net/http"
 	"strings"
@@ -8,6 +9,16 @@ import (
 
 // sessionCookieName is the cookie holding a session token issued by authUC.UseCase.Login.
 const sessionCookieName = "atlas_session"
+
+// setSessionCookie hands the browser a session token — at login, and again whenever a change to
+// the second factor revokes every older session (see authUC.UseCase.DisableTOTP).
+func (a *Application) setSessionCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name: sessionCookieName, Value: token, Path: "/",
+		HttpOnly: true, Secure: a.Config.CookieSecure, SameSite: http.SameSiteLaxMode,
+		MaxAge: int(authUC.SessionTTL.Seconds()),
+	})
+}
 
 // publicPaths are reachable with no session even when auth is Enabled — health/metrics are
 // infra-facing (Kubernetes probes, Prometheus scraping) and shouldn't require a browser login,

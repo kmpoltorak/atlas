@@ -208,7 +208,7 @@ func TestTOTPEnrollmentFlow(t *testing.T) {
 	}
 
 	// Wrong code doesn't activate anything.
-	if err := uc.ConfirmTOTPEnrollment(ctx, token, "000000"); err != ErrInvalidCredentials {
+	if _, err := uc.ConfirmTOTPEnrollment(ctx, token, "000000"); err != ErrInvalidCredentials {
 		t.Fatalf("expected ErrInvalidCredentials for a wrong confirmation code, got %v", err)
 	}
 	if enabled, _ := uc.TOTPStatus(); enabled {
@@ -220,7 +220,7 @@ func TestTOTPEnrollmentFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if err := uc.ConfirmTOTPEnrollment(ctx, token, code); err != nil {
+	if _, err := uc.ConfirmTOTPEnrollment(ctx, token, code); err != nil {
 		t.Fatalf("unexpected error confirming enrollment: %v", err)
 	}
 	if enabled, err := uc.TOTPStatus(); err != nil || !enabled {
@@ -261,18 +261,19 @@ func TestDisableTOTPRequiresCurrentPassword(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if err := uc.ConfirmTOTPEnrollment(ctx, token, code); err != nil {
+	token, err = uc.ConfirmTOTPEnrollment(ctx, token, code)
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if err := uc.DisableTOTP("wrong-password"); err != ErrInvalidCredentials {
+	if _, err := uc.DisableTOTP(ctx, token, "wrong-password"); err != ErrInvalidCredentials {
 		t.Fatalf("expected ErrInvalidCredentials for the wrong password, got %v", err)
 	}
 	if enabled, _ := uc.TOTPStatus(); !enabled {
 		t.Fatal("expected TOTP to remain enabled after a failed disable attempt")
 	}
 
-	if err := uc.DisableTOTP("correct-horse"); err != nil {
+	if _, err := uc.DisableTOTP(ctx, token, "correct-horse"); err != nil {
 		t.Fatalf("unexpected error disabling with the correct password: %v", err)
 	}
 	if enabled, _ := uc.TOTPStatus(); enabled {
@@ -280,5 +281,119 @@ func TestDisableTOTPRequiresCurrentPassword(t *testing.T) {
 	}
 	if _, err := uc.Login(ctx, "admin", "correct-horse", ""); err != nil {
 		t.Fatalf("expected login without a TOTP code to succeed again after disabling, got %v", err)
+	}
+}
+
+// enableTOTP enrolls a fresh secret through the real flow and returns it with the session token
+// the confirmation issued.
+func enableTOTP(t *testing.T, uc *UseCase, token string) (secret, newToken string) {
+	t.Helper()
+	ctx := context.Background()
+	secret, err := uc.BeginTOTPEnrollment(ctx, token)
+	if err != nil {
+		t.Fatalf("begin enrollment: %v", err)
+	}
+	code, err := generateTOTP(secret, time.Now())
+	if err != nil {
+		t.Fatalf("generate code: %v", err)
+	}
+	newToken, err = uc.ConfirmTOTPEnrollment(ctx, token, code)
+	if err != nil {
+		t.Fatalf("confirm enrollment: %v", err)
+	}
+	return secret, newToken
+}
+
+// The review's finding: with 2FA on, a session alone could enroll a new secret over the active
+// one — no password, no current code — and lock the owner out of their own account.
+func TestActiveTOTPCannotBeReplacedWithoutThePassword(t *testing.T) {
+	uc := newTestUseCase(t, "correct-horse")
+	ctx := context.Background()
+	token, err := uc.Login(ctx, "admin", "correct-horse", "")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	original, token := enableTOTP(t, uc, token)
+
+	if _, err := uc.BeginTOTPEnrollment(ctx, token); err != ErrTOTPAlreadyEnabled {
+		t.Fatalf("starting a second enrollment must be refused, got %v", err)
+	}
+
+	// An enrollment begun before 2FA was switched on, confirmed afterwards, must not win either.
+	stale := "stale-session"
+	if err := uc.Sessions.Set(ctx, pendingTOTPKeyPrefix+stale, "JBSWY3DPEHPK3PXP", PendingTOTPTTL); err != nil {
+		t.Fatalf("seed pending secret: %v", err)
+	}
+	code, err := generateTOTP("JBSWY3DPEHPK3PXP", time.Now())
+	if err != nil {
+		t.Fatalf("generate code: %v", err)
+	}
+	if _, err := uc.ConfirmTOTPEnrollment(ctx, stale, code); err != ErrTOTPAlreadyEnabled {
+		t.Fatalf("confirming over an active secret must be refused, got %v", err)
+	}
+	if secret, enabled, _ := uc.TOTP.GetTOTP(); !enabled || secret != original {
+		t.Fatal("the active secret was replaced")
+	}
+}
+
+// Changing the second factor ends every other session and hands the caller a new one.
+func TestTOTPChangesRevokeOtherSessions(t *testing.T) {
+	uc := newTestUseCase(t, "correct-horse")
+	ctx := context.Background()
+	mine, err := uc.Login(ctx, "admin", "correct-horse", "")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	other, err := uc.Login(ctx, "admin", "correct-horse", "")
+	if err != nil {
+		t.Fatalf("second login: %v", err)
+	}
+
+	_, mine = enableTOTP(t, uc, mine)
+	if uc.ValidateSession(ctx, other) {
+		t.Fatal("enabling 2FA must revoke sessions opened before it")
+	}
+	if !uc.ValidateSession(ctx, mine) {
+		t.Fatal("the session that made the change must receive a valid replacement")
+	}
+
+	secret, _, _ := uc.TOTP.GetTOTP()
+	code, err := generateTOTP(secret, time.Now())
+	if err != nil {
+		t.Fatalf("generate code: %v", err)
+	}
+	other, err = uc.Login(ctx, "admin", "correct-horse", code)
+	if err != nil {
+		t.Fatalf("login with code: %v", err)
+	}
+	mine, err = uc.DisableTOTP(ctx, mine, "correct-horse")
+	if err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if uc.ValidateSession(ctx, other) {
+		t.Fatal("disabling 2FA must revoke other sessions too")
+	}
+	if !uc.ValidateSession(ctx, mine) {
+		t.Fatal("the disabling session must receive a valid replacement")
+	}
+}
+
+// Sessions stored before epochs existed hold the username; an upgrade must not log them out.
+func TestSessionFromBeforeEpochsStaysValidUntilTheFirstChange(t *testing.T) {
+	uc := newTestUseCase(t, "correct-horse")
+	ctx := context.Background()
+	if err := uc.Sessions.Set(ctx, sessionKeyPrefix+"legacy", "admin", SessionTTL); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if !uc.ValidateSession(ctx, "legacy") {
+		t.Fatal("a pre-upgrade session should still be valid")
+	}
+	mine, err := uc.Login(ctx, "admin", "correct-horse", "")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	enableTOTP(t, uc, mine)
+	if uc.ValidateSession(ctx, "legacy") {
+		t.Fatal("a pre-upgrade session must not survive a 2FA change")
 	}
 }
