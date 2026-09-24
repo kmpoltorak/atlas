@@ -595,6 +595,11 @@ func buildAlertEmbed(alert alerts.Alert) notifications.Embed {
 	if rec.MarketCondition != "" {
 		fields = append(fields, notifications.EmbedField{Name: "Market", Value: rec.MarketCondition, Inline: true})
 	}
+	// A degraded recommendation is a weaker claim than a complete one and must not arrive looking
+	// identical to it; the reasons below say which input was missing.
+	if rec.Degraded {
+		fields = append(fields, notifications.EmbedField{Name: "Inputs", Value: "Incomplete — see reasons", Inline: true})
+	}
 
 	return notifications.Embed{
 		Title:       fmt.Sprintf("%s — %s", rec.Symbol, rec.Action),

@@ -122,9 +122,8 @@ type Recommendation struct {
 	MarketCondition string `json:"market_condition,omitempty"`
 
 	// ModelVersion identifies the decision-engine scoring logic itself (weights, thresholds —
-	// see Orchestrator.EngineVersion), not the ML sub-model that fed MLScore above. Always
-	// "atlas-decision-v1" today since the engine has never been re-versioned — don't confuse a
-	// constant engine tag with "no ML model is being used."
+	// see Orchestrator.EngineVersion), not the ML sub-model that fed MLScore above. It changes
+	// only when the scoring rules do, so a constant value is not a sign that no ML model ran.
 	ModelVersion string `json:"model_version"`
 	// MLModelVersion is the actual ML model that produced MLScore (ml.Prediction.ModelVersion —
 	// e.g. a real trained model's version, or ml.StubModelVersion when none is loaded/wired in).
@@ -132,4 +131,8 @@ type Recommendation struct {
 	// NewOrchestratorWithML), distinct from the stub case where ML ran but with a placeholder
 	// model.
 	MLModelVersion string `json:"ml_model_version,omitempty"`
+	// MLRecoveryModelVersion is the recovery model that fed the ML term alongside
+	// MLModelVersion's correction model (see decision.mlScoreFromPrediction). Empty when no
+	// recovery model ran.
+	MLRecoveryModelVersion string `json:"ml_recovery_model_version,omitempty"`
 }

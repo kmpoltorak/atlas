@@ -18,8 +18,15 @@ import (
 
 // EngineVersion tags every Recommendation this orchestrator produces (Recommendation.
 // ModelVersion), independent of ML's own model_version (see ml.Prediction) — it identifies the
-// decision-engine scoring logic (weights, thresholds), not the ML sub-model.
-const EngineVersion = "atlas-decision-v1"
+// decision-engine scoring logic (weights, thresholds, which inputs count as current), not the ML
+// sub-model.
+//
+// Bump it in the same change as anything that alters what a given input scores or how it is
+// flagged, so persisted history can be split at the change. v1 was never bumped and spans several
+// scoring revisions — the move from a weighted average to multiplicative risk factors among
+// them — so a v1 row does not identify one rule set. v2 starts with wall-clock quote freshness
+// (see clock) and recorded input quality (Degraded, RiskDataAvailable).
+const EngineVersion = "atlas-decision-v2"
 
 // Orchestrator composes the analyzer, ML, portfolio, and decision use cases into an explainable
 // recommendation workflow, per docs/decision_engine.md's "Scoring Model" (Technical + ML +
@@ -119,6 +126,7 @@ func (o *Orchestrator) BuildRecommendationFromBars(symbol string, bars []market.
 	recommendation.MarketCondition = mlUC.ClassifyMarketCondition(o.Analyzer, symbol, bars)
 	recommendation.ModelVersion = EngineVersion
 	recommendation.MLModelVersion = blend.MLModelVersion
+	recommendation.MLRecoveryModelVersion = blend.MLRecoveryModelVersion
 	return recommendation, nil
 }
 
@@ -235,8 +243,10 @@ type blendResult struct {
 	// MLModelVersion so a caller can see which real model (or the stub) actually produced
 	// MLScore, distinct from Recommendation.ModelVersion (the decision engine's own tag).
 	MLModelVersion string
-	HasPosition    bool
-	Reasons        []string
+	// MLRecoveryModelVersion is ml.Prediction.RecoveryModelVersion, empty when none ran.
+	MLRecoveryModelVersion string
+	HasPosition            bool
+	Reasons                []string
 	// Degraded marks a recommendation produced with one of its inputs missing — an ML prediction
 	// that errored, or a portfolio that could not be read. The score is still returned (a
 	// technical signal is better than nothing) but it is not the same claim as a full one, and
@@ -337,6 +347,7 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 			result.MLScore = mlScoreFromPrediction(prediction)
 			result.MLConfidence = prediction.Confidence
 			result.MLModelVersion = prediction.ModelVersion
+			result.MLRecoveryModelVersion = prediction.RecoveryModelVersion
 		}
 	}
 

@@ -70,11 +70,15 @@ var translations = map[string]map[Lang]string{
 	"table.as_of":         {LangEN: "as of", LangPL: "stan na", LangDE: "Stand", LangFR: "au", LangES: "a fecha de"},
 	// Shown instead of table.as_of when the price is not a current market quote (see the
 	// priceState template func), so a cost basis or a days-old quote is never read as today's value.
-	"price.trade":    {LangEN: "last trade price, not a market quote — as of", LangPL: "cena ostatniej transakcji, nie notowanie — stan na", LangDE: "Preis der letzten Transaktion, kein Marktkurs — Stand", LangFR: "prix de la dernière transaction, pas une cotation — au", LangES: "precio de la última operación, no una cotización — a fecha de"},
-	"price.stale":    {LangEN: "stale quote — last traded", LangPL: "nieaktualne notowanie — ostatni obrót", LangDE: "veralteter Kurs — zuletzt gehandelt", LangFR: "cotation périmée — dernier échange le", LangES: "cotización desactualizada — última negociación"},
-	"table.pnl":      {LangEN: "P&L", LangPL: "Zysk/strata", LangDE: "G/V", LangFR: "P&L", LangES: "G/P"},
-	"table.total":    {LangEN: "Total", LangPL: "Suma", LangDE: "Gesamt", LangFR: "Total", LangES: "Total"},
-	"table.exposure": {LangEN: "Exposure", LangPL: "Ekspozycja", LangDE: "Exponierung", LangFR: "Exposition", LangES: "Exposición"},
+	// A recommendation scored with an expected input missing (decision.Recommendation.Degraded).
+	"rec.degraded":            {LangEN: "incomplete inputs", LangPL: "niepełne dane wejściowe", LangDE: "unvollständige Eingaben", LangFR: "données incomplètes", LangES: "datos incompletos"},
+	"rec.degraded_hint":       {LangEN: "An input the engine expected (ML prediction, portfolio state or a current price) was unavailable, so this recommendation rests on fewer signals than usual. The reasons say which.", LangPL: "Zabrakło danych, których silnik oczekiwał (predykcji ML, stanu portfela lub aktualnej ceny), więc ta rekomendacja opiera się na mniejszej liczbie sygnałów niż zwykle. Szczegóły podają uzasadnienia.", LangDE: "Eine erwartete Eingabe (ML-Prognose, Portfoliostand oder aktueller Kurs) war nicht verfügbar; diese Empfehlung stützt sich daher auf weniger Signale als üblich. Die Begründungen nennen, welche.", LangFR: "Une donnée attendue par le moteur (prédiction ML, état du portefeuille ou prix actuel) était indisponible ; cette recommandation repose donc sur moins de signaux que d'habitude. Les justifications précisent laquelle.", LangES: "Faltó un dato que el motor esperaba (predicción ML, estado de la cartera o un precio actual), así que esta recomendación se basa en menos señales de lo habitual. Los motivos indican cuál."},
+	"table.ml_recovery_model": {LangEN: "ML recovery model", LangPL: "Model ML odbicia", LangDE: "ML-Erholungsmodell", LangFR: "Modèle ML de rebond", LangES: "Modelo ML de recuperación"},
+	"price.trade":             {LangEN: "last trade price, not a market quote — as of", LangPL: "cena ostatniej transakcji, nie notowanie — stan na", LangDE: "Preis der letzten Transaktion, kein Marktkurs — Stand", LangFR: "prix de la dernière transaction, pas une cotation — au", LangES: "precio de la última operación, no una cotización — a fecha de"},
+	"price.stale":             {LangEN: "stale quote — last traded", LangPL: "nieaktualne notowanie — ostatni obrót", LangDE: "veralteter Kurs — zuletzt gehandelt", LangFR: "cotation périmée — dernier échange le", LangES: "cotización desactualizada — última negociación"},
+	"table.pnl":               {LangEN: "P&L", LangPL: "Zysk/strata", LangDE: "G/V", LangFR: "P&L", LangES: "G/P"},
+	"table.total":             {LangEN: "Total", LangPL: "Suma", LangDE: "Gesamt", LangFR: "Total", LangES: "Total"},
+	"table.exposure":          {LangEN: "Exposure", LangPL: "Ekspozycja", LangDE: "Exponierung", LangFR: "Exposition", LangES: "Exposición"},
 	// table.drawdown and table.avg_deviation are the dashboard/portfolio Risk table's own
 	// simple heuristics (portfolio.RiskSnapshot — see its doc comment), deliberately named for
 	// what they actually compute rather than reusing "Drawdown"/"Volatility", which

@@ -144,3 +144,33 @@ func TestSaveRecommendationAllowsMultipleRowsPerSymbol(t *testing.T) {
 		t.Fatalf("expected 2 new append-only rows, got %d", got)
 	}
 }
+
+// The review's reproduction: a recommendation saved with both flags true read back with both
+// false, so anything serving history (the Alerts page, GET /alerts) presented a degraded
+// recommendation as a complete one.
+func TestRecommendationQualityFlagsRoundTrip(t *testing.T) {
+	db := connectTestDB(t)
+
+	for _, flag := range []bool{true, false} {
+		rec := decision.Recommendation{
+			Symbol: "TESTRECFLAGS", Action: "HOLD", Confidence: 0.6, Reason: []string{"x"},
+			Degraded: flag, RiskDataAvailable: flag,
+			ModelVersion: "atlas-decision-v2", MLRecoveryModelVersion: "atlas-ml-recovery-v1",
+		}
+		if err := db.SaveRecommendation(rec); err != nil {
+			t.Fatalf("save: %v", err)
+		}
+		latest, err := db.LatestRecommendations()
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		got := latest["TESTRECFLAGS"]
+		if got.Degraded != flag || got.RiskDataAvailable != flag {
+			t.Fatalf("wrote degraded=%v risk_available=%v, read back degraded=%v risk_available=%v",
+				flag, flag, got.Degraded, got.RiskDataAvailable)
+		}
+		if got.MLRecoveryModelVersion != "atlas-ml-recovery-v1" {
+			t.Fatalf("recovery model version lost: %q", got.MLRecoveryModelVersion)
+		}
+	}
+}

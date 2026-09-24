@@ -1236,6 +1236,10 @@ const docTemplate = `{
                 "confidence": {
                     "type": "number"
                 },
+                "degraded": {
+                    "description": "Degraded is true when an input the engine expected to have was unavailable — an ML\nprediction that errored, a portfolio that could not be read, or a held position without a\ncurrent price — so the score reflects fewer signals than a normal one. Reason carries the\nspecifics.",
+                    "type": "boolean"
+                },
                 "market_condition": {
                     "description": "MarketCondition is BULL/BEAR/SIDEWAYS (see ml.ClassifyMarketCondition) — a deterministic\nADX+EMA technical rule, not a trained model. Empty string when there isn't enough history\nto compute it (see ml.ClassifyMarketCondition's own warm-up requirement).",
                     "type": "string"
@@ -1244,11 +1248,15 @@ const docTemplate = `{
                     "description": "MLModelVersion is the actual ML model that produced MLScore (ml.Prediction.ModelVersion —\ne.g. a real trained model's version, or ml.StubModelVersion when none is loaded/wired in).\nEmpty when ML wasn't part of scoring at all (NewOrchestrator without ML — see\nNewOrchestratorWithML), distinct from the stub case where ML ran but with a placeholder\nmodel.",
                     "type": "string"
                 },
+                "ml_recovery_model_version": {
+                    "description": "MLRecoveryModelVersion is the recovery model that fed the ML term alongside\nMLModelVersion's correction model (see decision.mlScoreFromPrediction). Empty when no\nrecovery model ran.",
+                    "type": "string"
+                },
                 "ml_score": {
                     "type": "number"
                 },
                 "model_version": {
-                    "description": "ModelVersion identifies the decision-engine scoring logic itself (weights, thresholds —\nsee Orchestrator.EngineVersion), not the ML sub-model that fed MLScore above. Always\n\"atlas-decision-v1\" today since the engine has never been re-versioned — don't confuse a\nconstant engine tag with \"no ML model is being used.\"",
+                    "description": "ModelVersion identifies the decision-engine scoring logic itself (weights, thresholds —\nsee Orchestrator.EngineVersion), not the ML sub-model that fed MLScore above. It changes\nonly when the scoring rules do, so a constant value is not a sign that no ML model ran.",
                     "type": "string"
                 },
                 "portfolio_score": {
@@ -1259,6 +1267,10 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "risk_data_available": {
+                    "description": "RiskDataAvailable is false when RiskScore sits at its neutral 1.0 ceiling only because the\nportfolio has no exposure to measure yet, or when a held position has no current price —\nsee Orchestrator.computeRiskScore. Callers should render \"n/a\" rather than the raw score\nin that case.",
+                    "type": "boolean"
                 },
                 "risk_score": {
                     "description": "RiskScore is a portfolio-wide risk signal (see portfolio.UseCase.ComputeRisk), distinct\nfrom PortfolioScore (a single symbol's own P\u0026L) — it reflects overall exposure/drawdown/\nvolatility across every held position, per docs/decision_engine.md's \"Risk Context\" being\na portfolio-wide concept. On the same [0,1] scale as the other components (higher = more\nsupportive of buying).",

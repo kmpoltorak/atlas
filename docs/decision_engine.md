@@ -23,12 +23,16 @@ everywhere in live traffic, but backtesting's walk-forward optimizer (see docs/b
 evaluate against history without ever touching the live instance. Backtesting previously leaked
 live portfolio state into simulated HasPosition — fixed now, see docs/backtesting.md's
 Implementation status note. The real Recommendation object is `{Symbol, Action, Confidence,
-Reason, Score, TechnicalScore, MLScore, PortfolioScore, RiskScore, MarketCondition, ModelVersion,
-MLModelVersion}` — no separate timestamp field yet (the `created_at` column below covers it);
-Reason does list which of ML/Portfolio/Risk meaningfully influenced the result. `ModelVersion`
-and `MLModelVersion` are two different things, easy to conflate: `ModelVersion` is the decision
-engine's own scoring-logic tag (`Orchestrator.EngineVersion`, a constant, "atlas-decision-v1"
-today), while `MLModelVersion` is the real ML model that produced `MLScore` (`ml.Prediction.
+Reason, Score, TechnicalScore, MLScore, PortfolioScore, RiskScore, RiskDataAvailable, Degraded,
+MarketCondition, ModelVersion, MLModelVersion, MLRecoveryModelVersion}` — no separate timestamp
+field yet (the `created_at` column below covers it); Reason does list which of ML/Portfolio/Risk
+meaningfully influenced the result. Every field is persisted, `Degraded` and `RiskDataAvailable`
+included (migrations/022 — rows older than that hold NULL for both, since they were never
+recorded). `ModelVersion` and `MLModelVersion` are two different things, easy to conflate:
+`ModelVersion` is the decision engine's own scoring-logic tag (`Orchestrator.EngineVersion`,
+"atlas-decision-v2" since quote freshness moved to the wall clock and input quality started being
+recorded; bump it whenever scoring or flagging rules change. "atlas-decision-v1" rows span several
+earlier scoring revisions and do not identify a single rule set), while `MLModelVersion` is the real ML model that produced `MLScore` (`ml.Prediction.
 ModelVersion` — a trained model's version, or `ml.StubModelVersion` when none is loaded). Both
 are shown separately on the Recommendations dashboard page ("Engine" vs. "ML model"). Confidence
 was previously a fixed literal per action band (every BUY reported 0.78, every HOLD reported 0.6,

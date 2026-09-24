@@ -35,6 +35,7 @@
 
     {{if .Recommendation}}
     <h2 class="h4"><a class="atlas-symbol" href="{{yahooURL .Recommendation.Symbol}}" target="_blank" rel="noopener noreferrer" title="{{T .Lang "table.open_in_yahoo"}}">{{.Recommendation.Symbol}}</a>: <span class="{{actionClass .Recommendation.Action}}">{{actionLabel .Lang .Recommendation.Action}}</span></h2>
+    {{if .Recommendation.Degraded}}<div class="alert alert-warning py-2"><strong>{{T .Lang "rec.degraded"}}:</strong> {{T .Lang "rec.degraded_hint"}}</div>{{end}}
     <div class="table-responsive">
       <table class="table">
         <tbody>
@@ -47,6 +48,7 @@
           {{if .Recommendation.MarketCondition}}<tr><th scope="row">{{T .Lang "table.market_condition"}}</th><td>{{.Recommendation.MarketCondition}}</td></tr>{{end}}
           <tr><th scope="row">{{T .Lang "table.model"}}</th><td>{{.Recommendation.ModelVersion}}</td></tr>
           <tr><th scope="row">{{T .Lang "table.ml_model"}}</th><td>{{if .Recommendation.MLModelVersion}}{{.Recommendation.MLModelVersion}}{{else}}{{T .Lang "table.ml_model_none"}}{{end}}</td></tr>
+          {{if .Recommendation.MLRecoveryModelVersion}}<tr><th scope="row">{{T .Lang "table.ml_recovery_model"}}</th><td>{{.Recommendation.MLRecoveryModelVersion}}</td></tr>{{end}}
         </tbody>
       </table>
     </div>
