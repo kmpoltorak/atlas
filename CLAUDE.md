@@ -82,8 +82,8 @@ A signal measured on one window is a hypothesis, not a finding.
   restore the weights; `docs/decision_engine.md` has the current design.
 - **A ledger is ordered by two clocks, not one.** `Timestamp` is when the trade happened and may
   be backdated; `RecordedAt` (`transactions.created_at`, migrations/021) is when Atlas accepted
-  it, and it is what breaks ties — the dashboard form submits a date with no time, so same-day
-  entries are genuinely equal on the first. Ordering ties by transaction id ordered them by a
+  it, and it is what breaks ties — the dashboard form submits a backdated trade as a date with no
+  time, so same-day entries are genuinely equal on the first. Ordering ties by transaction id ordered them by a
   random UUID, which reordered a BUY and the SELL it funded and rejected the pair as an oversell.
   Replay (`portfolio.UseCase.recomputePosition`) is the single path both recording and deleting
   go through; keep it that way.

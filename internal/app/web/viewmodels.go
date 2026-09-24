@@ -70,6 +70,28 @@ type PortfolioPage struct {
 	PriceAsOf map[string]string
 	Error     string
 	Success   string
+	// Form is what the record-transaction form renders with: a fresh key and today's date, or —
+	// after a rejected submission — exactly what was submitted, key included, so correcting one
+	// field and resubmitting neither retypes the rest nor risks recording the trade twice.
+	Form TransactionForm
+}
+
+// TransactionForm is the record-transaction form's state (see PortfolioPage.Form).
+type TransactionForm struct {
+	// Key is the transaction id the form submits (portfolio.Transaction.ID). It is issued when
+	// the form is rendered and reused on every resubmission of that form, so a double click or a
+	// retry after a dropped connection records one transaction: RecordTransaction treats a
+	// repeated id with the same data as already done.
+	Key         string
+	PortfolioID string
+	Symbol      string
+	Type        string
+	Quantity    string
+	Price       string
+	Currency    string
+	// Date is the trade date, YYYY-MM-DD; Today bounds the date picker.
+	Date  string
+	Today string
 }
 
 // RecommendationsPage is the view model for templates/recommendations.html. Symbols is the

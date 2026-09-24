@@ -1,6 +1,8 @@
 package app
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -164,32 +166,58 @@ func (a *Application) portfolioPageHandler(w http.ResponseWriter, r *http.Reques
 			a.renderPortfolioPage(w, r, "Invalid form submission.", "")
 			return
 		}
+		form := web.TransactionForm{
+			Key:         strings.TrimSpace(r.FormValue("key")),
+			PortfolioID: r.FormValue("portfolio_id"),
+			Symbol:      strings.ToUpper(strings.TrimSpace(r.FormValue("symbol"))),
+			Type:        r.FormValue("type"),
+			Quantity:    r.FormValue("quantity"),
+			Price:       r.FormValue("price"),
+			Currency:    r.FormValue("currency"),
+			Date:        strings.TrimSpace(r.FormValue("date")),
+		}
+		rejected := func(message string) {
+			a.renderPortfolioPageWithForm(w, r, message, "", &form)
+		}
 		// The record-transaction form's own portfolio picker (only shown with >1 portfolio) can
 		// name a different portfolio than whatever tab is currently active — switch to it first
 		// so the transaction lands where the form actually said, and update the cookie so the
 		// page the user lands on after this keeps showing that same portfolio.
 		if portfolioID := r.FormValue("portfolio_id"); portfolioID != "" && portfolioID != a.Portfolio.ActivePortfolio() {
 			if err := a.Portfolio.SwitchPortfolio(portfolioID); err != nil {
-				a.renderPortfolioPage(w, r, err.Error(), "")
+				rejected(err.Error())
 				return
 			}
 			setActivePortfolioCookie(w, portfolioID)
 		}
-		quantity, qErr := strconv.ParseFloat(r.FormValue("quantity"), 64)
-		price, pErr := strconv.ParseFloat(r.FormValue("price"), 64)
+		quantity, qErr := strconv.ParseFloat(form.Quantity, 64)
+		price, pErr := strconv.ParseFloat(form.Price, 64)
 		if qErr != nil || pErr != nil {
-			a.renderPortfolioPage(w, r, "Quantity and price must both be numbers.", "")
+			rejected("Quantity and price must both be numbers.")
+			return
+		}
+		if form.Key == "" {
+			// Every rendered form carries one; its absence means a hand-built request, and
+			// recording without a key is exactly the duplicate risk the key exists to remove.
+			rejected("This form has expired — reload the page and submit again.")
 			return
 		}
 		tx := portfolio.Transaction{
-			Symbol:   strings.ToUpper(strings.TrimSpace(r.FormValue("symbol"))),
-			Type:     r.FormValue("type"),
+			ID:       form.Key,
+			Symbol:   form.Symbol,
+			Type:     form.Type,
 			Quantity: quantity,
 			Price:    price,
-			Currency: r.FormValue("currency"),
+			Currency: form.Currency,
+		}
+		// The trade date, which the conversion to PLN depends on: a backdated USD/EUR trade is
+		// priced at that day's NBP rate, not today's. Today's date keeps the exact current time
+		// (an empty Timestamp), so a same-day entry is not moved to midnight.
+		if form.Date != "" && form.Date != web.Today() {
+			tx.Timestamp = form.Date
 		}
 		if err := a.Portfolio.RecordTransaction(tx); err != nil {
-			a.renderPortfolioPage(w, r, err.Error(), "")
+			rejected(err.Error())
 			return
 		}
 		go a.refreshRecommendation(tx.Symbol)
@@ -314,6 +342,21 @@ func (a *Application) portfolioTransactionDeleteHandler(w http.ResponseWriter, r
 }
 
 func (a *Application) renderPortfolioPage(w http.ResponseWriter, r *http.Request, errMsg, successMsg string) {
+	a.renderPortfolioPageWithForm(w, r, errMsg, successMsg, nil)
+}
+
+// renderPortfolioPageWithForm renders the page with the record-transaction form set to form, or
+// to a fresh one (new key, today's date) when form is nil — see web.PortfolioPage.Form.
+func (a *Application) renderPortfolioPageWithForm(w http.ResponseWriter, r *http.Request, errMsg, successMsg string, form *web.TransactionForm) {
+	if form == nil {
+		key, err := newFormKey()
+		if err != nil {
+			a.renderError(w, r, http.StatusInternalServerError, err.Error())
+			return
+		}
+		form = &web.TransactionForm{Key: key, Type: "BUY", Currency: "PLN", Date: web.Today()}
+	}
+	form.Today = web.Today()
 	if successMsg == "" {
 		successMsg = readFlash(w, r)
 	}
@@ -332,6 +375,10 @@ func (a *Application) renderPortfolioPage(w http.ResponseWriter, r *http.Request
 		Error:     errMsg, Success: successMsg,
 		Portfolios:        portfolios,
 		ActivePortfolioID: activePortfolioID,
+		Form:              *form,
+	}
+	if form.PortfolioID == "" {
+		data.Form.PortfolioID = activePortfolioID
 	}
 	if symbols, err := a.watchlistSymbols(); err == nil {
 		data.Symbols = symbols
@@ -382,3 +429,13 @@ func priceAsOf(transactions []portfolio.Transaction) map[string]string {
 // longer than that once prices/indicators/recommendations have accumulated — confirmed live: a
 // ~25MB restore was silently killed mid-request, the client just seeing an empty response.
 const backupOperationTimeout = 2 * time.Minute
+
+// newFormKey issues a record-transaction form's idempotency key — a random UUID, the shape
+// portfolio.Transaction.ID requires. See web.TransactionForm.Key.
+func newFormKey() (string, error) {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("generate form key: %w", err)
+	}
+	return hex.EncodeToString(raw), nil
+}

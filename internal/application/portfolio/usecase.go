@@ -313,8 +313,8 @@ func (u *UseCase) RecordTransaction(tx portfolio.Transaction) error {
 	if tx.Type != "BUY" && tx.Type != "SELL" {
 		return errors.New("transaction type is unsupported")
 	}
-	// A caller that never sets Timestamp (both the dashboard form and the JSON API leave it out)
-	// would otherwise store "" here. persistence.SaveTransaction already falls back to time.Now
+	// A caller that leaves Timestamp unset (the JSON API when the field is omitted, the dashboard
+	// form for a trade dated today) would otherwise store "" here. persistence.SaveTransaction already falls back to time.Now
 	// for what it writes to the DB, but that corrected value never makes it back into tx — so
 	// the in-memory Transactions slice (what GetTransactions/the dashboard actually reads until
 	// the next restart) kept the empty string, rendering as the zero time "0001-01-01 00:00".

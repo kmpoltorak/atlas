@@ -197,6 +197,9 @@ var translations = map[string]map[Lang]string{
 	},
 	"portfolio.record_submit":    {LangEN: "Record transaction", LangPL: "Zapisz transakcję", LangDE: "Transaktion speichern", LangFR: "Enregistrer la transaction", LangES: "Registrar transacción"},
 	"portfolio.record_portfolio": {LangEN: "Portfolio", LangPL: "Portfel", LangDE: "Portfolio", LangFR: "Portefeuille", LangES: "Cartera"},
+	"portfolio.record_busy":      {LangEN: "Recording…", LangPL: "Zapisywanie…", LangDE: "Wird gespeichert…", LangFR: "Enregistrement…", LangES: "Registrando…"},
+	"portfolio.trade_date":       {LangEN: "Trade date", LangPL: "Data transakcji", LangDE: "Handelsdatum", LangFR: "Date de l'opération", LangES: "Fecha de la operación"},
+	"portfolio.trade_date_hint":  {LangEN: "A EUR or USD trade is converted to PLN at the NBP rate for this date.", LangPL: "Transakcja w EUR lub USD jest przeliczana na PLN po kursie NBP z tego dnia.", LangDE: "Ein Geschäft in EUR oder USD wird zum NBP-Kurs dieses Tages in PLN umgerechnet.", LangFR: "Une opération en EUR ou USD est convertie en PLN au taux NBP de cette date.", LangES: "Una operación en EUR o USD se convierte a PLN al tipo del NBP de esa fecha."},
 	"confirm.remove_position": {
 		LangEN: "Remove %s entirely? Transaction history is kept, only the current position is cleared.",
 		LangPL: "Usunąć %s całkowicie? Historia transakcji zostaje zachowana, czyszczona jest tylko bieżąca pozycja.",

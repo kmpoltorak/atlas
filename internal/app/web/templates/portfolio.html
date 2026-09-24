@@ -113,12 +113,16 @@
       <div class="card-body">
         <h2 class="h5 card-title">{{T .Lang "portfolio.record_transaction"}}</h2>
         <p class="text-body-secondary small">{{T .Lang "portfolio.record_transaction_hint" | safeHTML}}</p>
-        <form method="post" action="/dashboard/portfolio">
+        <form method="post" action="/dashboard/portfolio" id="recordTransactionForm"
+              data-busy-label="{{T .Lang "portfolio.record_busy"}}">
+          {{/* The idempotency key: reused on every resubmission of this form, so a double click
+               or a retry records one transaction — see web.TransactionForm.Key. */}}
+          <input type="hidden" name="key" value="{{.Form.Key}}">
           {{if gt (len .Portfolios) 1}}
           <div class="mb-3">
-            <label class="form-label">{{T .Lang "portfolio.record_portfolio"}}</label>
-            <select class="form-select" name="portfolio_id">
-              {{$active := .ActivePortfolioID}}
+            <label class="form-label" for="txPortfolio">{{T .Lang "portfolio.record_portfolio"}}</label>
+            <select class="form-select" id="txPortfolio" name="portfolio_id">
+              {{$active := .Form.PortfolioID}}
               {{range .Portfolios}}
               <option value="{{.ID}}"{{if eq .ID $active}} selected{{end}}>{{.Name}}</option>
               {{end}}
@@ -126,40 +130,49 @@
           </div>
           {{end}}
           <div class="mb-3">
-            <label class="form-label">{{T .Lang "table.symbol"}}</label>
+            <label class="form-label" for="txSymbol">{{T .Lang "table.symbol"}}</label>
             {{if .Symbols}}
-            <select class="form-select text-uppercase" name="symbol" required>
+            <select class="form-select text-uppercase" id="txSymbol" name="symbol" required>
               <option value="">{{T .Lang "common.choose"}}</option>
+              {{$symbol := .Form.Symbol}}
               {{range .Symbols}}
-              <option value="{{.}}">{{.}}</option>
+              <option value="{{.}}"{{if eq . $symbol}} selected{{end}}>{{.}}</option>
               {{end}}
             </select>
             {{else}}
-            <input type="text" class="form-control text-uppercase" name="symbol" required>
-            <div class="form-text">{{T .Lang "watchlist.dropdown_hint" | safeHTML}}</div>
+            <input type="text" class="form-control text-uppercase" id="txSymbol" name="symbol" value="{{.Form.Symbol}}" required aria-describedby="txSymbolHint">
+            <div class="form-text" id="txSymbolHint">{{T .Lang "watchlist.dropdown_hint" | safeHTML}}</div>
             {{end}}
-          </div>
-          <div class="mb-3">
-            <label class="form-label">{{T .Lang "table.type"}}</label>
-            <select class="form-select" name="type">
-              <option value="BUY">{{T .Lang "action.BUY"}}</option>
-              <option value="SELL">{{T .Lang "action.SELL"}}</option>
-            </select>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">{{T .Lang "table.quantity"}}</label>
-            <input type="number" step="any" min="0" class="form-control" name="quantity" required>
           </div>
           <div class="row">
             <div class="col mb-3">
-              <label class="form-label">{{T .Lang "table.price"}}</label>
-              <input type="number" step="any" min="0" class="form-control" name="price" required>
+              <label class="form-label" for="txType">{{T .Lang "table.type"}}</label>
+              <select class="form-select" id="txType" name="type">
+                <option value="BUY"{{if eq .Form.Type "BUY"}} selected{{end}}>{{T .Lang "action.BUY"}}</option>
+                <option value="SELL"{{if eq .Form.Type "SELL"}} selected{{end}}>{{T .Lang "action.SELL"}}</option>
+              </select>
             </div>
             <div class="col mb-3">
-              <label class="form-label">{{T .Lang "table.currency"}}</label>
-              <select class="form-select" name="currency">
+              <label class="form-label" for="txDate">{{T .Lang "portfolio.trade_date"}}</label>
+              <input type="date" class="form-control" id="txDate" name="date" value="{{.Form.Date}}" max="{{.Form.Today}}" required aria-describedby="txDateHint">
+            </div>
+          </div>
+          <div class="form-text mt-n2 mb-3" id="txDateHint">{{T .Lang "portfolio.trade_date_hint"}}</div>
+          <div class="mb-3">
+            <label class="form-label" for="txQuantity">{{T .Lang "table.quantity"}}</label>
+            <input type="number" step="any" min="0" class="form-control" id="txQuantity" name="quantity" value="{{.Form.Quantity}}" required>
+          </div>
+          <div class="row">
+            <div class="col mb-3">
+              <label class="form-label" for="txPrice">{{T .Lang "table.price"}}</label>
+              <input type="number" step="any" min="0" class="form-control" id="txPrice" name="price" value="{{.Form.Price}}" required>
+            </div>
+            <div class="col mb-3">
+              <label class="form-label" for="txCurrency">{{T .Lang "table.currency"}}</label>
+              <select class="form-select" id="txCurrency" name="currency">
+                {{$currency := .Form.Currency}}
                 {{range .Currencies}}
-                <option value="{{.}}"{{if eq . "PLN"}} selected{{end}}>{{.}}</option>
+                <option value="{{.}}"{{if eq . $currency}} selected{{end}}>{{.}}</option>
                 {{end}}
               </select>
             </div>
@@ -170,6 +183,7 @@
     </div>
   </main>
   {{template "scripts" .}}
+  <script>atlasSetupBusySubmit('recordTransactionForm')</script>
   {{if .Positions}}
   <script>
     const positionsRefresh = atlasSetupBulkDelete('positionsForm', 'selectAllPositions', 'position-checkbox', 'bulkDeletePositionsBtn', 'selectedPositionCount')

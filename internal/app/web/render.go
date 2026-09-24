@@ -143,6 +143,11 @@ var atlasLocation = func() *time.Location {
 // (portfolio.Transaction.Timestamp, alerts.Alert.TriggeredAt, watchlist.Item.AddedAt — all
 // persisted as plain strings, not time.Time) — to atlasLocation. An unparseable string returns
 // the zero time rather than panicking a template render.
+// Today is the current date where Atlas displays times, as YYYY-MM-DD.
+func Today() string {
+	return time.Now().In(atlasLocation).Format("2006-01-02")
+}
+
 func localTime(v any) time.Time {
 	switch t := v.(type) {
 	case time.Time:

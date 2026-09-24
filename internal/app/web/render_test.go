@@ -139,6 +139,8 @@ func TestRenderPortfolioPageShowsCurrencyDropdownAndTransactionCurrency(t *testi
 		Transactions: []portfolio.Transaction{
 			{ID: "tx-1", Symbol: "AAPL", Type: "BUY", Quantity: 10, Price: 100, Currency: "USD", PriceInPLN: 373, Timestamp: "2026-01-01T00:00:00Z"},
 		},
+		// The handler's fresh form (renderPortfolioPageWithForm) defaults to PLN.
+		Form: TransactionForm{Currency: "PLN", Type: "BUY"},
 	})
 	if rec.Code != 200 {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -431,5 +433,34 @@ func TestRenderAlertsPageLeavesUnknownDurationBlank(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `data-sort-value="0"></td>`) {
 		t.Errorf("expected a blank duration cell for a symbol with no streak, got %s", rec.Body.String())
+	}
+}
+
+// A rejected submission re-renders with what was typed — key included, so resubmitting the
+// corrected form still records at most one transaction.
+func TestRenderPortfolioPageKeepsARejectedForm(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Render(rec, "portfolio", PortfolioPage{
+		Currencies: []string{"PLN", "EUR", "USD"},
+		Error:      "Quantity and price must both be numbers.",
+		Form: TransactionForm{
+			Key: "0123456789abcdef0123456789abcdef", Symbol: "AAPL", Type: "SELL",
+			Quantity: "3", Price: "abc", Currency: "EUR", Date: "2026-03-02", Today: "2026-09-24",
+		},
+	})
+	body := rec.Body.String()
+	for _, want := range []string{
+		`name="key" value="0123456789abcdef0123456789abcdef"`,
+		`id="txSymbol" name="symbol" value="AAPL"`,
+		`<option value="SELL" selected>`,
+		`name="quantity" value="3"`,
+		`name="price" value="abc"`,
+		`<option value="EUR" selected>`,
+		`name="date" value="2026-03-02" max="2026-09-24"`,
+		`<label class="form-label" for="txQuantity">`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected %q in the re-rendered form", want)
+		}
 	}
 }

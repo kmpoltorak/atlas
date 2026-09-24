@@ -84,8 +84,8 @@ type Transaction struct {
 	// RecordedAt is when Atlas accepted this transaction, which is a different question from
 	// when the trade happened and is what breaks ties between them.
 	//
-	// Two trades can share a Timestamp honestly: the dashboard form submits a date with no time,
-	// and two entries made on the same day are then identical to the second. Replay has to order
+	// Two trades can share a Timestamp honestly: the dashboard form submits a past trade date with
+	// no time, and two entries backdated to the same day are then identical. Replay has to order
 	// them anyway, because BUY-then-SELL and SELL-then-BUY are not the same history — the second
 	// is an oversell. Ordering by transaction id instead ordered them by a random UUID, so the
 	// same two trades could replay either way, and after a reload the database's own row order
