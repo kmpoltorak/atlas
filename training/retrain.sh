@@ -6,7 +6,7 @@
 #
 # This script only ever produces new, uniquely-versioned files under training/models/ — it never
 # touches which model is active. A new candidate becomes the live model only when a human picks
-# it from the Account dashboard page (/dashboard/account) after reviewing its printed holdout
+# it from the Settings page (/dashboard/settings) after reviewing its printed holdout
 # metrics — the same "never auto-promote" stance this project already applies to walk-forward
 # threshold optimization (see docs/backtesting.md). A cron job silently swapping the model behind
 # real investment recommendations, with data this thin (see docs/ml.md's caveats), would be the
@@ -48,7 +48,7 @@ echo "==> Training candidate models"
 
 echo
 echo "==> Done. New candidate model files are listed above (wrote ...)."
-echo "    Nothing was activated. Before picking one from /dashboard/account, compare its printed"
+echo "    Nothing was activated. Before picking one from /dashboard/settings, compare its printed"
 echo "    PR AUC (average precision) with the symbol-base-rate baseline's — the verdict train.py"
 echo "    prints is judged on PR AUC, because Atlas alerts on the top of the ranking and ROC AUC is"
 echo "    dominated by the uneventful middle no alert touches. A model that doesn't beat that"

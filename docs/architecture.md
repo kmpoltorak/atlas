@@ -96,7 +96,7 @@ Implementation status: correction probability and confidence score are real (XGB
 to ONNX, loaded via `github.com/yalue/onnxruntime_go` — see docs/ml.md and training/README.md).
 Market condition is real too, but deliberately not ML — a deterministic ADX+EMA rule (see
 docs/ml.md). Recovery probability is a second, independent model of the same shape — trained,
-exported and loadable (`RECOVERY_MODEL_PATH` or the Account page's picker), and optional in
+exported and loadable (`RECOVERY_MODEL_PATH` or the Settings page's picker), and optional in
 exactly the same way: with none loaded the probability stays 0 instead of being invented.
 
 

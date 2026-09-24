@@ -92,10 +92,10 @@ func Load() Config {
 		// score BUY/SELL/HOLD from the technical term alone (RSI/MACD/Bollinger/momentum, see
 		// decision.Orchestrator.buildTechnicalScore) — skipping the ML+Portfolio+Risk blend
 		// entirely (this is the initial value of the orchestrator's own MLEnabled flag; see
-		// decision.Orchestrator.SetMLEnabled, which the Account page toggles at runtime), not just
+		// decision.Orchestrator.SetMLEnabled, which the Settings page toggles at runtime), not just
 		// falling back to the RSI-derived ML stub, which still applies even with no model file
 		// loaded. Model files, if configured, still load and stay usable via /predict and the
-		// Account page — this only stops the decision engine from factoring them in.
+		// Settings page — this only stops the decision engine from factoring them in.
 		MLEnabled: envOrDefault("ML_ENABLED", "true") == "true",
 		// All three default to "": absent means "no trained model available", which is a normal,
 		// non-fatal startup state (see internal/application/ml) — Atlas falls back to the
@@ -105,13 +105,13 @@ func Load() Config {
 		ModelPath:          envOrDefault("MODEL_PATH", ""),
 		RecoveryModelPath:  envOrDefault("RECOVERY_MODEL_PATH", ""),
 		LibOnnxRuntimePath: envOrDefault("LIBONNXRUNTIME_PATH", ""),
-		// Directory the Account dashboard page scans for selectable trained models (see
+		// Directory the Settings page scans for selectable trained models (see
 		// internal/application/ml.ListModels) — matches the container path docker-compose.yml
 		// mounts training/models to read-only. Only used for discovery/display; MODEL_PATH/
-		// RECOVERY_MODEL_PATH above (or a durable Account-page selection — migrations/011) still
+		// RECOVERY_MODEL_PATH above (or a durable Settings-page selection — migrations/011) still
 		// decide which file actually loads.
 		MLModelsDir: envOrDefault("ML_MODELS_DIR", "/models"),
-		// Empty by default: the Account page's "Train new candidate" button then just explains
+		// Empty by default: the Settings page's "Train new candidate" button then just explains
 		// how to run training/retrain.sh by hand instead, the same non-fatal-optional pattern as
 		// everything else here. docker-compose.yml runs the atlas-trainer service in the default
 		// stack and sets this to reach it — see cmd/trainer.

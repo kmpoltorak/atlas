@@ -99,7 +99,7 @@ func NewUseCaseWithRepository(repo Repository) (*UseCase, error) {
 // Reload re-reads Portfolios and ActivePortfolioID's Positions/Transactions from Repository,
 // discarding whatever the in-memory working copy currently holds — used after an out-of-band bulk
 // change to the underlying data (persistence.TimescaleDB's FlushAll/RestoreAll, wired up from the
-// Account page's Backup/Restore/Flush buttons) that per-mutation methods like RecordTransaction
+// Settings page's Backup/Restore/Flush buttons) that per-mutation methods like RecordTransaction
 // can't express, as well as by SwitchPortfolio and NewUseCaseWithRepository. A nil Repository just
 // clears the in-memory copy, matching NewUseCase's zero-value state.
 //
@@ -278,7 +278,7 @@ func (u *UseCase) ActivePortfolio() string {
 	return u.ActivePortfolioID
 }
 
-// PortfolioList returns every portfolio (the dashboard's tab list, and the Account page's
+// PortfolioList returns every portfolio (the dashboard's tab list, and the Settings page's
 // "manage portfolios" list) — a defensive copy, for the same reason as GetPositions.
 func (u *UseCase) PortfolioList() []portfolio.Portfolio {
 	u.mu.Lock()

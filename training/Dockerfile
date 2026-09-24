@@ -1,4 +1,4 @@
-# Backs the Account dashboard's "Train new candidate" button (see cmd/trainer). Deliberately NOT
+# Backs the Settings page's "Train new candidate" button (see cmd/trainer). Deliberately NOT
 # modeled after the root Dockerfile's multi-stage/copied-source build: this container is expected
 # to run with the full repo bind-mounted read-write at /app (see docker-compose.yml's
 # atlas-trainer service), so training/retrain.sh, cmd/export-training-data, and

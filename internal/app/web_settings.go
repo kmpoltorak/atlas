@@ -14,21 +14,21 @@ import (
 	"go.uber.org/zap"
 )
 
-// Account page: portfolios, the ML model picker and engine toggle, background-polling status, and
+// Settings page: portfolios, the ML model picker and engine toggle, background-polling status, and
 // the three whole-database operations (backup, restore, flush). Split out of web_handlers.go,
 // which had grown past 1300 lines. Restore and flush are confirmed in the browser, and flush also
 // refuses server-side without a fresh backup (persistence.FlushAll).
 
-// accountPageHandler renders the Account page.
-func (a *Application) accountPageHandler(w http.ResponseWriter, r *http.Request) {
+// settingsPageHandler renders the Settings page.
+func (a *Application) settingsPageHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
 		return
 	}
-	a.renderAccountPage(w, r, "", "")
+	a.renderSettingsPage(w, r, "", "")
 }
 
-func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, errMsg, successMsg string) {
+func (a *Application) renderSettingsPage(w http.ResponseWriter, r *http.Request, errMsg, successMsg string) {
 	if successMsg == "" {
 		successMsg = readFlash(w, r)
 	}
@@ -40,7 +40,7 @@ func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, 
 	if scoped, err := a.forPortfolio(r); err == nil {
 		a = scoped
 	} else {
-		a.Logger.Warn("could not load the current portfolio list for the account page", zap.Error(err))
+		a.Logger.Warn("could not load the current portfolio list for the settings page", zap.Error(err))
 	}
 	trainerConfigured := a.Trainer != nil
 	var trainerStatus web.TrainerStatus
@@ -78,7 +78,7 @@ func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 
-	web.Render(w, "account", web.AccountPage{
+	web.Render(w, "settings", web.SettingsPage{
 		Leader:                leader,
 		LeaderIsSelf:          leader != "" && leader == a.Leader.Identity(),
 		Lang:                  a.resolveLang(r),
@@ -101,11 +101,11 @@ func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, 
 }
 
 // modelOptions lists every trained model file available for role (see ml.ListModels) as
-// web.ModelOption values for the Account page's dropdown, marking whichever one matches
+// web.ModelOption values for the Settings page's dropdown, marking whichever one matches
 // active's Version as the currently-loaded one. active is nil when that role has no model
 // loaded (the deterministic stub/zero default applies) — every option is then simply not
 // active, not an error. A directory-read failure logs and renders an empty list rather than
-// failing the whole Account page — the model picker is an enhancement, not a hard dependency.
+// failing the whole Settings page — the model picker is an enhancement, not a hard dependency.
 func (a *Application) modelOptions(role mlUC.Role, active *mlUC.OnnxModel) []web.ModelOption {
 	infos, err := mlUC.ListModels(a.Config.MLModelsDir, role)
 	if err != nil {
@@ -124,7 +124,7 @@ func (a *Application) modelOptions(role mlUC.Role, active *mlUC.OnnxModel) []web
 	return options
 }
 
-// mlEngineToggleHandler flips the decision engine's ML-blend toggle from the Account page — the
+// mlEngineToggleHandler flips the decision engine's ML-blend toggle from the Settings page — the
 // switch takes effect immediately (decision.Orchestrator.SetMLEnabled hot-swaps a runtime flag,
 // no restart needed) and is durably recorded (migrations/015) so it survives one. Model files
 // stay loaded and usable via /predict either way; this only controls whether BuildRecommendation
@@ -135,7 +135,7 @@ func (a *Application) mlEngineToggleHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.invalid_form"), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	enabled := r.FormValue("enabled") == "true"
@@ -150,20 +150,20 @@ func (a *Application) mlEngineToggleHandler(w http.ResponseWriter, r *http.Reque
 	if a.Storage != nil {
 		if err := a.Storage.SetMLEnabled(enabled); err != nil {
 			a.Logger.Error("failed to persist ML-enabled setting", zap.Bool("enabled", enabled), zap.Error(err))
-			a.renderAccountPage(w, r, a.tr(r, "msg.ml_setting_failed", err), "")
+			a.renderSettingsPage(w, r, a.tr(r, "msg.ml_setting_failed", err), "")
 			return
 		}
 	}
 	a.Orchestrator.SetMLEnabled(enabled)
 
 	if enabled {
-		a.renderAccountPage(w, r, "", a.tr(r, "msg.ml_enabled"))
+		a.renderSettingsPage(w, r, "", a.tr(r, "msg.ml_enabled"))
 	} else {
-		a.renderAccountPage(w, r, "", a.tr(r, "msg.ml_disabled"))
+		a.renderSettingsPage(w, r, "", a.tr(r, "msg.ml_disabled"))
 	}
 }
 
-// mlModelActivateHandler loads the model the Account page's dropdown submitted and, on success,
+// mlModelActivateHandler loads the model the Settings page's dropdown submitted and, on success,
 // hot-swaps it into the running ML use case (no restart needed — see ml.UseCase.SetModel) and
 // durably records the choice (migrations/011) so it survives one. The submitted filename is
 // re-validated against a fresh ml.ListModels scan rather than trusted as-is, so this can't be
@@ -174,7 +174,7 @@ func (a *Application) mlModelActivateHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.invalid_form"), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	roleValue := r.FormValue("role")
@@ -182,13 +182,13 @@ func (a *Application) mlModelActivateHandler(w http.ResponseWriter, r *http.Requ
 
 	role, ok := parseModelRole(roleValue)
 	if !ok {
-		a.renderAccountPage(w, r, a.tr(r, "msg.unknown_model_role"), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.unknown_model_role"), "")
 		return
 	}
 
 	infos, err := mlUC.ListModels(a.Config.MLModelsDir, role)
 	if err != nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.models_dir_failed", err), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.models_dir_failed", err), "")
 		return
 	}
 	found := false
@@ -199,14 +199,14 @@ func (a *Application) mlModelActivateHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	if !found {
-		a.renderAccountPage(w, r, a.tr(r, "msg.model_gone"), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.model_gone"), "")
 		return
 	}
 
 	path := a.Config.MLModelsDir + "/" + filename
 	model, err := mlUC.LoadOnnxModel(path, a.Config.LibOnnxRuntimePath)
 	if err != nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.model_load_failed", err), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.model_load_failed", err), "")
 		return
 	}
 
@@ -219,7 +219,7 @@ func (a *Application) mlModelActivateHandler(w http.ResponseWriter, r *http.Requ
 		_ = model.Close()
 		a.Logger.Error("failed to persist ML model selection",
 			zap.String("role", string(role)), zap.Error(err))
-		a.renderAccountPage(w, r, a.tr(r, "msg.model_selection_failed", err), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.model_selection_failed", err), "")
 		return
 	}
 
@@ -235,7 +235,7 @@ func (a *Application) mlModelActivateHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	a.renderAccountPage(w, r, "", a.tr(r, "msg.model_activated", model.Version, roleValue))
+	a.renderSettingsPage(w, r, "", a.tr(r, "msg.model_activated", model.Version, roleValue))
 }
 
 // parseModelRole validates a form-submitted role value against the two real roles ml.ListModels
@@ -252,7 +252,7 @@ func parseModelRole(value string) (mlUC.Role, bool) {
 	}
 }
 
-// mlModelDeleteHandler removes a trained model file the Account page's dropdown submitted —
+// mlModelDeleteHandler removes a trained model file the Settings page's dropdown submitted —
 // via the trainer sidecar (see internal/infrastructure/trainer), since atlas-api's own
 // ./training/models mount is read-only by design (docker-compose.yml). Refuses to delete
 // whichever model is currently active for that role: that would leave the running (in-memory)
@@ -264,11 +264,11 @@ func (a *Application) mlModelDeleteHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if a.Trainer == nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.model_delete_unavailable"), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.model_delete_unavailable"), "")
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.invalid_form"), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	roleValue := r.FormValue("role")
@@ -276,7 +276,7 @@ func (a *Application) mlModelDeleteHandler(w http.ResponseWriter, r *http.Reques
 
 	role, ok := parseModelRole(roleValue)
 	if !ok {
-		a.renderAccountPage(w, r, a.tr(r, "msg.unknown_model_role"), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.unknown_model_role"), "")
 		return
 	}
 
@@ -291,24 +291,24 @@ func (a *Application) mlModelDeleteHandler(w http.ResponseWriter, r *http.Reques
 		}
 		found = true
 		if info.Active {
-			a.renderAccountPage(w, r, a.tr(r, "msg.model_active_cannot_delete", roleValue), "")
+			a.renderSettingsPage(w, r, a.tr(r, "msg.model_active_cannot_delete", roleValue), "")
 			return
 		}
 	}
 	if !found {
-		a.renderAccountPage(w, r, a.tr(r, "msg.model_gone"), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.model_gone"), "")
 		return
 	}
 
 	if err := a.Trainer.Delete(filename); err != nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.model_delete_failed", err), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.model_delete_failed", err), "")
 		return
 	}
-	a.renderAccountPage(w, r, "", a.tr(r, "msg.model_deleted", filename))
+	a.renderSettingsPage(w, r, "", a.tr(r, "msg.model_deleted", filename))
 }
 
 // mlTrainHandler triggers a new training run via the atlas-trainer sidecar (see cmd/trainer,
-// TRAINER_URL) — the real action behind the Account dashboard's "Train new candidate" button.
+// TRAINER_URL) — the real action behind the Settings page's "Train new candidate" button.
 // This only ever produces a new, uniquely-versioned candidate model file
 // (training/retrain.sh never touches which model is active); promoting one is still the
 // separate mlModelActivateHandler action above.
@@ -318,14 +318,14 @@ func (a *Application) mlTrainHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.Trainer == nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.training_unavailable"), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.training_unavailable"), "")
 		return
 	}
 	if err := a.Trainer.Trigger(); err != nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.training_failed", err), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.training_failed", err), "")
 		return
 	}
-	a.flashRedirect(w, r, "/dashboard/account",
+	a.flashRedirect(w, r, "/dashboard/settings",
 		"Training started — this can take a few minutes (longer on the very first run). Refresh this page to check progress.")
 }
 
@@ -339,10 +339,10 @@ func (a *Application) extendWriteDeadline(w http.ResponseWriter, d time.Duration
 	}
 }
 
-// accountBackupHandler streams every table persistence.TimescaleDB.BackupAll covers as one
+// settingsBackupHandler streams every table persistence.TimescaleDB.BackupAll covers as one
 // downloadable JSON file — a portable snapshot for disaster recovery or seeding a fresh
 // environment. Read-only, so unlike Restore/Flush below it needs no confirmation dialog.
-func (a *Application) accountBackupHandler(w http.ResponseWriter, r *http.Request) {
+func (a *Application) settingsBackupHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
 		return
@@ -392,85 +392,85 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// accountRestoreHandler replaces every row Atlas has with the contents of an uploaded
-// accountBackupHandler file — the recovery path after accountFlushHandler, or how to seed a
+// settingsRestoreHandler replaces every row Atlas has with the contents of an uploaded
+// settingsBackupHandler file — the recovery path after settingsFlushHandler, or how to seed a
 // fresh environment from an existing one's backup.
-func (a *Application) accountRestoreHandler(w http.ResponseWriter, r *http.Request) {
+func (a *Application) settingsRestoreHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
 		return
 	}
 	if a.Storage == nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.no_database"), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.no_database"), "")
 		return
 	}
 	a.extendWriteDeadline(w, backupOperationTimeout)
 	r.Body = http.MaxBytesReader(w, r.Body, maxBackupRestoreBytes+(1<<20))
 	if err := r.ParseMultipartForm(1 << 20); err != nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.invalid_form"), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	defer r.MultipartForm.RemoveAll()
 	file, _, err := r.FormFile("backup")
 	if err != nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.restore_choose_file"), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.restore_choose_file"), "")
 		return
 	}
 	defer file.Close()
 	payload, err := io.ReadAll(io.LimitReader(file, maxBackupRestoreBytes+1))
 	if err != nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.upload_read_failed", err), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.upload_read_failed", err), "")
 		return
 	}
 	if len(payload) > maxBackupRestoreBytes {
-		a.renderAccountPage(w, r, a.tr(r, "msg.backup_too_large"), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.backup_too_large"), "")
 		return
 	}
 	if err := a.Storage.RestoreAll(payload); err != nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.restore_failed", err), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.restore_failed", err), "")
 		return
 	}
 	a.reloadCachedState()
-	a.renderAccountPage(w, r, "", a.tr(r, "msg.restored"))
+	a.renderSettingsPage(w, r, "", a.tr(r, "msg.restored"))
 }
 
-// accountFlushHandler wipes every table Atlas stores data in — positions, transactions,
+// settingsFlushHandler wipes every table Atlas stores data in — positions, transactions,
 // watchlist, price/indicator history, recommendations, ML settings — back to the state a freshly
 // migrated database would be in (see persistence.TimescaleDB.FlushAll). Confirmed client-side
-// (account.html), and refused server-side without a fresh backup, since there is no undo short of
+// (settings.html), and refused server-side without a fresh backup, since there is no undo short of
 // restoring one.
-func (a *Application) accountFlushHandler(w http.ResponseWriter, r *http.Request) {
+func (a *Application) settingsFlushHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
 		return
 	}
 	if a.Storage == nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.no_database"), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.no_database"), "")
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.invalid_form"), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	a.extendWriteDeadline(w, backupOperationTimeout)
 	if err := a.Storage.FlushAll(); err != nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.flush_failed", err), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.flush_failed", err), "")
 		return
 	}
 	a.reloadCachedState()
-	a.renderAccountPage(w, r, "", a.tr(r, "msg.flushed"))
+	a.renderSettingsPage(w, r, "", a.tr(r, "msg.flushed"))
 }
 
 // reloadCachedState resyncs every in-memory cache that mirrors a database table (see
 // portfolio.UseCase.Reload/watchlist.UseCase.Reload) after a bulk out-of-band change
-// (accountFlushHandler/accountRestoreHandler) that per-mutation methods like RecordTransaction
+// (settingsFlushHandler/settingsRestoreHandler) that per-mutation methods like RecordTransaction
 // can't express — the same class of staleness TestRecordTransactionDefaultsTimestampWhenEmpty's
 // bug came from, just at bulk scale instead of per-transaction. Logs rather than fails outright:
 // the underlying data is already committed either way, so a stale cache is a display bug that
 // would sort itself out on the next restart, not silent data loss. ML model *selection* (which
 // trained file is active) is intentionally left alone here — resolveMLEnabled/model files
 // themselves aren't touched by Flush/Restore, matching the existing "disable without deleting"
-// design (see account.ml_engine_heading) — only the enabled/disabled toggle is resynced.
+// design (see settings.ml_engine_heading) — only the enabled/disabled toggle is resynced.
 func (a *Application) reloadCachedState() {
 	if err := a.Portfolio.Reload(); err != nil {
 		a.Logger.Warn("failed to reload portfolio state after bulk data change", zap.Error(err))

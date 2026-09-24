@@ -27,7 +27,7 @@ func (a *Application) flashRedirect(w http.ResponseWriter, r *http.Request, path
 }
 
 // readFlash returns and clears any flash message set by flashRedirect. Callers only need this
-// when successMsg wasn't already supplied some other way (see renderAccountPage).
+// when successMsg wasn't already supplied some other way (see renderSettingsPage).
 func readFlash(w http.ResponseWriter, r *http.Request) string {
 	cookie, err := r.Cookie(flashCookieName)
 	if err != nil {

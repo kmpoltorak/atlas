@@ -103,7 +103,7 @@ func (t *TimescaleDB) GetPositions(portfolioID string) ([]portfolio.Position, er
 }
 
 // positionRow is the shared shape behind both position queries, so the single-portfolio view,
-// the whole-account view and therefore the dashboard, the JSON API and the decision engine all
+// the all-portfolio view and therefore the dashboard, the JSON API and the decision engine all
 // resolve a position's price the same way. Splitting that resolution across call sites is what
 // let the UI and the engine disagree about what a position was worth.
 type positionRow struct {

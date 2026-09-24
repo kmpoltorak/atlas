@@ -37,7 +37,7 @@ You'll see a menu at the top with these pages:
   the things worth a second look right now.
 - **Backtests** — "if I had followed Atlas's advice on this stock over the past months, how would
   that have gone?" A history check, not a promise about the future.
-- **Account** — your portfolios, the ML model settings, and (further down) some advanced tools
+- **Settings** — your portfolios, the ML model settings, and (further down) some advanced tools
   covered later in this guide.
 
 ## Step 1 — Add stocks to your watchlist
@@ -54,7 +54,7 @@ what you already hold").
 
 You can keep more than one portfolio — e.g. "Main" and "Speculative" — and switch between them
 using the tabs at the top of the Dashboard and Portfolio pages. Everyone starts with one; add,
-rename, or delete portfolios from the bottom of the **Account** page (up to 5). Recommendations
+rename, or delete portfolios from the bottom of the **Settings** page (up to 5). Recommendations
 still consider anything you hold in *any* of your portfolios, so a stock you already own in one
 never gets suggested as a fresh buy just because a different portfolio tab is open.
 
@@ -115,9 +115,9 @@ price for something you own), so treat that one with extra caution.
 - Prices and recommendations refresh automatically in the background every few minutes — you
   don't need to keep refreshing the page yourself.
 
-## Backing up and starting fresh (Account page)
+## Backing up and starting fresh (Settings page)
 
-Scroll to the bottom of the **Account** page for three advanced tools:
+Scroll to the bottom of the **Settings** page for three advanced tools:
 
 - **Download backup** — saves everything (your positions, trade history, watchlist, settings) to
   one file on your computer. Do this occasionally, and always right before using the next tool.

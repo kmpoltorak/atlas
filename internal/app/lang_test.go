@@ -6,6 +6,9 @@ import (
 	"testing"
 
 	"atlas/internal/app/web"
+	"atlas/internal/observability"
+
+	"go.uber.org/zap"
 )
 
 func TestResolveLangDefaultsToEnglishWithNoCookie(t *testing.T) {
@@ -112,5 +115,16 @@ func TestHandlerMessagesFollowTheDisplayLanguage(t *testing.T) {
 	}
 	if got := a.tr(httptest.NewRequest(http.MethodGet, "/", nil), "msg.portfolio_removed"); got != "Portfolio removed." {
 		t.Fatalf("expected English without a language cookie, got %q", got)
+	}
+}
+
+// The page is Settings now that Atlas has no accounts; an old bookmark still reaches it.
+func TestOldAccountURLRedirectsToSettings(t *testing.T) {
+	a := &Application{Metrics: observability.NewMetrics(), Logger: zap.NewNop()}
+	request := httptest.NewRequest(http.MethodGet, "/dashboard/account", nil)
+	recorder := httptest.NewRecorder()
+	a.NewHandler().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusMovedPermanently || recorder.Header().Get("Location") != "/dashboard/settings" {
+		t.Fatalf("expected a permanent redirect to /dashboard/settings, got %d %q", recorder.Code, recorder.Header().Get("Location"))
 	}
 }

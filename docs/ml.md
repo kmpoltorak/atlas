@@ -225,7 +225,7 @@ unspecified still work.
 
 ## Model selection and retraining
 
-Both models can be switched at runtime from the Account dashboard page (`/dashboard/account`),
+Both models can be switched at runtime from the Settings page (`/dashboard/settings`),
 not only via `MODEL_PATH`/`RECOVERY_MODEL_PATH` at startup: it lists every model
 `ML_MODELS_DIR` has a metadata sidecar for (real holdout PR AUC against its baseline, ROC AUC and
 row counts, not fabricated — and an explicit "DOES NOT BEAT BASELINE" marker when it applies),
@@ -241,7 +241,7 @@ then restarted the container and confirmed it came back up on the saved selectio
 train, both targets) and can be scheduled (cron/systemd timer) to run periodically as more real
 history accumulates — see training/README.md's "Regenerating candidates on a schedule". It only
 ever writes new, uniquely-versioned files; it never changes which model is active. Promotion is
-always the separate, human, Account-page step above — deliberately, not just unfinished: a person
+always the separate, human, Settings-page step above — deliberately, not just unfinished: a person
 should look at a candidate's real metrics before it starts influencing real recommendations, the
 same stance already applied to walk-forward threshold optimization (see docs/backtesting.md).
 That review is only as good as what the picker shows, which is why it leads with PR AUC against
@@ -249,7 +249,7 @@ the symbol-base-rate baseline rather than accuracy — the correction model that
 transferable still reported 0.92 accuracy. It also shows the unseen-symbol score, which is what a
 freshly-watchlisted ticker actually gets.
 
-Training and deleting old candidates can also both be triggered from the Account page itself, via
+Training and deleting old candidates can also both be triggered from the Settings page itself, via
 a small internal-only sidecar (`cmd/trainer`, the `atlas-trainer` service — part of the default
 Compose stack, reached through `TRAINER_URL`). It runs retrain.sh on demand and reports
 real status/output back to the dashboard, and can delete a model's `.onnx`+`.json` files —

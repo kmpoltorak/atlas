@@ -71,7 +71,7 @@ func TestActivatingAModelDoesNotFreeOneInUse(t *testing.T) {
 		}()
 	}
 
-	// Meanwhile, keep swapping and closing the previous model — the Account page's activation
+	// Meanwhile, keep swapping and closing the previous model — the Settings page's activation
 	// flow, run in a tight loop.
 	for i := 0; i < 30; i++ {
 		next, _ := testModel(t, "v-next")

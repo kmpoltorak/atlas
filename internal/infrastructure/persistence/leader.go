@@ -96,7 +96,7 @@ func (t *TimescaleDB) ReleaseLeadership(holder string) error {
 	return nil
 }
 
-// CurrentLeader reports who holds the lease and until when — read by /health and the Account
+// CurrentLeader reports who holds the lease and until when — read by /health and the Settings
 // page so "why is nothing polling" is answerable without a database session.
 func (t *TimescaleDB) CurrentLeader() (holder string, until time.Time, err error) {
 	ctx, cancel := t.context()

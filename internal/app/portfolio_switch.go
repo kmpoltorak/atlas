@@ -80,7 +80,7 @@ func (a *Application) portfolioSelectHandler(w http.ResponseWriter, r *http.Requ
 	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }
 
-// portfolioCreateHandler adds a new portfolio (Account page's "manage portfolios" section) — see
+// portfolioCreateHandler adds a new portfolio (Settings page's "manage portfolios" section) — see
 // portfolio.UseCase.CreatePortfolio for the MaxPortfolios cap. Does not switch to it; the tabs
 // pick it up on the next render either way.
 func (a *Application) portfolioCreateHandler(w http.ResponseWriter, r *http.Request) {
@@ -89,7 +89,7 @@ func (a *Application) portfolioCreateHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.invalid_form"), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	// The request-scoped view, not the shared use case. Creating, renaming and removing a
@@ -97,17 +97,17 @@ func (a *Application) portfolioCreateHandler(w http.ResponseWriter, r *http.Requ
 	// process-wide use case and so ignored the request context however carefully it was scoped.
 	scoped, err := a.forPortfolio(r)
 	if err != nil {
-		a.renderAccountPage(w, r, err.Error(), "")
+		a.renderSettingsPage(w, r, err.Error(), "")
 		return
 	}
 	a = scoped
 	name := strings.TrimSpace(r.FormValue("name"))
 	created, err := a.Portfolio.CreatePortfolio(name)
 	if err != nil {
-		a.renderAccountPage(w, r, err.Error(), "")
+		a.renderSettingsPage(w, r, err.Error(), "")
 		return
 	}
-	a.flashRedirect(w, r, "/dashboard/account", a.tr(r, "msg.portfolio_created", created.Name))
+	a.flashRedirect(w, r, "/dashboard/settings", a.tr(r, "msg.portfolio_created", created.Name))
 }
 
 func (a *Application) portfolioRenameHandler(w http.ResponseWriter, r *http.Request) {
@@ -116,22 +116,22 @@ func (a *Application) portfolioRenameHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.invalid_form"), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	scoped, err := a.forPortfolio(r) // see portfolioCreateHandler
 	if err != nil {
-		a.renderAccountPage(w, r, err.Error(), "")
+		a.renderSettingsPage(w, r, err.Error(), "")
 		return
 	}
 	a = scoped
 	id := r.FormValue("id")
 	name := strings.TrimSpace(r.FormValue("name"))
 	if err := a.Portfolio.RenamePortfolio(id, name); err != nil {
-		a.renderAccountPage(w, r, err.Error(), "")
+		a.renderSettingsPage(w, r, err.Error(), "")
 		return
 	}
-	a.flashRedirect(w, r, "/dashboard/account", a.tr(r, "msg.portfolio_renamed", name))
+	a.flashRedirect(w, r, "/dashboard/settings", a.tr(r, "msg.portfolio_renamed", name))
 }
 
 // portfolioRemoveHandler deletes a portfolio and everything in it (see
@@ -143,25 +143,25 @@ func (a *Application) portfolioRemoveHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		a.renderAccountPage(w, r, a.tr(r, "msg.invalid_form"), "")
+		a.renderSettingsPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	scoped, err := a.forPortfolio(r) // see portfolioCreateHandler
 	if err != nil {
-		a.renderAccountPage(w, r, err.Error(), "")
+		a.renderSettingsPage(w, r, err.Error(), "")
 		return
 	}
 	a = scoped
 	id := r.FormValue("id")
 	if err := a.Portfolio.DeletePortfolio(id); err != nil {
-		a.renderAccountPage(w, r, err.Error(), "")
+		a.renderSettingsPage(w, r, err.Error(), "")
 		return
 	}
 	// The deleted portfolio may have been the one the cookie names; clearing it here is simpler
 	// and just as correct as trying to detect that case — SwitchPortfolio/Reload already fall
 	// back to the first remaining portfolio whenever the cookie is absent or stale.
 	http.SetCookie(w, &http.Cookie{Name: portfolioCookieName, Value: "", Path: "/", MaxAge: -1})
-	a.flashRedirect(w, r, "/dashboard/account", a.tr(r, "msg.portfolio_removed"))
+	a.flashRedirect(w, r, "/dashboard/settings", a.tr(r, "msg.portfolio_removed"))
 }
 
 // forRequest scopes the storage handle to this request's lifetime, and with it every use case

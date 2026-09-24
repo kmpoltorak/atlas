@@ -49,7 +49,7 @@ var runtimeOnlyTables = []string{"leader_election", "alert_outbox"}
 
 // BackupAll dumps every row of every table in backupTables as JSON, keyed by table name — a
 // full, portable snapshot suitable for RestoreAll on this same database or a fresh one (see
-// account.html's "Backup" button). row_to_json/json_agg do the type-to-JSON encoding inside
+// settings.html's "Backup" button). row_to_json/json_agg do the type-to-JSON encoding inside
 // Postgres itself (timestamps, UUIDs, jsonb, NULLs), so this needs no per-table Go struct that
 // could drift from the schema.
 func (t *TimescaleDB) BackupAll() ([]byte, error) {
@@ -70,7 +70,7 @@ func (t *TimescaleDB) BackupAll() ([]byte, error) {
 // recommendations — the two that only grow (see PruneDerivedData). Row by row, nothing about how
 // long the instance has been running changes the memory this needs. Note that BackupAll itself
 // still buffers the whole document by definition; the streaming path is what
-// accountBackupHandler uses.
+// settingsBackupHandler uses.
 //
 // The snapshot is still one REPEATABLE READ transaction, so streaming does not cost consistency:
 // every table is read at the same point in time regardless of how long the write takes.
@@ -194,7 +194,7 @@ const backupTimeout = 2 * time.Minute
 // RecordBackup durably marks that a full backup was just taken — the safety record FlushAll
 // checks before allowing a wipe (see migrations/017). Deliberately NOT called by BackupAll:
 // producing the bytes is not the same event as the operator actually holding the file, and the
-// FlushAll safety net has to mean the latter. accountBackupHandler calls this only after the
+// FlushAll safety net has to mean the latter. settingsBackupHandler calls this only after the
 // whole payload has been written to the client without error.
 func (t *TimescaleDB) RecordBackup() error {
 	ctx, cancel := t.context()
@@ -400,9 +400,9 @@ func restoreColumns(ctx context.Context, tx *sqlx.Tx, table, rows string) ([]str
 }
 
 // ErrNoBackupTaken is FlushAll's refusal when no backup has ever been recorded (see
-// LastBackupAt) — checked by name so accountFlushHandler can show a specific, actionable message
+// LastBackupAt) — checked by name so settingsFlushHandler can show a specific, actionable message
 // instead of a generic failure.
-var ErrNoBackupTaken = errors.New("no backup has been taken yet — download one from the Account page first")
+var ErrNoBackupTaken = errors.New("no backup has been taken yet — download one from the Settings page first")
 
 // ErrBackupTooOld is FlushAll's refusal when a backup exists but predates FlushBackupFreshness —
 // a backup from before recent changes wouldn't actually get you back to where the database is

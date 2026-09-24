@@ -6,7 +6,7 @@ import (
 )
 
 // GetActiveModelSelection returns the model filename an admin picked for role (see migrations/
-// 011) from the Account dashboard page. ok is false and filename "" when nothing has ever been
+// 011) from the Settings page. ok is false and filename "" when nothing has ever been
 // selected for that role — the normal state before anyone has used the picker, not an error;
 // the composition root falls back to MODEL_PATH/RECOVERY_MODEL_PATH in that case.
 func (t *TimescaleDB) GetActiveModelSelection(role string) (filename string, ok bool, err error) {

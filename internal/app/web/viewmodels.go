@@ -229,8 +229,8 @@ func (s SymbolInfo) ChangePercent() float64 {
 	return (s.LastPrice/s.PreviousClose - 1) * 100
 }
 
-// AccountPage is the view model for templates/account.html.
-type AccountPage struct {
+// SettingsPage is the view model for templates/settings.html.
+type SettingsPage struct {
 	Lang    Lang
 	Error   string
 	Success string
@@ -287,7 +287,7 @@ type AccountPage struct {
 	LastBackupAt time.Time
 }
 
-// TrainerStatus mirrors trainer.Status (internal/infrastructure/trainer) for the Account page —
+// TrainerStatus mirrors trainer.Status (internal/infrastructure/trainer) for the Settings page —
 // kept as its own type so this package doesn't need to import the infrastructure layer.
 type TrainerStatus struct {
 	Running    bool
@@ -298,7 +298,7 @@ type TrainerStatus struct {
 	Failed     bool
 }
 
-// ModelOption is one selectable entry in the Account page's model-activation dropdowns —
+// ModelOption is one selectable entry in the Settings page's model-activation dropdowns —
 // Description is entirely derived from real training metadata (ml.ModelInfo.Description), never
 // a fabricated or hand-edited string. Active marks whichever option (if any) is the model
 // currently loaded for that role, pre-selected in the dropdown.

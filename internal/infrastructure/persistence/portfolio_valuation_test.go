@@ -9,7 +9,7 @@ import (
 	"atlas/internal/domain/portfolio"
 )
 
-// One valuation rule, shared by the single-portfolio and whole-account queries and therefore by
+// One valuation rule, shared by the single-portfolio and all-portfolio queries and therefore by
 // the dashboard, the JSON API and the decision engine. These assert the rule itself, which used
 // to live in three places and disagree with itself.
 func TestPositionRowPrefersARealQuote(t *testing.T) {

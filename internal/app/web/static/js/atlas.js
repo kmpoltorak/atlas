@@ -5,7 +5,7 @@ const atlasLabels = (document.currentScript && document.currentScript.dataset) |
 'use strict'
 
 // Mirrors a <select>'s selected <option title="..."> into a sibling element — used by the
-// Account page's ML model pickers (see ml.ModelInfo.ShortLabel/Description): a native <option>
+// Settings page's ML model pickers (see ml.ModelInfo.ShortLabel/Description): a native <option>
 // can't wrap or truncate its own text, so the full metrics (PR AUC, ROC AUC, sample sizes,
 // baseline verdict) that actually matter for the promotion decision moved out of the visible
 // label — which is now just Version + trained date, short enough to fit — into title, and this

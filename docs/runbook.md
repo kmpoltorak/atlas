@@ -5,7 +5,7 @@ sections, for the Docker Compose stack — the one deployment Atlas ships.
 
 There are two independent backup paths, and they answer different questions:
 
-- **The Account page's Backup / Restore** — a JSON document of every user-data table, taken and
+- **The Settings page's Backup / Restore** — a JSON document of every user-data table, taken and
   restored by Atlas itself (`persistence.WriteBackup`/`RestoreAll`). It survives schema upgrades:
   a backup taken before a migration still restores after it, taking column defaults for anything
   added since. Use it for "move my data" and "undo a flush".
@@ -19,7 +19,7 @@ the machine it protects does not survive losing that machine: copy dumps somewhe
 
 | Target | Where it lives | How it recovers |
 |---|---|---|
-| TimescaleDB (prices, portfolios, transactions, watchlist, recommendations) | `timescaledb-data` volume | A dump or an Account-page backup — the only thing here with no other copy |
+| TimescaleDB (prices, portfolios, transactions, watchlist, recommendations) | `timescaledb-data` volume | A dump or an Settings-page backup — the only thing here with no other copy |
 | Configuration | This Git repository (`.env` is gitignored by design) | `git checkout` |
 | Grafana dashboards, Prometheus/Alertmanager config | In Git (`grafana/`, `prometheus/`, `alertmanager/`), provisioned automatically | `git checkout` |
 | ML models | `training/models/` (gitignored) | Re-run training from TimescaleDB's own price history — reproducible, not instant. Atlas runs without a model (RSI stub) meanwhile |
@@ -109,11 +109,11 @@ exists yet, so this was safe to run directly rather than against a throwaway cop
 
 ## Recovery priority
 
-1. **Database** — restore the most recent dump or Account-page backup. Nothing else is useful
+1. **Database** — restore the most recent dump or Settings-page backup. Nothing else is useful
    without it.
 2. **Configuration** — `git checkout` this repository at the last known-good commit.
 3. **Application** — `docker compose up -d`.
-4. **ML models** — retrain (`training/retrain.sh`) and pick a candidate on the Account page.
+4. **ML models** — retrain (`training/retrain.sh`) and pick a candidate on the Settings page.
 
 ## Infrastructure alerting
 

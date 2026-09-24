@@ -43,7 +43,7 @@ import (
 // signals (see decision.Orchestrator.blendMLAndPortfolio) — not just technical score, even
 // though the ML component is still a deterministic stub absent a loaded model. Whether that
 // blend is actually applied is a separate runtime toggle (Orchestrator.SetMLEnabled), seeded
-// from ML_ENABLED (config.Config.MLEnabled) and overridable live from the Account dashboard
+// from ML_ENABLED (config.Config.MLEnabled) and overridable live from the Settings page
 // page (resolveMLEnabled, migrations/015) — switched off, scoring uses the technical term alone.
 // There is no login: Atlas is a local tool for one operator, reachable on loopback only.
 type Application struct {
@@ -65,7 +65,7 @@ type Application struct {
 	Watchlist     *watchlistUC.UseCase
 	Alerts        *alertsUC.UseCase
 	ExchangeRates *exchangerateUC.UseCase
-	// Trainer is nil unless TRAINER_URL is set — the Account page's "Train new candidate"
+	// Trainer is nil unless TRAINER_URL is set — the Settings page's "Train new candidate"
 	// button then just explains how to run training/retrain.sh by hand instead (see
 	// cmd/trainer, docker-compose.yml's atlas-trainer service).
 	Trainer *trainerInfra.Client
@@ -154,7 +154,7 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 			logger.Info("loaded ML recovery model", zap.String("version", model.Version))
 		}
 	}
-	// A durable Account-page selection (migrations/011) overrides the env-var default above when
+	// A durable Settings-page selection (migrations/011) overrides the env-var default above when
 	// present — set by mlModelActivateHandler after already confirming the file loads, so a
 	// failure here means the file moved/vanished since then, not a bad request. Falls back to
 	// whatever ModelPath/RecoveryModelPath above already resolved to rather than failing to
@@ -179,10 +179,10 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 	}
 	portfolioUseCase.ExchangeRates = exchangeRates
 	decisionUseCase := decisionUC.NewUseCase()
-	// Always wired with ML (NewOrchestratorWithML) so the Account page's toggle can flip
+	// Always wired with ML (NewOrchestratorWithML) so the Settings page's toggle can flip
 	// Orchestrator.SetMLEnabled live, with no restart — see decision.Orchestrator.mlEnabled's
 	// doc comment. ML_ENABLED (config.Config.MLEnabled) only sets the *initial* value below; a
-	// durable Account-page choice (migrations/015) overrides it, same override-after-fallback
+	// durable Settings-page choice (migrations/015) overrides it, same override-after-fallback
 	// pattern as the ML model selection right below this.
 	orchestrator := decisionUC.NewOrchestratorWithML(analyzer, portfolioUseCase, decisionUseCase, mlUseCase)
 	orchestrator.SetMLEnabled(resolveMLEnabled(storage, logger, cfg.MLEnabled))
@@ -232,10 +232,10 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 }
 
 // overrideWithSelectedModel checks migrations/011's ml_model_selection table for a durable
-// Account-page choice for role and, if one exists and still loads successfully, returns it in
+// Settings-page choice for role and, if one exists and still loads successfully, returns it in
 // place of fallback (whatever ModelPath/RecoveryModelPath env-var loading already produced).
 // Any failure along the way (DB read, missing file, load error) just logs and returns fallback
-// unchanged — the Account page selection is an enhancement over the env-var default, never a
+// unchanged — the Settings page selection is an enhancement over the env-var default, never a
 // new way to fail startup.
 func overrideWithSelectedModel(storage *persistence.TimescaleDB, logger *zap.Logger, role mlUC.Role, cfg config.Config, fallback *mlUC.OnnxModel) *mlUC.OnnxModel {
 	filename, ok, err := storage.GetActiveModelSelection(string(role))
@@ -253,13 +253,13 @@ func overrideWithSelectedModel(storage *persistence.TimescaleDB, logger *zap.Log
 			zap.String("role", string(role)), zap.String("filename", filename), zap.Error(err))
 		return fallback
 	}
-	logger.Info("loaded ML model from Account-page selection", zap.String("role", string(role)), zap.String("version", model.Version))
+	logger.Info("loaded ML model from Settings-page selection", zap.String("role", string(role)), zap.String("version", model.Version))
 	return model
 }
 
-// resolveMLEnabled checks migrations/015's engine_settings table for a durable Account-page
+// resolveMLEnabled checks migrations/015's engine_settings table for a durable Settings-page
 // toggle and, if one exists, returns it in place of fallback (config.Config.MLEnabled, the
-// ML_ENABLED env var). A read failure just logs and returns fallback unchanged — the Account
+// ML_ENABLED env var). A read failure just logs and returns fallback unchanged — the Settings
 // page toggle is an enhancement over the env-var default, never a new way to fail startup, same
 // stance as overrideWithSelectedModel below.
 func resolveMLEnabled(storage *persistence.TimescaleDB, logger *zap.Logger, fallback bool) bool {

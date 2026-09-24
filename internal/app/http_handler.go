@@ -65,20 +65,24 @@ func (a *Application) NewHandler() http.Handler {
 	mux.HandleFunc("/dashboard/watchlist/delete", a.scoped((*Application).watchlistDeleteHandler))
 	mux.HandleFunc("/dashboard/watchlist/import", a.scoped((*Application).watchlistImportPageHandler))
 	mux.HandleFunc("/dashboard/watchlist/refresh-info", a.scoped((*Application).watchlistRefreshInfoHandler))
-	mux.HandleFunc("/dashboard/account", a.scoped((*Application).accountPageHandler))
-	mux.HandleFunc("/dashboard/account/ml/toggle", a.scoped((*Application).mlEngineToggleHandler))
-	mux.HandleFunc("/dashboard/account/ml/activate", a.scoped((*Application).mlModelActivateHandler))
-	mux.HandleFunc("/dashboard/account/ml/delete", a.scoped((*Application).mlModelDeleteHandler))
-	mux.HandleFunc("/dashboard/account/ml/train", a.scoped((*Application).mlTrainHandler))
-	mux.HandleFunc("/dashboard/account/backup", a.scoped((*Application).accountBackupHandler))
-	mux.HandleFunc("/dashboard/account/restore", a.scoped((*Application).accountRestoreHandler))
-	mux.HandleFunc("/dashboard/account/flush", a.scoped((*Application).accountFlushHandler))
+	mux.HandleFunc("/dashboard/settings", a.scoped((*Application).settingsPageHandler))
+	mux.HandleFunc("/dashboard/settings/ml/toggle", a.scoped((*Application).mlEngineToggleHandler))
+	mux.HandleFunc("/dashboard/settings/ml/activate", a.scoped((*Application).mlModelActivateHandler))
+	mux.HandleFunc("/dashboard/settings/ml/delete", a.scoped((*Application).mlModelDeleteHandler))
+	mux.HandleFunc("/dashboard/settings/ml/train", a.scoped((*Application).mlTrainHandler))
+	mux.HandleFunc("/dashboard/settings/backup", a.scoped((*Application).settingsBackupHandler))
+	mux.HandleFunc("/dashboard/settings/restore", a.scoped((*Application).settingsRestoreHandler))
+	mux.HandleFunc("/dashboard/settings/flush", a.scoped((*Application).settingsFlushHandler))
 
 	// Bare "/dashboard" (no trailing path) isn't a real route — every actual page lives under
 	// "/dashboard/..." — but it's a natural URL to type or bookmark expecting the dashboard
 	// itself, and used to silently work as an alias for "/" before "/" got a real 404 for
 	// anything unmatched (see dashboardPageHandler's own comment below). A redirect is cheap and
 	// avoids turning a plausible bookmark into a dead link.
+	// The Settings page was called Account while Atlas had a login; a bookmark to it still lands.
+	mux.HandleFunc("GET /dashboard/account", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/dashboard/settings", http.StatusMovedPermanently)
+	})
 	mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusFound)
 	})
@@ -136,7 +140,7 @@ func (r *statusRecorder) WriteHeader(statusCode int) {
 }
 
 // Unwrap exposes the underlying ResponseWriter to http.ResponseController — without it,
-// SetWriteDeadline (accountBackupHandler/accountRestoreHandler/accountFlushHandler's
+// SetWriteDeadline (settingsBackupHandler/settingsRestoreHandler/settingsFlushHandler's
 // extendWriteDeadline) fails with "feature not supported" on every request, since instrument
 // wraps every ResponseWriter in a *statusRecorder that the standard library otherwise has no way
 // to see through to the real connection. Confirmed live: this was silently no-op-ing before.
@@ -151,7 +155,7 @@ func (r *statusRecorder) Unwrap() http.ResponseWriter {
 // Trainer reachability is reported too when TRAINER_URL is configured, but — unlike
 // Database/Redis — never flips the overall status/HTTP code: the trainer is a genuinely
 // optional sidecar (TRAINER_URL empty hides it) atlas-api already degrades
-// gracefully without (the Account page's "Train new candidate" button just explains the manual
+// gracefully without (the Settings page's "Train new candidate" button just explains the manual
 // path instead), so Docker restarting atlas-api because atlas-trainer is down would
 // be exactly the wrong response.
 //

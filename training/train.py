@@ -234,7 +234,7 @@ def main() -> int:
         print("\nWARNING: this model does NOT beat the symbol-base-rate baseline on PR AUC. It is "
               "reproducing per-symbol correction frequencies rather than finding the moments when "
               "a correction is actually likelier — which is what Atlas alerts on. Do not promote "
-              "it from the Account page on the strength of its accuracy figure.", file=sys.stderr)
+              "it from the Settings page on the strength of its accuracy figure.", file=sys.stderr)
 
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     onnx_model = convert_xgboost(

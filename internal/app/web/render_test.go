@@ -251,18 +251,18 @@ func TestRenderWatchlistPage(t *testing.T) {
 	}
 }
 
-// The account page has no login section and asks for no password: Atlas has no accounts.
-func TestRenderAccountPageHasNoCredentials(t *testing.T) {
+// The settings page has no login section and asks for no password: Atlas has no accounts.
+func TestRenderSettingsPageHasNoCredentials(t *testing.T) {
 	rec := httptest.NewRecorder()
-	Render(rec, "account", AccountPage{HasBackup: true})
+	Render(rec, "settings", SettingsPage{HasBackup: true})
 	if rec.Code != 200 {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
 	if strings.Contains(body, `type="password"`) || strings.Contains(body, "2FA") || strings.Contains(body, "/logout") {
-		t.Fatalf("expected no credential fields, 2FA or logout on the account page")
+		t.Fatalf("expected no credential fields, 2FA or logout on the settings page")
 	}
-	if !strings.Contains(body, `action="/dashboard/account/flush"`) || !strings.Contains(body, `action="/dashboard/account/restore"`) {
+	if !strings.Contains(body, `action="/dashboard/settings/flush"`) || !strings.Contains(body, `action="/dashboard/settings/restore"`) {
 		t.Fatal("expected the restore and flush forms")
 	}
 }

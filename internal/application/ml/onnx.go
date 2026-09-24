@@ -46,7 +46,7 @@ type OnnxModel struct {
 	session onnxSession
 	Version string
 	// Filename is the file this model was loaded from, relative to ML_MODELS_DIR. It is what the
-	// durable Account-page selection records, so it is also how a replica answers "am I already
+	// durable Settings-page selection records, so it is also how a replica answers "am I already
 	// serving the selected model" without reloading it to compare versions.
 	Filename        string
 	TrainingDataEnd time.Time

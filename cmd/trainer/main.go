@@ -1,12 +1,12 @@
 // Command trainer exposes a minimal, internal-only HTTP API that runs training/retrain.sh on
-// demand — the real trigger behind the Account dashboard page's "Train new candidate" button.
+// demand — the real trigger behind the Settings page's "Train new candidate" button.
 //
 // This deliberately lives in its own container (see training/Dockerfile), never inside
 // atlas-api's own image: retrain.sh needs the Go toolchain (to `go run
 // ./cmd/export-training-data`) and a Python virtualenv (to run training/train.py) at runtime,
 // and atlas-api's production image is explicitly not supposed to depend on either: Python
 // trains, Go infers. Training a candidate never changes what's live;
-// promoting one is still the separate, human, Account-page action from ml.ListModels/SetModel —
+// promoting one is still the separate, human, Settings-page action from ml.ListModels/SetModel —
 // this binary only ever runs training/retrain.sh, nothing more.
 package main
 
@@ -205,9 +205,9 @@ func main() {
 // runRetrain shells out to training/retrain.sh — the identical script a human would run by hand
 // or from cron (see training/README.md) — and records its outcome. Errors here are expected,
 // real outcomes (e.g. no new history since the last run, a bad DB connection), not programming
-// bugs: they're captured in state.failed/output for the Account page to display, not panicked
+// bugs: they're captured in state.failed/output for the Settings page to display, not panicked
 // on. discord is notified of the outcome (best-effort, never blocks/fails this function) so a
-// run triggered from the Account page and then left unattended is still noticed.
+// run triggered from the Settings page and then left unattended is still noticed.
 func runRetrain(s *state, logger *zap.Logger, discord *notifications.DiscordClient, metrics *trainerMetrics) {
 	started := time.Now()
 	cmd := exec.Command("training/retrain.sh")
@@ -264,7 +264,7 @@ func notifyTrainingFailure(discord *notifications.DiscordClient, logger *zap.Log
 	if discord.WebhookURL == "" {
 		return
 	}
-	message := fmt.Sprintf("[Atlas trainer] Training run FAILED (exit code %d). Check the Account dashboard page for the full log.", exitCode)
+	message := fmt.Sprintf("[Atlas trainer] Training run FAILED (exit code %d). Check the Settings page for the full log.", exitCode)
 	if err := discord.Send(message); err != nil {
 		logger.Warn("failed to send training failure to discord", zap.Error(err))
 	}

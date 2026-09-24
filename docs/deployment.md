@@ -11,7 +11,7 @@ and [README.md](../README.md#configuration) every environment variable.
 | Service | Image | Notes |
 |---|---|---|
 | `atlas-api` | built from `Dockerfile` (Go 1.27.1 builder, `debian:bookworm-slim` runtime, ONNX Runtime 1.28.0) | `linux/amd64`; `linux/arm64` builds and runs, model inference unverified on real ARM (docs/ml.md) |
-| `atlas-trainer` | built from `training/Dockerfile` (`golang:1.27.1-bookworm` + Python 3.11) | runs retrain.sh on demand for the Account page |
+| `atlas-trainer` | built from `training/Dockerfile` (`golang:1.27.1-bookworm` + Python 3.11) | runs retrain.sh on demand for the Settings page |
 | `timescaledb` | `timescale/timescaledb:2.29.1-pg16` | pinned: the extension version lives in the data volume |
 | `redis` | `redis:7.4.10-alpine` | bars and exchange-rate cache |
 | `prometheus` | `prom/prometheus:v3.0.0` | |
@@ -38,21 +38,21 @@ curl -s http://localhost:8080/health
 ## Update
 
 ```bash
-# 1. Back up first: Account page → Backup, or a pg_dump (runbook.md).
+# 1. Back up first: Settings page → Backup, or a pg_dump (runbook.md).
 git pull
 docker compose up -d --build
 curl -s http://localhost:8080/health
 ```
 
 Migrations run on start. A backup taken before an upgrade still restores after it: the
-Account-page restore reads every earlier backup format, and columns added since take their
+Settings-page restore reads every earlier backup format, and columns added since take their
 defaults. Changing a pinned image version (above) is a deliberate step, never a side effect of a
 pull; back up before bumping TimescaleDB in particular.
 
 ## Recover
 
 See [runbook.md](runbook.md): restore the database (a dump into a fresh database, or an
-Account-page backup), then `git checkout` the configuration, then `docker compose up -d`.
+Settings-page backup), then `git checkout` the configuration, then `docker compose up -d`.
 
 ## Health checks
 
@@ -170,7 +170,7 @@ running two is not a supported configuration.
    ordinary HTTP browsing also writes, no longer influences notification decisions at all.
 3. ~~**Active model selection does not propagate.**~~ `refreshRuntimeSettings` now also
    reconciles the active model for both roles against the durable selection
-   (`reconcileModelSelection`), so every replica converges on the Account page's choice within
+   (`reconcileModelSelection`), so every replica converges on the Settings page's choice within
    the refresh interval rather than only the one that served the click. Activation persists the
    selection *before* swapping, so a failed write changes nothing anywhere and is reported.
 

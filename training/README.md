@@ -116,7 +116,7 @@ prints its own baselines alongside every metric:
   a model at or below it has learned which symbols tend to fall, not what a fall looks like.
   `train.py` judges this on PR AUC (average precision) because Atlas alerts on the top of the
   ranking, prints a loud WARNING and records `beats_symbol_base_rate: false` in the sidecar when
-  the model loses, and the Account page's model picker repeats it as "DOES NOT BEAT BASELINE".
+  the model loses, and the Settings page's model picker repeats it as "DOES NOT BEAT BASELINE".
 - **ROC AUC vs the same baseline**, reported for context. It is dominated by the uneventful middle
   of the ranking that no alert touches, so it can disagree with PR AUC — and when it does, PR AUC
   is the one that describes what Atlas does with the model.
@@ -170,7 +170,7 @@ start — see `internal/application/ml`'s doc comments.
 
 Instead of (or in addition to) `MODEL_PATH`/`RECOVERY_MODEL_PATH`, any trained model already
 sitting in `training/models/` (i.e. under `ML_MODELS_DIR`, `/models` inside the container) can be
-activated from the **Account** dashboard page (`/dashboard/account`) — it lists every model it
+activated from the **Settings** dashboard page (`/dashboard/settings`) — it lists every model it
 finds a metadata sidecar for, with the same real holdout AUC/accuracy/row-count numbers step 3
 above printed, and swaps the picked one into live inference immediately (no restart) via
 `ml.UseCase.SetModel`/`SetRecoveryModel`. The choice is durably recorded (`migrations/011`) so it
@@ -211,7 +211,7 @@ can't notify its own failure either way).
 
 ## 7. Triggering training from the dashboard
 
-retrain.sh can also be triggered on demand from the Account page's "Train new candidate" button
+retrain.sh can also be triggered on demand from the Settings page's "Train new candidate" button
 instead of a shell/cron — it calls a small internal-only service (`cmd/trainer`) that just runs
 retrain.sh and reports back its status/output. This lives in its own container
 (`training/Dockerfile`), never inside `atlas-api`'s own image: retrain.sh needs the Go toolchain
@@ -220,7 +220,7 @@ on either: Python trains, Go infers.
 
 It is part of the default stack: `docker compose up -d` starts it, and atlas-api reaches it at
 `TRAINER_URL=http://atlas-trainer:8091` (the Compose default). Set `TRAINER_URL=` to an empty
-value in `.env` to hide the dashboard buttons; the Account page then explains how to run
+value in `.env` to hide the dashboard buttons; the Settings page then explains how to run
 retrain.sh by hand, and the manual/cron path above keeps working either way.
 
 Set `ALERTMANAGER_DISCORD_WEBHOOK_URL` in `.env` (docker-compose.yml passes it through as

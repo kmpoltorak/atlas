@@ -136,7 +136,7 @@ comes up with zero configuration. Every container it defines:
 | `atlas-trainer` | internal only, port 8091 | `trainer-gomod-cache` | ML training sidecar. Same kind of long-lived container as the rest — HTTP service, healthcheck, `restart: unless-stopped` — and started by a plain `docker compose up` like everything else |
 
 The trainer publishes no host port: atlas-api reaches it in-network via `TRAINER_URL` and calls
-its `/train`, `/status` and `/delete` endpoints, which is what backs the Account page's "Train new
+its `/train`, `/status` and `/delete` endpoints, which is what backs the Settings page's "Train new
 candidate" and model-delete buttons — training is triggered on demand *through* a continuously
 running service, not by starting a one-shot container. Set `TRAINER_URL=` (empty) to hide those
 buttons; they then explain how to run `training/retrain.sh` by hand, and nothing else degrades.
@@ -148,7 +148,7 @@ be published beyond the machine it runs on.
 **What persists.** The named volumes above survive `docker compose down` and are destroyed by
 `docker compose down -v`. Trained models are the exception: `./training/models` is a bind mount,
 read-only into atlas-api and read-write into the trainer, which is how a model the sidecar trains
-becomes selectable on atlas-api's Account page without a rebuild.
+becomes selectable on atlas-api's Settings page without a rebuild.
 
 Open http://localhost:8080/ for the web UI, or start collecting history for a symbol
 directly via the API:
@@ -183,12 +183,12 @@ integration is non-fatal when unset — Atlas degrades gracefully instead of ref
 | `SLACK_WEBHOOK_URL` | *(empty → disabled)* | Same business alerts as `DISCORD_WEBHOOK_URL`, delivered to a Slack Incoming Webhook instead/as well |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | *(empty → disabled)* | Same business alerts, delivered via a Telegram bot; both must be set |
 | `ALERTMANAGER_DISCORD_WEBHOOK_URL` | *(empty → disabled)* | Infra alerts: API down/flapping, high error rate, failing alert polls, failed training runs — deliberately a **separate** webhook/channel from the ones above |
-| `ML_ENABLED` | `true` | Seeds whether the ML factor takes part in scoring. `false` drops only the ML term: the portfolio and portfolio-risk factors still apply, since they are independent of the model. Only the *initial* value — the Account page toggles this live and its choice, once made, wins over this variable |
+| `ML_ENABLED` | `true` | Seeds whether the ML factor takes part in scoring. `false` drops only the ML term: the portfolio and portfolio-risk factors still apply, since they are independent of the model. Only the *initial* value — the Settings page toggles this live and its choice, once made, wins over this variable |
 | `MODEL_PATH` | *(empty → deterministic stub)* | Path to a trained correction-probability ONNX model |
 | `RECOVERY_MODEL_PATH` | *(empty → recovery probability stays 0)* | Path to a trained recovery-probability ONNX model, fully independent of `MODEL_PATH` |
-| `ML_MODELS_DIR` | `/models` | Directory the Account page's model picker scans for trained models + metadata sidecars |
+| `ML_MODELS_DIR` | `/models` | Directory the Settings page's model picker scans for trained models + metadata sidecars |
 | `LIBONNXRUNTIME_PATH` | Dockerfile default (`/usr/lib/libonnxruntime.so`) | Native ONNX Runtime library location |
-| `TRAINER_URL` | Compose: `http://atlas-trainer:8091`; otherwise empty → training/delete buttons disabled | Internal URL of the `atlas-trainer` sidecar, which powers the Account page's "Train new candidate" and model-delete actions. Compose runs the trainer by default and points this at it; set it empty to hide the buttons |
+| `TRAINER_URL` | Compose: `http://atlas-trainer:8091`; otherwise empty → training/delete buttons disabled | Internal URL of the `atlas-trainer` sidecar, which powers the Settings page's "Train new candidate" and model-delete actions. Compose runs the trainer by default and points this at it; set it empty to hide the buttons |
 | `PROMETHEUS_URL`/`ALERTMANAGER_URL`/`GRAFANA_URL` | `http://prometheus:9090`/`http://alertmanager:9093`/`http://grafana:3000` | Checked by `/health` and the `atlas_dependency_up` gauge. Non-empty by default because all three are always in the default Compose stack; set one to an empty string to disable that check |
 
 
@@ -227,7 +227,7 @@ same as a normal page):
 - **Watchlist** — add tracked symbols, remove them individually or in bulk via checkboxes, and
   export/import the whole list as a JSON file to move it between environments without
   re-entering several dozen symbols by hand.
-- **Account** — manage portfolios, pick which trained ML model (correction/recovery,
+- **Settings** — manage portfolios, pick which trained ML model (correction/recovery,
   independently) is active and toggle the ML factor — see [Machine learning](#machine-learning)
   below — and back up, restore or wipe all data. A backup restores across schema upgrades; wiping
   is refused unless a backup was taken in the last five minutes.
@@ -322,8 +322,8 @@ committed source.
 [training/retrain.sh](training/retrain.sh) exports fresh data and trains a new, uniquely-versioned
 candidate for both models (never overwriting an existing file) — schedule it with cron/a systemd
 timer to regenerate candidates as more real history accumulates. It never changes what's live: a
-new candidate only starts influencing real recommendations once picked from the **Account**
-dashboard page (`/dashboard/account`), which lists every trained model with its real holdout PR
+new candidate only starts influencing real recommendations once picked from the **Settings**
+dashboard page (`/dashboard/settings`), which lists every trained model with its real holdout PR
 AUC against the per-symbol base-rate baseline, its ROC AUC and row counts — and an explicit "DOES NOT
 BEAT BASELINE" marker when that applies — then swaps it in immediately (no restart needed) while
 durably recording the choice (`migrations/011`) so it survives one. This is deliberate, not just
@@ -331,7 +331,7 @@ unfinished: a human should look at each new model's metrics before it starts dri
 recommendations — the same "never auto-promote" stance already applied to walk-forward threshold
 optimization above. The baseline marker exists because that judgement call is only as good as the
 numbers it's shown, and accuracy alone made a model that had learned nothing look excellent. Both training and deleting old candidates can also be
-triggered straight from the Account page's buttons, via an internal-only sidecar container
+triggered straight from the Settings page's buttons, via an internal-only sidecar container
 (`cmd/trainer`, part of the default Compose stack — see training/README.md's "Triggering training
 from the dashboard") — atlas-api's own model directory stays read-only either way.
 

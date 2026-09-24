@@ -36,7 +36,7 @@ var translations = map[string]map[Lang]string{
 	"nav.alerts":          {LangEN: "Alerts", LangPL: "Alerty", LangDE: "Warnungen", LangFR: "Alertes", LangES: "Alertas"},
 	"nav.backtests":       {LangEN: "Backtests", LangPL: "Backtesty", LangDE: "Backtests", LangFR: "Backtests", LangES: "Backtests"},
 	"nav.watchlist":       {LangEN: "Watchlist", LangPL: "Obserwowane", LangDE: "Beobachtungsliste", LangFR: "Liste de surveillance", LangES: "Lista de seguimiento"},
-	"nav.account":         {LangEN: "Account", LangPL: "Konto", LangDE: "Konto", LangFR: "Compte", LangES: "Cuenta"},
+	"nav.settings":        {LangEN: "Settings", LangPL: "Ustawienia", LangDE: "Einstellungen", LangFR: "Paramètres", LangES: "Configuración"},
 	"nav.theme":           {LangEN: "Theme", LangPL: "Motyw", LangDE: "Design", LangFR: "Thème", LangES: "Tema"},
 	"nav.theme_light":     {LangEN: "Light", LangPL: "Jasny", LangDE: "Hell", LangFR: "Clair", LangES: "Claro"},
 	"nav.theme_dark":      {LangEN: "Dark", LangPL: "Ciemny", LangDE: "Dunkel", LangFR: "Sombre", LangES: "Oscuro"},
@@ -380,23 +380,23 @@ var translations = map[string]map[Lang]string{
 		LangES: "¿Dejar de seguir %d símbolo(s) seleccionado(s)?",
 	},
 
-	// Account (account.html)
-	"account.title":   {LangEN: "Atlas — Account", LangPL: "Atlas — Konto", LangDE: "Atlas — Konto", LangFR: "Atlas — Compte", LangES: "Atlas — Cuenta"},
-	"account.heading": {LangEN: "Account", LangPL: "Konto", LangDE: "Konto", LangFR: "Compte", LangES: "Cuenta"},
+	// Settings (settings.html)
+	"settings.title":   {LangEN: "Atlas — Settings", LangPL: "Atlas — Ustawienia", LangDE: "Atlas — Einstellungen", LangFR: "Atlas — Paramètres", LangES: "Atlas — Configuración"},
+	"settings.heading": {LangEN: "Settings", LangPL: "Ustawienia", LangDE: "Einstellungen", LangFR: "Paramètres", LangES: "Configuración"},
 
-	"account.portfolios_heading": {LangEN: "Portfolios", LangPL: "Portfele", LangDE: "Portfolios", LangFR: "Portefeuilles", LangES: "Carteras"},
-	"account.portfolios_hint": {
+	"settings.portfolios_heading": {LangEN: "Portfolios", LangPL: "Portfele", LangDE: "Portfolios", LangFR: "Portefeuilles", LangES: "Carteras"},
+	"settings.portfolios_hint": {
 		LangEN: "Separate buckets of positions/transactions — e.g. \"Main\", \"Safe\", \"Speculative\". Switch which one the Dashboard/Portfolio pages show using the tabs there; manage the list itself here.",
 		LangPL: "Osobne zestawy pozycji/transakcji — np. \"Główny\", \"Bezpieczny\", \"Spekulacyjny\". Przełączaj, który z nich pokazują strony Dashboard/Portfel, tabami na tych stronach; samą listę zarządzasz tutaj.",
 		LangDE: "Getrennte Gruppen von Positionen/Transaktionen — z. B. \"Haupt\", \"Sicher\", \"Spekulativ\". Wechsle über die Tabs auf den Seiten Übersicht/Portfolio, welches angezeigt wird; die Liste selbst verwaltest du hier.",
 		LangFR: "Ensembles distincts de positions/transactions — par ex. \"Principal\", \"Sûr\", \"Spéculatif\". Changez celui affiché sur les pages Tableau de bord/Portefeuille via les onglets correspondants ; gérez la liste elle-même ici.",
 		LangES: "Grupos independientes de posiciones/transacciones — p. ej. \"Principal\", \"Segura\", \"Especulativa\". Cambia cuál muestran las páginas Panel de control/Cartera con las pestañas correspondientes; la lista en sí se gestiona aquí.",
 	},
-	"account.portfolio_rename_submit": {LangEN: "Rename", LangPL: "Zmień nazwę", LangDE: "Umbenennen", LangFR: "Renommer", LangES: "Renombrar"},
-	"account.portfolio_remove_submit": {LangEN: "Delete", LangPL: "Usuń", LangDE: "Löschen", LangFR: "Supprimer", LangES: "Eliminar"},
-	"account.portfolio_new_name":      {LangEN: "New portfolio name", LangPL: "Nazwa nowego portfela", LangDE: "Name des neuen Portfolios", LangFR: "Nom du nouveau portefeuille", LangES: "Nombre de la nueva cartera"},
-	"account.portfolio_create_submit": {LangEN: "Create portfolio", LangPL: "Utwórz portfel", LangDE: "Portfolio erstellen", LangFR: "Créer un portefeuille", LangES: "Crear cartera"},
-	"account.portfolios_max_reached": {
+	"settings.portfolio_rename_submit": {LangEN: "Rename", LangPL: "Zmień nazwę", LangDE: "Umbenennen", LangFR: "Renommer", LangES: "Renombrar"},
+	"settings.portfolio_remove_submit": {LangEN: "Delete", LangPL: "Usuń", LangDE: "Löschen", LangFR: "Supprimer", LangES: "Eliminar"},
+	"settings.portfolio_new_name":      {LangEN: "New portfolio name", LangPL: "Nazwa nowego portfela", LangDE: "Name des neuen Portfolios", LangFR: "Nom du nouveau portefeuille", LangES: "Nombre de la nueva cartera"},
+	"settings.portfolio_create_submit": {LangEN: "Create portfolio", LangPL: "Utwórz portfel", LangDE: "Portfolio erstellen", LangFR: "Créer un portefeuille", LangES: "Crear cartera"},
+	"settings.portfolios_max_reached": {
 		LangEN: "Maximum number of portfolios reached. Delete one to create another.",
 		LangPL: "Osiągnięto maksymalną liczbę portfeli. Usuń jeden, aby utworzyć kolejny.",
 		LangDE: "Maximale Anzahl an Portfolios erreicht. Lösche eines, um ein neues zu erstellen.",
@@ -411,32 +411,32 @@ var translations = map[string]map[Lang]string{
 		LangES: "¿Eliminar la cartera y todo su contenido? Esta acción no se puede deshacer. ¿Continuar?",
 	},
 
-	"account.ml_engine_heading": {LangEN: "ML in recommendations", LangPL: "ML w rekomendacjach", LangDE: "ML in Empfehlungen", LangFR: "ML dans les recommandations", LangES: "ML en las recomendaciones"},
-	"account.ml_engine_hint": {
+	"settings.ml_engine_heading": {LangEN: "ML in recommendations", LangPL: "ML w rekomendacjach", LangDE: "ML in Empfehlungen", LangFR: "ML dans les recommandations", LangES: "ML en las recomendaciones"},
+	"settings.ml_engine_hint": {
 		LangEN: "Master switch for whether BUY/SELL/HOLD scoring factors in ML/portfolio/risk at all, on top of the technical score. Takes effect immediately, no restart needed. Model files below stay loaded and usable via /predict either way.",
 		LangPL: "Główny przełącznik decydujący, czy ocena BUY/SELL/HOLD w ogóle uwzględnia ML/portfel/ryzyko, poza wynikiem technicznym. Działa natychmiast, bez restartu. Pliki modeli poniżej zostają załadowane i dostępne przez /predict niezależnie od tego ustawienia.",
 		LangDE: "Hauptschalter dafür, ob die BUY/SELL/HOLD-Bewertung überhaupt ML/Portfolio/Risiko zusätzlich zum technischen Score berücksichtigt. Wirkt sofort, kein Neustart nötig. Die Modelldateien unten bleiben in jedem Fall geladen und über /predict nutzbar.",
 		LangFR: "Interrupteur principal déterminant si le score BUY/SELL/HOLD prend en compte ML/portefeuille/risque en plus du score technique. Effet immédiat, aucun redémarrage nécessaire. Les fichiers de modèle ci-dessous restent chargés et utilisables via /predict dans tous les cas.",
 		LangES: "Interruptor principal que determina si la puntuación BUY/SELL/HOLD tiene en cuenta ML/cartera/riesgo, además del score técnico. Se aplica de inmediato, sin necesidad de reiniciar. Los archivos de modelo de abajo permanecen cargados y utilizables vía /predict en cualquier caso.",
 	},
-	"account.ml_engine_enable_submit":  {LangEN: "Enable ML additive", LangPL: "Włącz dodatek ML", LangDE: "ML-Zusatz aktivieren", LangFR: "Activer l'apport ML", LangES: "Activar el aporte de ML"},
-	"account.ml_engine_disable_submit": {LangEN: "Disable ML additive", LangPL: "Wyłącz dodatek ML", LangDE: "ML-Zusatz deaktivieren", LangFR: "Désactiver l'apport ML", LangES: "Desactivar el aporte de ML"},
+	"settings.ml_engine_enable_submit":  {LangEN: "Enable ML additive", LangPL: "Włącz dodatek ML", LangDE: "ML-Zusatz aktivieren", LangFR: "Activer l'apport ML", LangES: "Activar el aporte de ML"},
+	"settings.ml_engine_disable_submit": {LangEN: "Disable ML additive", LangPL: "Wyłącz dodatek ML", LangDE: "ML-Zusatz deaktivieren", LangFR: "Désactiver l'apport ML", LangES: "Desactivar el aporte de ML"},
 
-	"account.ml_models_heading": {LangEN: "ML models", LangPL: "Modele ML", LangDE: "ML-Modelle", LangFR: "Modèles ML", LangES: "Modelos ML"},
-	"account.ml_models_hint": {
+	"settings.ml_models_heading": {LangEN: "ML models", LangPL: "Modele ML", LangDE: "ML-Modelle", LangFR: "Modèles ML", LangES: "Modelos ML"},
+	"settings.ml_models_hint": {
 		LangEN: "Pick which trained model is active for each prediction. Takes effect immediately, no restart needed.",
 		LangPL: "Wybierz, który wytrenowany model jest aktywny dla każdej predykcji. Działa natychmiast, bez restartu.",
 		LangDE: "Wähle aus, welches trainierte Modell für jede Vorhersage aktiv ist. Wirkt sofort, kein Neustart nötig.",
 		LangFR: "Choisissez quel modèle entraîné est actif pour chaque prédiction. Effet immédiat, aucun redémarrage nécessaire.",
 		LangES: "Elige qué modelo entrenado está activo para cada predicción. Se aplica de inmediato, sin necesidad de reiniciar.",
 	},
-	"account.ml_correction_heading": {LangEN: "Correction probability", LangPL: "Prawdopodobieństwo korekty", LangDE: "Korrekturwahrscheinlichkeit", LangFR: "Probabilité de correction", LangES: "Probabilidad de corrección"},
-	"account.ml_recovery_heading":   {LangEN: "Recovery probability", LangPL: "Prawdopodobieństwo odbicia", LangDE: "Erholungswahrscheinlichkeit", LangFR: "Probabilité de reprise", LangES: "Probabilidad de recuperación"},
-	"account.ml_no_models":          {LangEN: "No trained models found in the models directory.", LangPL: "Nie znaleziono wytrenowanych modeli w katalogu modeli.", LangDE: "Keine trainierten Modelle im Modellverzeichnis gefunden.", LangFR: "Aucun modèle entraîné trouvé dans le répertoire des modèles.", LangES: "No se encontraron modelos entrenados en el directorio de modelos."},
-	"account.ml_none_active":        {LangEN: "None active — using the deterministic stub.", LangPL: "Brak aktywnego — używany deterministyczny placeholder.", LangDE: "Keines aktiv — es wird der deterministische Platzhalter verwendet.", LangFR: "Aucun actif — utilisation du substitut déterministe.", LangES: "Ninguno activo — se usa el sustituto determinista."},
-	"account.ml_active_badge":       {LangEN: "active", LangPL: "aktywny", LangDE: "aktiv", LangFR: "actif", LangES: "activo"},
-	"account.ml_activate_submit":    {LangEN: "Activate", LangPL: "Aktywuj", LangDE: "Aktivieren", LangFR: "Activer", LangES: "Activar"},
-	"account.ml_delete_submit":      {LangEN: "Remove", LangPL: "Usuń", LangDE: "Entfernen", LangFR: "Supprimer", LangES: "Eliminar"},
+	"settings.ml_correction_heading": {LangEN: "Correction probability", LangPL: "Prawdopodobieństwo korekty", LangDE: "Korrekturwahrscheinlichkeit", LangFR: "Probabilité de correction", LangES: "Probabilidad de corrección"},
+	"settings.ml_recovery_heading":   {LangEN: "Recovery probability", LangPL: "Prawdopodobieństwo odbicia", LangDE: "Erholungswahrscheinlichkeit", LangFR: "Probabilité de reprise", LangES: "Probabilidad de recuperación"},
+	"settings.ml_no_models":          {LangEN: "No trained models found in the models directory.", LangPL: "Nie znaleziono wytrenowanych modeli w katalogu modeli.", LangDE: "Keine trainierten Modelle im Modellverzeichnis gefunden.", LangFR: "Aucun modèle entraîné trouvé dans le répertoire des modèles.", LangES: "No se encontraron modelos entrenados en el directorio de modelos."},
+	"settings.ml_none_active":        {LangEN: "None active — using the deterministic stub.", LangPL: "Brak aktywnego — używany deterministyczny placeholder.", LangDE: "Keines aktiv — es wird der deterministische Platzhalter verwendet.", LangFR: "Aucun actif — utilisation du substitut déterministe.", LangES: "Ninguno activo — se usa el sustituto determinista."},
+	"settings.ml_active_badge":       {LangEN: "active", LangPL: "aktywny", LangDE: "aktiv", LangFR: "actif", LangES: "activo"},
+	"settings.ml_activate_submit":    {LangEN: "Activate", LangPL: "Aktywuj", LangDE: "Aktivieren", LangFR: "Activer", LangES: "Activar"},
+	"settings.ml_delete_submit":      {LangEN: "Remove", LangPL: "Usuń", LangDE: "Entfernen", LangFR: "Supprimer", LangES: "Eliminar"},
 	"confirm.remove_model": {
 		LangEN: "Delete %s permanently? This can't be undone.",
 		LangPL: "Usunąć %s na stałe? Tej operacji nie można cofnąć.",
@@ -445,44 +445,44 @@ var translations = map[string]map[Lang]string{
 		LangES: "¿Eliminar %s de forma permanente? Esta acción no se puede deshacer.",
 	},
 
-	"account.train_heading": {LangEN: "Train new candidate", LangPL: "Wytrenuj nowego kandydata", LangDE: "Neuen Kandidaten trainieren", LangFR: "Entraîner un nouveau candidat", LangES: "Entrenar nuevo candidato"},
-	"account.train_hint": {
+	"settings.train_heading": {LangEN: "Train new candidate", LangPL: "Wytrenuj nowego kandydata", LangDE: "Neuen Kandidaten trainieren", LangFR: "Entraîner un nouveau candidat", LangES: "Entrenar nuevo candidato"},
+	"settings.train_hint": {
 		LangEN: "Exports fresh training data and trains a new, uniquely-versioned candidate for both models. Never changes what's active — pick it above once it looks good.",
 		LangPL: "Eksportuje świeże dane treningowe i trenuje nowego, jednoznacznie wersjonowanego kandydata dla obu modeli. Nigdy nie zmienia aktywnego modelu — wybierz go powyżej, gdy wygląda dobrze.",
 		LangDE: "Exportiert frische Trainingsdaten und trainiert für beide Modelle einen neuen, eindeutig versionierten Kandidaten. Ändert nie, welches Modell aktiv ist — wähle ihn oben aus, sobald er gut aussieht.",
 		LangFR: "Exporte des données d'entraînement fraîches et entraîne un nouveau candidat, versionné de façon unique, pour les deux modèles. Ne change jamais ce qui est actif — sélectionnez-le ci-dessus une fois qu'il semble satisfaisant.",
 		LangES: "Exporta datos de entrenamiento nuevos y entrena un candidato nuevo, con versión única, para ambos modelos. Nunca cambia cuál está activo — selecciónalo arriba cuando tenga buen aspecto.",
 	},
-	"account.train_submit": {LangEN: "Train now", LangPL: "Trenuj teraz", LangDE: "Jetzt trainieren", LangFR: "Entraîner maintenant", LangES: "Entrenar ahora"},
-	"account.train_not_configured": {
+	"settings.train_submit": {LangEN: "Train now", LangPL: "Trenuj teraz", LangDE: "Jetzt trainieren", LangFR: "Entraîner maintenant", LangES: "Entrenar ahora"},
+	"settings.train_not_configured": {
 		LangEN: "Not configured — set TRAINER_URL and start the atlas-trainer service to enable this, or run training/retrain.sh by hand/cron instead.",
 		LangPL: "Nie skonfigurowano — ustaw TRAINER_URL i uruchom usługę atlas-trainer, żeby to włączyć, albo uruchom training/retrain.sh ręcznie/przez cron.",
 		LangDE: "Nicht konfiguriert — setze TRAINER_URL und starte den atlas-trainer-Dienst, um dies zu aktivieren, oder führe stattdessen training/retrain.sh manuell/per Cron aus.",
 		LangFR: "Non configuré — définissez TRAINER_URL et démarrez le service atlas-trainer pour l'activer, ou exécutez plutôt training/retrain.sh manuellement/via cron.",
 		LangES: "No configurado — define TRAINER_URL e inicia el servicio atlas-trainer para habilitar esto, o ejecuta training/retrain.sh manualmente o por cron.",
 	},
-	"account.train_unreachable": {LangEN: "Trainer isn't reachable right now:", LangPL: "Trener jest teraz nieosiągalny:", LangDE: "Der Trainer ist momentan nicht erreichbar:", LangFR: "Le service d'entraînement est actuellement injoignable :", LangES: "El entrenador no está disponible en este momento:"},
-	"account.train_running":     {LangEN: "Training is currently running…", LangPL: "Trening jest w trakcie…", LangDE: "Training läuft gerade…", LangFR: "Entraînement en cours…", LangES: "El entrenamiento está en curso…"},
-	"account.train_last_result": {LangEN: "Last run", LangPL: "Ostatnie uruchomienie", LangDE: "Letzter Lauf", LangFR: "Dernière exécution", LangES: "Última ejecución"},
-	"account.train_succeeded":   {LangEN: "succeeded", LangPL: "zakończone sukcesem", LangDE: "erfolgreich", LangFR: "réussi", LangES: "correcto"},
-	"account.train_failed":      {LangEN: "failed", LangPL: "nieudane", LangDE: "fehlgeschlagen", LangFR: "échoué", LangES: "fallido"},
-	"account.train_output":      {LangEN: "Output", LangPL: "Wynik", LangDE: "Ausgabe", LangFR: "Résultat", LangES: "Salida"},
+	"settings.train_unreachable": {LangEN: "Trainer isn't reachable right now:", LangPL: "Trener jest teraz nieosiągalny:", LangDE: "Der Trainer ist momentan nicht erreichbar:", LangFR: "Le service d'entraînement est actuellement injoignable :", LangES: "El entrenador no está disponible en este momento:"},
+	"settings.train_running":     {LangEN: "Training is currently running…", LangPL: "Trening jest w trakcie…", LangDE: "Training läuft gerade…", LangFR: "Entraînement en cours…", LangES: "El entrenamiento está en curso…"},
+	"settings.train_last_result": {LangEN: "Last run", LangPL: "Ostatnie uruchomienie", LangDE: "Letzter Lauf", LangFR: "Dernière exécution", LangES: "Última ejecución"},
+	"settings.train_succeeded":   {LangEN: "succeeded", LangPL: "zakończone sukcesem", LangDE: "erfolgreich", LangFR: "réussi", LangES: "correcto"},
+	"settings.train_failed":      {LangEN: "failed", LangPL: "nieudane", LangDE: "fehlgeschlagen", LangFR: "échoué", LangES: "fallido"},
+	"settings.train_output":      {LangEN: "Output", LangPL: "Wynik", LangDE: "Ausgabe", LangFR: "Résultat", LangES: "Salida"},
 
-	"account.data_heading": {LangEN: "Database backup", LangPL: "Kopia zapasowa bazy danych", LangDE: "Datenbank-Backup", LangFR: "Sauvegarde de la base de données", LangES: "Copia de seguridad de la base de datos"},
-	"account.data_hint": {
+	"settings.data_heading": {LangEN: "Database backup", LangPL: "Kopia zapasowa bazy danych", LangDE: "Datenbank-Backup", LangFR: "Sauvegarde de la base de données", LangES: "Copia de seguridad de la base de datos"},
+	"settings.data_hint": {
 		LangEN: "Downloads everything Atlas stores — positions, transactions, watchlist, price/indicator history, recommendations, settings — as one JSON file, restorable here or on a fresh environment.",
 		LangPL: "Pobiera wszystko, co przechowuje Atlas — pozycje, transakcje, listę obserwowanych, historię cen/wskaźników, rekomendacje, ustawienia — jako jeden plik JSON, możliwy do przywrócenia tutaj lub na nowym środowisku.",
 		LangDE: "Lädt alles herunter, was Atlas speichert — Positionen, Transaktionen, Beobachtungsliste, Kurs-/Indikatorenverlauf, Empfehlungen, Einstellungen — als eine einzige JSON-Datei, die hier oder in einer neuen Umgebung wiederhergestellt werden kann.",
 		LangFR: "Télécharge tout ce qu'Atlas stocke — positions, transactions, liste de surveillance, historique des prix/indicateurs, recommandations, paramètres — en un seul fichier JSON, restaurable ici ou sur un nouvel environnement.",
 		LangES: "Descarga todo lo que almacena Atlas — posiciones, transacciones, lista de seguimiento, historial de precios/indicadores, recomendaciones, configuración — en un único archivo JSON, restaurable aquí o en un entorno nuevo.",
 	},
-	"account.backup_submit":  {LangEN: "Download backup", LangPL: "Pobierz kopię zapasową", LangDE: "Backup herunterladen", LangFR: "Télécharger la sauvegarde", LangES: "Descargar copia de seguridad"},
-	"account.leader_heading": {LangEN: "Background polling", LangPL: "Odpytywanie w tle", LangDE: "Hintergrund-Polling", LangFR: "Interrogation en arrière-plan", LangES: "Sondeo en segundo plano"},
-	"account.leader_self":    {LangEN: "This instance is polling.", LangPL: "Ta instancja odpytuje.", LangDE: "Diese Instanz fragt ab.", LangFR: "Cette instance interroge.", LangES: "Esta instancia sondea."},
-	"account.leader_other":   {LangEN: "Another instance is polling:", LangPL: "Odpytuje inna instancja:", LangDE: "Eine andere Instanz fragt ab:", LangFR: "Une autre instance interroge :", LangES: "Otra instancia sondea:"},
-	"account.leader_none":    {LangEN: "No instance currently holds the polling lease.", LangPL: "Żadna instancja nie ma teraz dzierżawy odpytywania.", LangDE: "Keine Instanz hält derzeit die Polling-Lease.", LangFR: "Aucune instance ne détient actuellement le bail d'interrogation.", LangES: "Ninguna instancia tiene actualmente el arrendamiento de sondeo."},
-	"account.restore_file":   {LangEN: "Backup JSON file", LangPL: "Plik JSON kopii zapasowej", LangDE: "Backup-JSON-Datei", LangFR: "Fichier JSON de sauvegarde", LangES: "Archivo JSON de copia de seguridad"},
-	"account.restore_submit": {LangEN: "Restore from backup", LangPL: "Przywróć z kopii zapasowej", LangDE: "Aus Backup wiederherstellen", LangFR: "Restaurer depuis la sauvegarde", LangES: "Restaurar desde copia de seguridad"},
+	"settings.backup_submit":  {LangEN: "Download backup", LangPL: "Pobierz kopię zapasową", LangDE: "Backup herunterladen", LangFR: "Télécharger la sauvegarde", LangES: "Descargar copia de seguridad"},
+	"settings.leader_heading": {LangEN: "Background polling", LangPL: "Odpytywanie w tle", LangDE: "Hintergrund-Polling", LangFR: "Interrogation en arrière-plan", LangES: "Sondeo en segundo plano"},
+	"settings.leader_self":    {LangEN: "This instance is polling.", LangPL: "Ta instancja odpytuje.", LangDE: "Diese Instanz fragt ab.", LangFR: "Cette instance interroge.", LangES: "Esta instancia sondea."},
+	"settings.leader_other":   {LangEN: "Another instance is polling:", LangPL: "Odpytuje inna instancja:", LangDE: "Eine andere Instanz fragt ab:", LangFR: "Une autre instance interroge :", LangES: "Otra instancia sondea:"},
+	"settings.leader_none":    {LangEN: "No instance currently holds the polling lease.", LangPL: "Żadna instancja nie ma teraz dzierżawy odpytywania.", LangDE: "Keine Instanz hält derzeit die Polling-Lease.", LangFR: "Aucune instance ne détient actuellement le bail d'interrogation.", LangES: "Ninguna instancia tiene actualmente el arrendamiento de sondeo."},
+	"settings.restore_file":   {LangEN: "Backup JSON file", LangPL: "Plik JSON kopii zapasowej", LangDE: "Backup-JSON-Datei", LangFR: "Fichier JSON de sauvegarde", LangES: "Archivo JSON de copia de seguridad"},
+	"settings.restore_submit": {LangEN: "Restore from backup", LangPL: "Przywróć z kopii zapasowej", LangDE: "Aus Backup wiederherstellen", LangFR: "Restaurer depuis la sauvegarde", LangES: "Restaurar desde copia de seguridad"},
 	"confirm.restore_backup": {
 		LangEN: "Restoring will replace ALL current data with the contents of this file. Continue?",
 		LangPL: "Przywrócenie zastąpi WSZYSTKIE obecne dane zawartością tego pliku. Kontynuować?",
@@ -491,24 +491,24 @@ var translations = map[string]map[Lang]string{
 		LangES: "La restauración reemplazará TODOS los datos actuales con el contenido de este archivo. ¿Continuar?",
 	},
 
-	"account.danger_heading": {LangEN: "Danger zone", LangPL: "Strefa zagrożenia", LangDE: "Gefahrenzone", LangFR: "Zone dangereuse", LangES: "Zona de peligro"},
-	"account.flush_hint": {
+	"settings.danger_heading": {LangEN: "Danger zone", LangPL: "Strefa zagrożenia", LangDE: "Gefahrenzone", LangFR: "Zone dangereuse", LangES: "Zona de peligro"},
+	"settings.flush_hint": {
 		LangEN: "Permanently wipes positions, transactions, watchlist, price/indicator history, recommendations, and ML settings — back to a freshly installed Atlas. Your login isn't affected. There is no undo short of restoring a backup taken beforehand.",
 		LangPL: "Trwale usuwa pozycje, transakcje, listę obserwowanych, historię cen/wskaźników, rekomendacje oraz ustawienia ML — Atlas wraca do stanu świeżej instalacji. Logowanie pozostaje bez zmian. Nie ma cofnięcia poza przywróceniem wcześniej zrobionej kopii zapasowej.",
 		LangDE: "Löscht dauerhaft Positionen, Transaktionen, Beobachtungsliste, Kurs-/Indikatorenverlauf, Empfehlungen sowie ML-Einstellungen — Atlas kehrt in den Zustand einer frischen Installation zurück. Dein Login ist davon nicht betroffen. Es gibt kein Rückgängigmachen außer dem Wiederherstellen eines zuvor erstellten Backups.",
 		LangFR: "Efface définitivement les positions, transactions, la liste de surveillance, l'historique des prix/indicateurs, les recommandations et les paramètres ML — retour à un Atlas fraîchement installé. Votre connexion n'est pas affectée. Il n'y a aucune annulation possible, hormis la restauration d'une sauvegarde effectuée au préalable.",
 		LangES: "Borra permanentemente posiciones, transacciones, lista de seguimiento, historial de precios/indicadores, recomendaciones y configuración de ML — vuelve a un Atlas recién instalado. Tu inicio de sesión no se ve afectado. No hay forma de deshacerlo salvo restaurar una copia de seguridad hecha de antemano.",
 	},
-	"account.flush_submit": {LangEN: "Flush all data", LangPL: "Wyczyść wszystkie dane", LangDE: "Alle Daten löschen", LangFR: "Effacer toutes les données", LangES: "Borrar todos los datos"},
-	"account.last_backup":  {LangEN: "Last backup:", LangPL: "Ostatnia kopia zapasowa:", LangDE: "Letztes Backup:", LangFR: "Dernière sauvegarde :", LangES: "Última copia de seguridad:"},
-	"account.flush_locked_hint": {
+	"settings.flush_submit": {LangEN: "Flush all data", LangPL: "Wyczyść wszystkie dane", LangDE: "Alle Daten löschen", LangFR: "Effacer toutes les données", LangES: "Borrar todos los datos"},
+	"settings.last_backup":  {LangEN: "Last backup:", LangPL: "Ostatnia kopia zapasowa:", LangDE: "Letztes Backup:", LangFR: "Dernière sauvegarde :", LangES: "Última copia de seguridad:"},
+	"settings.flush_locked_hint": {
 		LangEN: "Locked — no backup has been taken yet. Download one above first; the button unlocks as soon as one exists.",
 		LangPL: "Zablokowane — nie wykonano jeszcze żadnej kopii zapasowej. Najpierw pobierz ją powyżej; przycisk odblokuje się, gdy tylko kopia będzie istnieć.",
 		LangDE: "Gesperrt — es wurde noch kein Backup erstellt. Lade zuerst oben eines herunter; der Button wird freigeschaltet, sobald eines existiert.",
 		LangFR: "Verrouillé — aucune sauvegarde n'a encore été effectuée. Téléchargez-en d'abord une ci-dessus ; le bouton se débloque dès qu'une sauvegarde existe.",
 		LangES: "Bloqueado — aún no se ha hecho ninguna copia de seguridad. Descarga una arriba primero; el botón se desbloquea en cuanto exista una.",
 	},
-	"account.flush_stale_hint": {
+	"settings.flush_stale_hint": {
 		LangEN: "Locked — your last backup is more than 5 minutes old. Download a fresh one above; the button unlocks right after.",
 		LangPL: "Zablokowane — ostatnia kopia zapasowa ma ponad 5 minut. Pobierz nową powyżej; przycisk odblokuje się od razu potem.",
 		LangDE: "Gesperrt — dein letztes Backup ist älter als 5 Minuten. Lade oben ein neues herunter; der Button wird direkt danach freigeschaltet.",

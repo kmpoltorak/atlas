@@ -19,7 +19,7 @@ import (
 // 0, rather than failing to start — see training/README.md for how to produce a real model and
 // NewUseCaseWithModels to wire either or both in.
 //
-// Both are held as atomic.Pointer, not plain fields: the Account dashboard page lets an admin
+// Both are held as atomic.Pointer, not plain fields: the Settings page lets an admin
 // pick a different trained model at runtime (see SetModel/SetRecoveryModel), and Predict runs
 // concurrently with that from other in-flight HTTP requests — a plain pointer swap would be a
 // data race.
@@ -47,7 +47,7 @@ func NewUseCaseWithModels(model, recoveryModel *OnnxModel) *UseCase {
 // loaded (the deterministic stub applies).
 //
 // Nil-safe on the receiver too: ML is an optional dependency like every other external one here,
-// and a caller holding a nil use case means "no ML configured", not a crash — the Account page
+// and a caller holding a nil use case means "no ML configured", not a crash — the Settings page
 // reads this to render its model picker and must still render without one.
 func (u *UseCase) CurrentModel() *OnnxModel {
 	if u == nil {
@@ -88,7 +88,7 @@ func (u *UseCase) ValidateEvaluationPeriod(start time.Time) error {
 // stub) and returns whichever model was active before the swap, so the caller can Close() it —
 // this package never closes a model out from under a request that's still using it, since the
 // swap itself is atomic, but the old session's resources still need releasing once no new
-// requests can observe it. Used by the Account page's model-activation flow.
+// requests can observe it. Used by the Settings page's model-activation flow.
 func (u *UseCase) SetModel(model *OnnxModel) *OnnxModel {
 	u.mu.Lock()
 	defer u.mu.Unlock()

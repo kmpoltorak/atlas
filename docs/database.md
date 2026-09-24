@@ -40,14 +40,14 @@ migrations/001-020):
 - `auth_settings` (migrations/008) held the two-factor login secret; dropped by migrations/023
   when login was removed. Backups taken before that still restore, with that table ignored.
 - `ml_model_selection` (migrations/011) — which trained model file is active per role
-  (correction/recovery), set from the Account dashboard page — see docs/ml.md.
+  (correction/recovery), set from the Settings page — see docs/ml.md.
 - `schema_migrations` (migrations/013) — which migration versions have actually been applied to
   this database; see the "Migrations" note below.
 - `engine_settings` (migrations/015) — a single-row durable override for whether the ML+Portfolio+
-  Risk blend is active, set from the Account dashboard page; no row means it's never been toggled
+  Risk blend is active, set from the Settings page; no row means it's never been toggled
   there, and the composition root falls back to the `ML_ENABLED` env var.
 - `backup_log` (migrations/017) — a single row recording when a full-database backup
-  (`persistence.TimescaleDB.BackupAll`, the Account page's "Backup" button) was last taken. Purely
+  (`persistence.TimescaleDB.BackupAll`, the Settings page's "Backup" button) was last taken. Purely
   a safety gate for the "Flush all data" button, not user data: `FlushAll` refuses outright unless
   this row exists and is less than five minutes old, so it's deliberately excluded from the
   backup/restore/flush cycle itself (see `internal/infrastructure/persistence/backup.go`) — a
@@ -73,7 +73,7 @@ migrations/001-020):
 There is no `alerts` table: the Alerts page and `GET /alerts` show each watched symbol's latest
 row in `recommendations`, written by the background poll (`LatestRecommendations`).
 
-**Backup format.** The Account page's backup is a JSON document of every user-data table, tagged
+**Backup format.** The Settings page's backup is a JSON document of every user-data table, tagged
 with a format version. Version 1 predates `alert_cursor`, version 2 adds it, version 3 drops
 `auth_settings` with login. Every version restores: a table the schema no longer has is ignored,
 and a column added since the backup takes its default, so a backup taken before a migration still

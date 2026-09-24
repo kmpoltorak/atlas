@@ -40,7 +40,7 @@ type Orchestrator struct {
 
 	// mlEnabled is a runtime on/off switch for the ML+Portfolio+Risk blend, independent of
 	// whether ML is wired in at all (see NewOrchestrator vs NewOrchestratorWithML) — the
-	// Account dashboard page flips this live (see SetMLEnabled) so a toggle takes effect
+	// Settings page flips this live (see SetMLEnabled) so a toggle takes effect
 	// immediately, with no restart needed, unlike the ML_ENABLED env var it defaults from
 	// (config.Config.MLEnabled). Defaults true: unset, it preserves NewOrchestratorWithML's
 	// existing behavior exactly.
@@ -76,7 +76,7 @@ func NewOrchestratorWithML(analyzerUC *analyzerUC.UseCase, portfolioUC *portfoli
 }
 
 // MLEnabled reports whether the ML+Portfolio+Risk blend is currently switched on (see
-// mlEnabled) — read by the Account page to render the toggle's current state.
+// mlEnabled) — read by the Settings page to render the toggle's current state.
 func (o *Orchestrator) PortfolioRiskEnabled() bool           { return o.portfolioRiskEnabled.Load() }
 func (o *Orchestrator) SetPortfolioRiskEnabled(enabled bool) { o.portfolioRiskEnabled.Store(enabled) }
 
@@ -84,7 +84,7 @@ func (o *Orchestrator) MLEnabled() bool {
 	return o.mlEnabled.Load()
 }
 
-// SetMLEnabled flips the runtime ML-blend toggle — called by the Account page's handler after
+// SetMLEnabled flips the runtime ML-blend toggle — called by the Settings page's handler after
 // durably recording the choice (persistence.TimescaleDB.SetMLEnabled), and by the composition
 // root at startup to apply config.Config.MLEnabled/the durable override. Safe to call whether or
 // not ML was wired in at construction (NewOrchestrator vs NewOrchestratorWithML); with o.ML nil,
@@ -325,7 +325,7 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 	// no-penalty value is 0.5, the top of portfolioRiskSignal's own scale.
 	result := blendResult{Overall: technical.Overall, MLScore: 1.0, PortfolioScore: 0.5, RiskScore: 1.0, MLConfidence: 1.0}
 
-	// mlActive also gates the runtime mlEnabled toggle (see SetMLEnabled), so the Account page's
+	// mlActive also gates the runtime mlEnabled toggle (see SetMLEnabled), so the Settings page's
 	// switch reproduces exactly what NewOrchestrator (ML never wired in) already does for the
 	// prediction call and the multiplication below: no prediction call, no ML/Portfolio/Risk
 	// multiplication, MLConfidence stays at its never-triggers-WAIT default, MLModelVersion stays
@@ -353,7 +353,7 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 
 	// Deliberately GetAllPositions (every portfolio combined), not GetPositions (only the
 	// dashboard's currently active one): "do I already hold this symbol" and "how risky is my
-	// overall exposure" are whole-account questions. A symbol bought in one portfolio should
+	// overall exposure" are all-portfolio questions. A symbol bought in one portfolio should
 	// still read as ACCUMULATE, not BUY, while a different portfolio tab happens to be active.
 	if o.Portfolio != nil {
 		positions, err := o.Portfolio.GetAllPositions()

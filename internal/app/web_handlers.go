@@ -360,8 +360,8 @@ func priceAsOf(transactions []portfolio.Transaction) map[string]string {
 	return latest
 }
 
-// backupOperationTimeout is how long accountBackupHandler/accountRestoreHandler/
-// accountFlushHandler get past http.Server's default WriteTimeout (10s, cmd/api/main.go — sized
+// backupOperationTimeout is how long settingsBackupHandler/settingsRestoreHandler/
+// settingsFlushHandler get past http.Server's default WriteTimeout (10s, cmd/api/main.go — sized
 // for ordinary fast JSON/HTML responses). A full-database dump/restore/wipe can legitimately run
 // longer than that once prices/indicators/recommendations have accumulated — confirmed live: a
 // ~25MB restore was silently killed mid-request, the client just seeing an empty response.

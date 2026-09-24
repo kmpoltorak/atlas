@@ -203,7 +203,7 @@ func canceledContext() context.Context {
 	return ctx
 }
 
-// Identity is this process's lease holder id — shown on the Account page so "which replica is
+// Identity is this process's lease holder id — shown on the Settings page so "which replica is
 // polling" is answerable from the UI.
 func (l *Leader) Identity() string {
 	if l == nil {
