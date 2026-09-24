@@ -1,7 +1,8 @@
 package app
 
 import (
-	"errors"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"sort"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	"atlas/internal/app/web"
-	authUC "atlas/internal/application/auth"
 	portfolioUC "atlas/internal/application/portfolio"
 	"atlas/internal/domain/currency"
 	"atlas/internal/domain/portfolio"
@@ -56,70 +56,6 @@ func currencyOptions() []string {
 	return options
 }
 
-// loginPageHandler renders the login form (GET) and verifies credentials (POST) — see
-// authUC.UseCase.Login. A GET while auth isn't Enabled() redirects straight to the dashboard,
-// since there's nothing to log into. Whether the form should even show a TOTP field is read
-// fresh from TOTPStore on every request (a.Auth.TOTPStatus()), not fixed at startup — 2FA can
-// be enabled/disabled from the dashboard at any time.
-func (a *Application) loginPageHandler(w http.ResponseWriter, r *http.Request) {
-	lang := a.resolveLang(r)
-	switch r.Method {
-	case http.MethodGet:
-		if !a.Auth.Enabled() {
-			http.Redirect(w, r, "/", http.StatusSeeOther)
-			return
-		}
-		requiresTOTP, err := a.Auth.TOTPStatus()
-		if err != nil {
-			a.renderError(w, r, http.StatusInternalServerError, err.Error())
-			return
-		}
-		web.Render(w, "login", web.LoginPage{Lang: lang, RequiresTOTP: requiresTOTP})
-	case http.MethodPost:
-		requiresTOTP, statusErr := a.Auth.TOTPStatus()
-		if err := r.ParseForm(); err != nil {
-			web.Render(w, "login", web.LoginPage{Lang: lang, Error: "Invalid form submission.", RequiresTOTP: requiresTOTP})
-			return
-		}
-		token, err := a.Auth.Login(r.Context(), r.FormValue("username"), r.FormValue("password"), r.FormValue("totp"))
-		if err != nil {
-			if statusErr != nil {
-				a.renderError(w, r, http.StatusInternalServerError, statusErr.Error())
-				return
-			}
-			message := "Invalid username, password, or verification code."
-			if errors.Is(err, authUC.ErrTooManyAttempts) {
-				message = "Too many failed login attempts. Wait a few minutes and try again."
-			}
-			web.Render(w, "login", web.LoginPage{Lang: lang, Error: message, RequiresTOTP: requiresTOTP})
-			return
-		}
-		http.SetCookie(w, &http.Cookie{
-			Name: sessionCookieName, Value: token, Path: "/",
-			HttpOnly: true, Secure: a.Config.CookieSecure, SameSite: http.SameSiteLaxMode,
-			MaxAge: int(authUC.SessionTTL.Seconds()),
-		})
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-	default:
-		methodNotAllowed(w)
-	}
-}
-
-// logoutPageHandler invalidates the session server-side (not just clearing the cookie
-// client-side) so a leaked/stolen cookie value stops working immediately, not just once it
-// expires on its own.
-func (a *Application) logoutPageHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w)
-		return
-	}
-	if cookie, err := r.Cookie(sessionCookieName); err == nil {
-		_ = a.Auth.DeleteSession(r.Context(), cookie.Value)
-	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", MaxAge: -1})
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
-}
-
 // dashboardPageHandler also doubles as "/"'s catch-all (see NewHandler's comment on the "/"
 // registration — net/http.ServeMux treats it as a subtree pattern matching anything unmatched
 // above it), so any path other than exactly "/" is a real 404, not the dashboard.
@@ -151,8 +87,7 @@ func (a *Application) dashboardPageHandler(w http.ResponseWriter, r *http.Reques
 }
 
 // portfolioPageHandler lists positions (GET) and records a transaction (POST) — the dashboard
-// equivalent of GET/POST /portfolio, and currently the only reason Phase 8 exists at all (see
-// implementation-plan.md): recording BUY/SELL without hand-crafting an HTTP request.
+// equivalent of GET/POST /portfolio: recording BUY/SELL without hand-crafting an HTTP request.
 func (a *Application) portfolioPageHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -165,8 +100,21 @@ func (a *Application) portfolioPageHandler(w http.ResponseWriter, r *http.Reques
 		}
 		a = scoped
 		if err := r.ParseForm(); err != nil {
-			a.renderPortfolioPage(w, r, "Invalid form submission.", "")
+			a.renderPortfolioPage(w, r, a.tr(r, "msg.invalid_form"), "")
 			return
+		}
+		form := web.TransactionForm{
+			Key:         strings.TrimSpace(r.FormValue("key")),
+			PortfolioID: r.FormValue("portfolio_id"),
+			Symbol:      strings.ToUpper(strings.TrimSpace(r.FormValue("symbol"))),
+			Type:        r.FormValue("type"),
+			Quantity:    r.FormValue("quantity"),
+			Price:       r.FormValue("price"),
+			Currency:    r.FormValue("currency"),
+			Date:        strings.TrimSpace(r.FormValue("date")),
+		}
+		rejected := func(message string) {
+			a.renderPortfolioPageWithForm(w, r, message, "", &form)
 		}
 		// The record-transaction form's own portfolio picker (only shown with >1 portfolio) can
 		// name a different portfolio than whatever tab is currently active — switch to it first
@@ -174,30 +122,43 @@ func (a *Application) portfolioPageHandler(w http.ResponseWriter, r *http.Reques
 		// page the user lands on after this keeps showing that same portfolio.
 		if portfolioID := r.FormValue("portfolio_id"); portfolioID != "" && portfolioID != a.Portfolio.ActivePortfolio() {
 			if err := a.Portfolio.SwitchPortfolio(portfolioID); err != nil {
-				a.renderPortfolioPage(w, r, err.Error(), "")
+				rejected(err.Error())
 				return
 			}
 			setActivePortfolioCookie(w, portfolioID)
 		}
-		quantity, qErr := strconv.ParseFloat(r.FormValue("quantity"), 64)
-		price, pErr := strconv.ParseFloat(r.FormValue("price"), 64)
+		quantity, qErr := strconv.ParseFloat(form.Quantity, 64)
+		price, pErr := strconv.ParseFloat(form.Price, 64)
 		if qErr != nil || pErr != nil {
-			a.renderPortfolioPage(w, r, "Quantity and price must both be numbers.", "")
+			rejected(a.tr(r, "msg.qty_price_numbers"))
+			return
+		}
+		if form.Key == "" {
+			// Every rendered form carries one; its absence means a hand-built request, and
+			// recording without a key is exactly the duplicate risk the key exists to remove.
+			rejected(a.tr(r, "msg.form_expired"))
 			return
 		}
 		tx := portfolio.Transaction{
-			Symbol:   strings.ToUpper(strings.TrimSpace(r.FormValue("symbol"))),
-			Type:     r.FormValue("type"),
+			ID:       form.Key,
+			Symbol:   form.Symbol,
+			Type:     form.Type,
 			Quantity: quantity,
 			Price:    price,
-			Currency: r.FormValue("currency"),
+			Currency: form.Currency,
+		}
+		// The trade date, which the conversion to PLN depends on: a backdated USD/EUR trade is
+		// priced at that day's NBP rate, not today's. Today's date keeps the exact current time
+		// (an empty Timestamp), so a same-day entry is not moved to midnight.
+		if form.Date != "" && form.Date != web.Today() {
+			tx.Timestamp = form.Date
 		}
 		if err := a.Portfolio.RecordTransaction(tx); err != nil {
-			a.renderPortfolioPage(w, r, err.Error(), "")
+			rejected(err.Error())
 			return
 		}
 		go a.refreshRecommendation(tx.Symbol)
-		a.flashRedirect(w, r, "/dashboard/portfolio", "Transaction recorded.")
+		a.flashRedirect(w, r, "/dashboard/portfolio", a.tr(r, "msg.transaction_recorded"))
 	default:
 		methodNotAllowed(w)
 	}
@@ -243,12 +204,12 @@ func (a *Application) portfolioDeleteHandler(w http.ResponseWriter, r *http.Requ
 	}
 	a = scoped
 	if err := r.ParseForm(); err != nil {
-		a.renderPortfolioPage(w, r, "Invalid form submission.", "")
+		a.renderPortfolioPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	symbols := upperAll(formValues(r, "symbols", "symbol"))
 	if len(symbols) == 0 {
-		a.renderPortfolioPage(w, r, "No positions selected.", "")
+		a.renderPortfolioPage(w, r, a.tr(r, "msg.no_positions_selected"), "")
 		return
 	}
 	if err := a.Portfolio.RemovePositions(symbols); err != nil {
@@ -262,9 +223,9 @@ func (a *Application) portfolioDeleteHandler(w http.ResponseWriter, r *http.Requ
 	for _, symbol := range symbols {
 		go a.refreshRecommendation(symbol)
 	}
-	message := fmt.Sprintf("%d position(s) removed.", len(symbols))
+	message := a.tr(r, "msg.positions_hidden_many", len(symbols))
 	if len(symbols) == 1 {
-		message = "Removed " + symbols[0] + " from your positions."
+		message = a.tr(r, "msg.position_hidden_one", symbols[0])
 	}
 	a.renderPortfolioPage(w, r, "", message)
 }
@@ -287,12 +248,12 @@ func (a *Application) portfolioTransactionDeleteHandler(w http.ResponseWriter, r
 	}
 	a = scoped
 	if err := r.ParseForm(); err != nil {
-		a.renderPortfolioPage(w, r, "Invalid form submission.", "")
+		a.renderPortfolioPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	ids := formValues(r, "ids", "id")
 	if len(ids) == 0 {
-		a.renderPortfolioPage(w, r, "No transactions selected.", "")
+		a.renderPortfolioPage(w, r, a.tr(r, "msg.no_transactions_selected"), "")
 		return
 	}
 	// Resolved before the removal, not after — once the transaction is gone there's nothing left
@@ -310,14 +271,29 @@ func (a *Application) portfolioTransactionDeleteHandler(w http.ResponseWriter, r
 	for _, symbol := range symbols {
 		go a.refreshRecommendation(symbol)
 	}
-	message := fmt.Sprintf("%d transaction(s) removed and positions recomputed.", len(ids))
+	message := a.tr(r, "msg.transactions_removed_many", len(ids))
 	if len(ids) == 1 {
-		message = "Transaction removed and position recomputed."
+		message = a.tr(r, "msg.transaction_removed_one")
 	}
 	a.renderPortfolioPage(w, r, "", message)
 }
 
 func (a *Application) renderPortfolioPage(w http.ResponseWriter, r *http.Request, errMsg, successMsg string) {
+	a.renderPortfolioPageWithForm(w, r, errMsg, successMsg, nil)
+}
+
+// renderPortfolioPageWithForm renders the page with the record-transaction form set to form, or
+// to a fresh one (new key, today's date) when form is nil — see web.PortfolioPage.Form.
+func (a *Application) renderPortfolioPageWithForm(w http.ResponseWriter, r *http.Request, errMsg, successMsg string, form *web.TransactionForm) {
+	if form == nil {
+		key, err := newFormKey()
+		if err != nil {
+			a.renderError(w, r, http.StatusInternalServerError, err.Error())
+			return
+		}
+		form = &web.TransactionForm{Key: key, Type: "BUY", Currency: "PLN", Date: web.Today()}
+	}
+	form.Today = web.Today()
 	if successMsg == "" {
 		successMsg = readFlash(w, r)
 	}
@@ -336,6 +312,10 @@ func (a *Application) renderPortfolioPage(w http.ResponseWriter, r *http.Request
 		Error:     errMsg, Success: successMsg,
 		Portfolios:        portfolios,
 		ActivePortfolioID: activePortfolioID,
+		Form:              *form,
+	}
+	if form.PortfolioID == "" {
+		data.Form.PortfolioID = activePortfolioID
 	}
 	if symbols, err := a.watchlistSymbols(); err == nil {
 		data.Symbols = symbols
@@ -380,9 +360,19 @@ func priceAsOf(transactions []portfolio.Transaction) map[string]string {
 	return latest
 }
 
-// backupOperationTimeout is how long accountBackupHandler/accountRestoreHandler/
-// accountFlushHandler get past http.Server's default WriteTimeout (10s, cmd/api/main.go — sized
+// backupOperationTimeout is how long settingsBackupHandler/settingsRestoreHandler/
+// settingsFlushHandler get past http.Server's default WriteTimeout (10s, cmd/api/main.go — sized
 // for ordinary fast JSON/HTML responses). A full-database dump/restore/wipe can legitimately run
 // longer than that once prices/indicators/recommendations have accumulated — confirmed live: a
 // ~25MB restore was silently killed mid-request, the client just seeing an empty response.
 const backupOperationTimeout = 2 * time.Minute
+
+// newFormKey issues a record-transaction form's idempotency key — a random UUID, the shape
+// portfolio.Transaction.ID requires. See web.TransactionForm.Key.
+func newFormKey() (string, error) {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("generate form key: %w", err)
+	}
+	return hex.EncodeToString(raw), nil
+}

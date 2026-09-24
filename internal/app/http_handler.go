@@ -29,9 +29,7 @@ func (a *Application) NewHandler() http.Handler {
 	mux.Handle("/metrics", a.Metrics.Handler())
 	mux.Handle("/static/", http.FileServer(http.FS(web.StaticFS)))
 	// /swagger/index.html — interactive API docs (see cmd/api/main.go's @title block and the
-	// @Summary/@Router annotations on each JSON handler below). Not in publicPaths
-	// (auth_middleware.go), so it needs the same session as the rest of the API when auth is
-	// enabled — "Try it out" then reuses that session's cookie automatically.
+	// @Summary/@Router annotations on each JSON handler below).
 	mux.HandleFunc("/swagger/", httpSwagger.WrapHandler)
 	mux.HandleFunc("/health", a.scoped((*Application).healthHandler))
 	mux.HandleFunc("GET /live", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
@@ -49,9 +47,7 @@ func (a *Application) NewHandler() http.Handler {
 	mux.HandleFunc("/backtests/history", a.scoped((*Application).backtestHistoryHandler))
 	mux.HandleFunc("/backtests/walkforward", a.scoped((*Application).backtestWalkForwardHandler))
 
-	// Server-rendered dashboard (Phase 8 — see implementation-plan.md and internal/app/web).
-	mux.HandleFunc("/login", a.scoped((*Application).loginPageHandler))
-	mux.HandleFunc("/logout", a.scoped((*Application).logoutPageHandler))
+	// Server-rendered dashboard (see internal/app/web).
 	mux.HandleFunc("/dashboard/lang", a.scoped((*Application).langSetHandler))
 	mux.HandleFunc("/dashboard/portfolio", a.scoped((*Application).portfolioPageHandler))
 	// One route per thing being deleted, not one per selection shape: each handler takes either
@@ -69,24 +65,24 @@ func (a *Application) NewHandler() http.Handler {
 	mux.HandleFunc("/dashboard/watchlist/delete", a.scoped((*Application).watchlistDeleteHandler))
 	mux.HandleFunc("/dashboard/watchlist/import", a.scoped((*Application).watchlistImportPageHandler))
 	mux.HandleFunc("/dashboard/watchlist/refresh-info", a.scoped((*Application).watchlistRefreshInfoHandler))
-	mux.HandleFunc("/dashboard/account", a.scoped((*Application).accountPageHandler))
-	mux.HandleFunc("/dashboard/account/totp/setup", a.scoped((*Application).totpSetupHandler))
-	mux.HandleFunc("/dashboard/account/totp/qr.png", a.scoped((*Application).totpQRHandler))
-	mux.HandleFunc("/dashboard/account/totp/confirm", a.scoped((*Application).totpConfirmHandler))
-	mux.HandleFunc("/dashboard/account/totp/disable", a.scoped((*Application).totpDisableHandler))
-	mux.HandleFunc("/dashboard/account/ml/toggle", a.scoped((*Application).mlEngineToggleHandler))
-	mux.HandleFunc("/dashboard/account/ml/activate", a.scoped((*Application).mlModelActivateHandler))
-	mux.HandleFunc("/dashboard/account/ml/delete", a.scoped((*Application).mlModelDeleteHandler))
-	mux.HandleFunc("/dashboard/account/ml/train", a.scoped((*Application).mlTrainHandler))
-	mux.HandleFunc("/dashboard/account/backup", a.scoped((*Application).accountBackupHandler))
-	mux.HandleFunc("/dashboard/account/restore", a.scoped((*Application).accountRestoreHandler))
-	mux.HandleFunc("/dashboard/account/flush", a.scoped((*Application).accountFlushHandler))
+	mux.HandleFunc("/dashboard/settings", a.scoped((*Application).settingsPageHandler))
+	mux.HandleFunc("/dashboard/settings/ml/toggle", a.scoped((*Application).mlEngineToggleHandler))
+	mux.HandleFunc("/dashboard/settings/ml/activate", a.scoped((*Application).mlModelActivateHandler))
+	mux.HandleFunc("/dashboard/settings/ml/delete", a.scoped((*Application).mlModelDeleteHandler))
+	mux.HandleFunc("/dashboard/settings/ml/train", a.scoped((*Application).mlTrainHandler))
+	mux.HandleFunc("/dashboard/settings/backup", a.scoped((*Application).settingsBackupHandler))
+	mux.HandleFunc("/dashboard/settings/restore", a.scoped((*Application).settingsRestoreHandler))
+	mux.HandleFunc("/dashboard/settings/flush", a.scoped((*Application).settingsFlushHandler))
 
 	// Bare "/dashboard" (no trailing path) isn't a real route — every actual page lives under
 	// "/dashboard/..." — but it's a natural URL to type or bookmark expecting the dashboard
 	// itself, and used to silently work as an alias for "/" before "/" got a real 404 for
 	// anything unmatched (see dashboardPageHandler's own comment below). A redirect is cheap and
 	// avoids turning a plausible bookmark into a dead link.
+	// The Settings page was called Account while Atlas had a login; a bookmark to it still lands.
+	mux.HandleFunc("GET /dashboard/account", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/dashboard/settings", http.StatusMovedPermanently)
+	})
 	mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusFound)
 	})
@@ -100,7 +96,10 @@ func (a *Application) NewHandler() http.Handler {
 	// "/" is the dashboard itself (not a separate "/dashboard" route — a subtree pattern in
 	// net/http.ServeMux, so this is also the catch-all for anything else unmatched above).
 	mux.HandleFunc("/", a.scoped((*Application).dashboardPageHandler))
-	return a.instrument(a.requireAuth(http.NewCrossOriginProtection().Handler(mux)))
+	// No login: Atlas is a local, single-operator tool whose ports are bound to 127.0.0.1 (see
+	// docker-compose.yml). Cross-origin protection stays — it is what stops a web page open in
+	// the same browser from posting to the dashboard, login or not.
+	return a.instrument(http.NewCrossOriginProtection().Handler(mux))
 }
 
 // instrument records request count and latency for every route except /metrics itself,
@@ -141,7 +140,7 @@ func (r *statusRecorder) WriteHeader(statusCode int) {
 }
 
 // Unwrap exposes the underlying ResponseWriter to http.ResponseController — without it,
-// SetWriteDeadline (accountBackupHandler/accountRestoreHandler/accountFlushHandler's
+// SetWriteDeadline (settingsBackupHandler/settingsRestoreHandler/settingsFlushHandler's
 // extendWriteDeadline) fails with "feature not supported" on every request, since instrument
 // wraps every ResponseWriter in a *statusRecorder that the standard library otherwise has no way
 // to see through to the real connection. Confirmed live: this was silently no-op-ing before.
@@ -152,12 +151,12 @@ func (r *statusRecorder) Unwrap() http.ResponseWriter {
 // healthHandler pings the real database and cache connections, per the response shape
 // documented in docs/deployment.md ({"status":"healthy","database":"ok","redis":"ok"}).
 // Returns 503 when either dependency is unreachable, so this is a meaningful signal for
-// Docker/Kubernetes health probes (see deploy/deployment.yaml), not just a liveness check.
+// the Docker healthcheck (docker-compose.yml), not just a liveness check.
 // Trainer reachability is reported too when TRAINER_URL is configured, but — unlike
 // Database/Redis — never flips the overall status/HTTP code: the trainer is a genuinely
-// optional sidecar (see docker-compose.yml's "trainer" profile) atlas-api already degrades
-// gracefully without (the Account page's "Train new candidate" button just explains the manual
-// path instead), so Docker/Kubernetes restarting atlas-api because atlas-trainer is down would
+// optional sidecar (TRAINER_URL empty hides it) atlas-api already degrades
+// gracefully without (the Settings page's "Train new candidate" button just explains the manual
+// path instead), so Docker restarting atlas-api because atlas-trainer is down would
 // be exactly the wrong response.
 //
 // @Summary Health check

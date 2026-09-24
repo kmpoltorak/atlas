@@ -22,18 +22,16 @@ import (
 // @description recommendations, ML predictions, and backtests. Atlas never executes trades —
 // @description every recommendation is advisory only.
 // @description
-// @description Every route except /health, /metrics, /login, and /static/* requires a session
-// @description cookie (see internal/app/auth_middleware.go) whenever ADMIN_USERNAME/
-// @description ADMIN_PASSWORD_HASH are set — log in via the dashboard in the same browser first,
-// @description then "Try it out" here reuses that session automatically.
+// @description There is no login: Atlas is a local, single-operator tool, reachable on
+// @description loopback only (see docker-compose.yml).
 // @BasePath /
 func main() {
 	cfg := config.Load()
 
 	logger, err := observability.NewLogger(cfg.LogLevel)
 	if err != nil {
-		// No logger exists yet to log through (CLAUDE.md bans panic() and bare stderr
-		// printing for everything else — this is the one unavoidable exception, at the
+		// No logger exists yet to log through (the codebase uses no panic() and no bare
+		// stderr printing anywhere else — this is the one unavoidable exception, at the
 		// single point before logging itself is available).
 		fmt.Fprintln(os.Stderr, "failed to initialize logger:", err)
 		os.Exit(1)

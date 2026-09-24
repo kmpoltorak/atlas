@@ -34,7 +34,9 @@ func TestBackupValidationAcceptsEveryVersionThisBuildSupports(t *testing.T) {
 	cases := map[string]any{
 		"untagged legacy export": legacy,
 		"tagged v1":              backupDocument{Format: "atlas-backup", Version: 1, Tables: legacy},
-		"tagged current":         backupDocument{Format: "atlas-backup", Version: backupVersion, Tables: current},
+		// v2 still carried auth_settings, dropped with login in v3 (migrations/023).
+		"tagged v2 with auth_settings": backupDocument{Format: "atlas-backup", Version: 2, Tables: tablesFor(2)},
+		"tagged current":               backupDocument{Format: "atlas-backup", Version: backupVersion, Tables: current},
 	}
 	for name, input := range cases {
 		t.Run(name, func(t *testing.T) {

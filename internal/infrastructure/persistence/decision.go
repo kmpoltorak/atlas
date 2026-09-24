@@ -48,12 +48,22 @@ func (t *TimescaleDB) SaveRecommendation(rec decision.Recommendation) error {
 		mlModelVersion = rec.MLModelVersion
 	}
 
+	var mlRecoveryModelVersion any
+	if rec.MLRecoveryModelVersion != "" {
+		mlRecoveryModelVersion = rec.MLRecoveryModelVersion
+	}
+
+	// degraded and risk_data_available are written on every row (migrations/022). Leaving them
+	// out made every recommendation read back from history claim complete inputs and a measured
+	// risk score, whatever the live one had said.
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO recommendations
-		   (symbol_id, action, score, confidence, technical_score, ml_score, portfolio_score, risk_score, market_condition, explanation, model_version, ml_model_version)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		   (symbol_id, action, score, confidence, technical_score, ml_score, portfolio_score, risk_score, market_condition, explanation, model_version, ml_model_version,
+		    degraded, risk_data_available, ml_recovery_model_version)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		symbolID, rec.Action, rec.Score, rec.Confidence, rec.TechnicalScore, rec.MLScore, rec.PortfolioScore,
-		rec.RiskScore, marketCondition, explanation, rec.ModelVersion, mlModelVersion); err != nil {
+		rec.RiskScore, marketCondition, explanation, rec.ModelVersion, mlModelVersion,
+		rec.Degraded, rec.RiskDataAvailable, mlRecoveryModelVersion); err != nil {
 		return fmt.Errorf("insert recommendation for %s: %w", rec.Symbol, err)
 	}
 
@@ -133,7 +143,12 @@ type latestRecommendationRow struct {
 	Explanation     json.RawMessage `db:"explanation"`
 	ModelVersion    string          `db:"model_version"`
 	MLModelVersion  sql.NullString  `db:"ml_model_version"`
-	CreatedAt       time.Time       `db:"created_at"`
+	// NULL on rows written before migrations/022, which did not record either flag; read as
+	// false, the same as the flags' zero value in the live API.
+	Degraded               sql.NullBool   `db:"degraded"`
+	RiskDataAvailable      sql.NullBool   `db:"risk_data_available"`
+	MLRecoveryModelVersion sql.NullString `db:"ml_recovery_model_version"`
+	CreatedAt              time.Time      `db:"created_at"`
 }
 
 // LatestRecommendation pairs a persisted decision.Recommendation with when it was computed —
@@ -176,7 +191,8 @@ func (t *TimescaleDB) LatestRecommendations() (map[string]LatestRecommendation, 
 		SELECT DISTINCT ON (s.ticker)
 		       s.ticker, r.action, r.score, r.confidence, r.technical_score, r.ml_score,
 		       r.portfolio_score, r.risk_score, r.market_condition, r.explanation,
-		       r.model_version, r.ml_model_version, r.created_at
+		       r.model_version, r.ml_model_version, r.degraded, r.risk_data_available,
+		       r.ml_recovery_model_version, r.created_at
 		FROM recommendations r
 		JOIN symbols s ON s.id = r.symbol_id
 		ORDER BY s.ticker, r.created_at DESC`); err != nil {
@@ -191,18 +207,21 @@ func (t *TimescaleDB) LatestRecommendations() (map[string]LatestRecommendation, 
 		}
 		result[row.Symbol] = LatestRecommendation{
 			Recommendation: decision.Recommendation{
-				Symbol:          row.Symbol,
-				Action:          row.Action,
-				Score:           row.Score,
-				Confidence:      row.Confidence,
-				TechnicalScore:  row.TechnicalScore,
-				MLScore:         row.MLScore,
-				PortfolioScore:  row.PortfolioScore,
-				RiskScore:       row.RiskScore,
-				MarketCondition: row.MarketCondition.String,
-				Reason:          reason,
-				ModelVersion:    row.ModelVersion,
-				MLModelVersion:  row.MLModelVersion.String,
+				Symbol:                 row.Symbol,
+				Action:                 row.Action,
+				Score:                  row.Score,
+				Confidence:             row.Confidence,
+				TechnicalScore:         row.TechnicalScore,
+				MLScore:                row.MLScore,
+				PortfolioScore:         row.PortfolioScore,
+				RiskScore:              row.RiskScore,
+				MarketCondition:        row.MarketCondition.String,
+				Reason:                 reason,
+				ModelVersion:           row.ModelVersion,
+				MLModelVersion:         row.MLModelVersion.String,
+				Degraded:               row.Degraded.Bool,
+				RiskDataAvailable:      row.RiskDataAvailable.Bool,
+				MLRecoveryModelVersion: row.MLRecoveryModelVersion.String,
 			},
 			CreatedAt: row.CreatedAt,
 		}

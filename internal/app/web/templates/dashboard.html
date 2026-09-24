@@ -15,7 +15,7 @@
 
     <h2 class="h5">{{T .Lang "dashboard.positions"}}</h2>
     {{if .Positions}}
-    <input type="text" class="form-control form-control-sm mb-2" id="dashboardPositionsFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
+    <input type="text" class="form-control form-control-sm mb-2" id="dashboardPositionsFilter" placeholder="{{T .Lang "table.filter_placeholder"}}" aria-label="{{T .Lang "table.filter_placeholder"}}">
     <div class="table-responsive">
       <table class="table table-striped table-hover align-middle" id="dashboardPositionsTable">
         <thead><tr>
@@ -33,7 +33,7 @@
           <td class="text-end tabular-nums">{{money .AverageCost $.Rates}}</td>
           <td class="text-end tabular-nums">
             {{money .CurrentPrice $.Rates}}
-            {{with index $.PriceAsOf .Symbol}}<br><small class="text-body-secondary">{{T $.Lang "table.as_of"}} {{(localTime .).Format "2006-01-02"}}</small>{{end}}
+            {{$state := priceState .}}{{with index $.PriceAsOf .Symbol}}<br><small class="{{if eq $state "quote"}}text-body-secondary{{else}}text-warning-emphasis{{end}}">{{if eq $state "trade"}}{{T $.Lang "price.trade"}}{{else if eq $state "stale"}}{{T $.Lang "price.stale"}}{{else}}{{T $.Lang "table.as_of"}}{{end}} {{(localTime .).Format "2006-01-02"}}</small>{{end}}
           </td>
           <td class="text-end tabular-nums {{pnlClass (pnl .)}}">{{money (pnl .) $.Rates}}</td>
         </tr>

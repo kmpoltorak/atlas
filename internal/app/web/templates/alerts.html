@@ -22,7 +22,7 @@
     {{end}}
 
     {{if .Alerts}}
-    <input type="text" class="form-control form-control-sm mb-2" id="alertsFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
+    <input type="text" class="form-control form-control-sm mb-2" id="alertsFilter" placeholder="{{T .Lang "table.filter_placeholder"}}" aria-label="{{T .Lang "table.filter_placeholder"}}">
     <div class="table-responsive">
       <table class="table table-striped table-hover align-middle" id="alertsTable">
         <thead><tr><th scope="col" data-sort="text">{{T .Lang "table.symbol"}}</th><th scope="col" data-sort="text">{{T .Lang "table.action"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.today_change"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.confidence"}}</th><th scope="col" data-sort="date">{{T .Lang "table.triggered_at"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.active_for"}}</th><th scope="col">{{T .Lang "table.reason"}}</th></tr></thead>
@@ -31,7 +31,7 @@
         {{$quote := index $.Info .Recommendation.Symbol}}
         <tr>
           <td><a class="atlas-symbol" href="{{yahooURL .Recommendation.Symbol}}" target="_blank" rel="noopener noreferrer" title="{{T $.Lang "table.open_in_yahoo"}}">{{.Recommendation.Symbol}}</a></td>
-          <td class="{{actionClass .Recommendation.Action}}">{{actionLabel $.Lang .Recommendation.Action}}</td>
+          <td class="{{actionClass .Recommendation.Action}}">{{actionLabel $.Lang .Recommendation.Action}}{{if .Recommendation.Degraded}} <span class="badge text-bg-warning" title="{{T $.Lang "rec.degraded_hint"}}">{{T $.Lang "rec.degraded"}}</span>{{end}}</td>
           {{/* How the symbol is doing right now, independent of the recommendation's own closed-
                candle data — see providers.dropUnclosedBars and web.SymbolInfo.ChangePercent. A
                recommendation and today's live move can disagree (a BUY from before a same-day

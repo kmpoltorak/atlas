@@ -14,8 +14,8 @@ exposure/drawdown/volatility), not a separate pipeline component, but the score 
 and blended, closing that specific gap. The engine now emits all six action types below
 (BUY/SELL/HOLD plus ACCUMULATE/REDUCE/WAIT — see decision.UseCase.BuildRecommendation's
 threshold bands), gated on real portfolio position state (BUY vs. ACCUMULATE, SELL vs. REDUCE)
-and ML confidence (HOLD vs. WAIT) — see this doc's "Recommendation Types" below and
-PROJECT_CONTEXT.md for the exact rules and thresholds. Those five thresholds are a
+and ML confidence (HOLD vs. WAIT) — see this doc's "Recommendation Types" below for the
+exact rules and thresholds. Those five thresholds are a
 `decision.Thresholds` value (internal/domain/decision/types.go), not hardcoded constants —
 `decision.UseCase.Thresholds` defaults to `DefaultThresholds()` (the same cutoffs as before)
 everywhere in live traffic, but backtesting's walk-forward optimizer (see docs/backtesting.md's
@@ -23,12 +23,16 @@ everywhere in live traffic, but backtesting's walk-forward optimizer (see docs/b
 evaluate against history without ever touching the live instance. Backtesting previously leaked
 live portfolio state into simulated HasPosition — fixed now, see docs/backtesting.md's
 Implementation status note. The real Recommendation object is `{Symbol, Action, Confidence,
-Reason, Score, TechnicalScore, MLScore, PortfolioScore, RiskScore, MarketCondition, ModelVersion,
-MLModelVersion}` — no separate timestamp field yet (the `created_at` column below covers it);
-Reason does list which of ML/Portfolio/Risk meaningfully influenced the result. `ModelVersion`
-and `MLModelVersion` are two different things, easy to conflate: `ModelVersion` is the decision
-engine's own scoring-logic tag (`Orchestrator.EngineVersion`, a constant, "atlas-decision-v1"
-today), while `MLModelVersion` is the real ML model that produced `MLScore` (`ml.Prediction.
+Reason, Score, TechnicalScore, MLScore, PortfolioScore, RiskScore, RiskDataAvailable, Degraded,
+MarketCondition, ModelVersion, MLModelVersion, MLRecoveryModelVersion}` — no separate timestamp
+field yet (the `created_at` column below covers it); Reason does list which of ML/Portfolio/Risk
+meaningfully influenced the result. Every field is persisted, `Degraded` and `RiskDataAvailable`
+included (migrations/022 — rows older than that hold NULL for both, since they were never
+recorded). `ModelVersion` and `MLModelVersion` are two different things, easy to conflate:
+`ModelVersion` is the decision engine's own scoring-logic tag (`Orchestrator.EngineVersion`,
+"atlas-decision-v2" since quote freshness moved to the wall clock and input quality started being
+recorded; bump it whenever scoring or flagging rules change. "atlas-decision-v1" rows span several
+earlier scoring revisions and do not identify a single rule set), while `MLModelVersion` is the real ML model that produced `MLScore` (`ml.Prediction.
 ModelVersion` — a trained model's version, or `ml.StubModelVersion` when none is loaded). Both
 are shown separately on the Recommendations dashboard page ("Engine" vs. "ML model"). Confidence
 was previously a fixed literal per action band (every BUY reported 0.78, every HOLD reported 0.6,
@@ -119,14 +123,12 @@ Resistance levels
 ```
 ---
 ## ML Prediction
-Example:
-```
-Correction Probability:
-82%
-Recovery Probability:
-75%
-Confidence:
-88%
+A real response, `GET /predictions?symbol=AAPL` on 2026-09-24 with both model files in
+`training/models/` loaded:
+```json
+{"symbol":"AAPL","confidence":0.9344841241836548,"score":0.9672420620918274,
+ "correction_probability":0.03275793790817261,"recovery_probability":0.425618052482605,
+ "model_version":"v20260810145759","recovery_model_version":"v20260809134009"}
 ```
 ---
 ## Portfolio Context
@@ -168,7 +170,7 @@ by Exposure (sum across positions) rather than surfaced per-position here. Marke
 implemented — there's no trend/regime classifier (see docs/ml.md's market condition section).
 
 Since multiple portfolios were added (see docs/database.md's `portfolios` table), Portfolio
-Context and Risk Context are deliberately whole-account, not scoped to whichever portfolio the
+Context and Risk Context are deliberately all-portfolio, not scoped to whichever portfolio the
 dashboard's tabs currently show: `blendMLAndPortfolio` reads `portfolio.UseCase.GetAllPositions`
 (every portfolio's positions combined, quantity-weighted average cost per symbol — see
 `persistence.TimescaleDB.GetAllPositions`), not `GetPositions` (the active tab only). A symbol
@@ -188,22 +190,33 @@ WAIT
 ```
 ---
 # Recommendation Object
-Example:
+A real response, `GET /recommendations?symbol=VOO` on 2026-09-24 against the two model files in
+`training/models/` (a fresh database, so no portfolio and therefore no measured risk):
 ```json
 {
- "ticker":"VOO",
- "action":"REDUCE",
- "confidence":82,
- "score":76,
- "reason":[
-   "RSI above 75",
-   "ML predicts correction risk",
-   "Position profit above target"
- ],
- "risk":"medium",
- "timestamp":"2026-08-05"
+    "symbol": "VOO",
+    "action": "HOLD",
+    "confidence": 0.4001435566082061,
+    "reason": [
+        "Mixed signal composition",
+        "Decision-support layer only"
+    ],
+    "score": 0.29992822169589695,
+    "technical_score": 0.30505926754249674,
+    "ml_score": 0.9831801672903282,
+    "portfolio_score": 0.5,
+    "risk_score": 1,
+    "risk_data_available": false,
+    "market_condition": "BEAR",
+    "model_version": "atlas-decision-v2",
+    "ml_model_version": "v20260810145759",
+    "ml_recovery_model_version": "v20260809134009"
 }
 ```
+Every score is on a 0–1 scale. `confidence` is how far `score` sits from the neutral 0.5, scaled
+to 0–1 (`|score − 0.5| × 2` — here `|0.2999 − 0.5| × 2 = 0.40`); it is not the ML model's own
+confidence, which only decides HOLD versus WAIT. A confident SELL and a confident BUY both have high
+`confidence`. `degraded: true` appears when an expected input was missing.
 ---
 # Scoring Model
 Final score:
@@ -417,46 +430,16 @@ on closed candles is the ordinary discipline for bar-based signals — anything 
 forming candle repaints until it closes.
 ---
 # Example Calculation
-## Technical
+The VOO recommendation shown under "Recommendation Object" above, worked through. The score is
+the technical score multiplied by risk factors that can only lower it
+(`Orchestrator.blendMLAndPortfolio`):
 ```
-RSI:
-20/25
-Trend:
-15/20
-Volume:
-10/15
+score = technical × ML factor × (portfolio / 0.5) × portfolio-wide risk
+      = 0.30506   × 0.98318   × (0.5 / 0.5)       × 1
+      = 0.29993
 ```
-Score:
-```
-45/60
-```
----
-## ML
-```
-Correction probability:
-80%
-Confidence:
-90%
-```
-Score:
-```
-25/30
-```
----
-## Portfolio
-```
-Already profitable:
-10/10
-```
----
-Final:
-```
-80/100
-```
-Recommendation:
-```
-REDUCE POSITION
-```
+0.29993 falls between StrongBearish (0.25) and LeanBearish (0.45); with no position held there is
+nothing to reduce, so the action is HOLD. `confidence` = |0.29993 − 0.5| × 2 = 0.40.
 ---
 # Explainability
 Every recommendation must explain:
@@ -552,20 +535,10 @@ its quote page (`market.QuoteURL`, the same link the dashboard tables use), with
 confidence/score/market condition as an inline field row and the rationale as one bullet per line.
 The flat `[Atlas] ORCL: BUY (confidence 67%) — reason; reason; reason` string it replaced was
 legible on its own and unscannable the moment a poll fired several at once.
-Example:
-```
-🚨 Atlas Recommendation
-Ticker:
-VOO
-Action:
-REDUCE
-Confidence:
-82%
-Reason:
-- High RSI
-- ML correction probability 85%
-- Large unrealized profit
-```
+An embed carries the title `<SYMBOL> — <ACTION>` linked to the quote page, a field row with
+Confidence, Score, Market (when classified) and Inputs "Incomplete — see reasons" (when the
+recommendation was degraded), the reasons as a bullet list, and the footer "Atlas · decision
+support only, no trades are executed" (`internal/app/alerts_loop.go`'s `buildAlertEmbed`).
 ---
 # Future Extensions
 Possible improvements:

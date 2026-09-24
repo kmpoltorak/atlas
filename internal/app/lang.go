@@ -1,14 +1,14 @@
 package app
 
 import (
+	"fmt"
 	"net/http"
 
 	"atlas/internal/app/web"
 )
 
-// langCookieName holds the dashboard's display-language preference (see web.Lang) — separate
-// from sessionCookieName since it's a UI preference, not an auth credential, and (unlike the
-// session) should survive logout and persist for a long time.
+// langCookieName holds the dashboard's display-language preference (see web.Lang), kept for a
+// long time since it is a UI preference.
 const langCookieName = "atlas_lang"
 
 // langCookieMaxAge is a year: a display preference, not a session, so it should stick around.
@@ -56,4 +56,15 @@ func (a *Application) langSetHandler(w http.ResponseWriter, r *http.Request) {
 		redirect = "/"
 	}
 	http.Redirect(w, r, redirect, http.StatusSeeOther)
+}
+
+// tr translates a handler's UI message into the request's display language, filling any
+// fmt verbs from args — see the "msg.*" keys in web/i18n.go. Messages built from an error keep
+// the error's own text, which comes from lower layers and is not translated.
+func (a *Application) tr(r *http.Request, key string, args ...any) string {
+	message := web.T(a.resolveLang(r), key)
+	if len(args) == 0 {
+		return message
+	}
+	return fmt.Sprintf(message, args...)
 }

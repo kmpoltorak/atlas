@@ -14,9 +14,9 @@
 
     <form class="row row-cols-auto g-2 align-items-end mb-4" method="get" action="/dashboard/recommendations">
       <div class="col">
-        <label class="form-label">{{T .Lang "table.symbol"}}</label>
+        <label class="form-label" for="symbolField">{{T .Lang "table.symbol"}}</label>
         {{if .Symbols}}
-        <select class="form-select" name="symbol">
+        <select class="form-select" id="symbolField" name="symbol">
           <option value="">{{T .Lang "common.choose"}}</option>
           {{$current := .Symbol}}
           {{range .Symbols}}
@@ -24,7 +24,7 @@
           {{end}}
         </select>
         {{else}}
-        <input type="text" class="form-control text-uppercase" name="symbol" value="{{.Symbol}}" required>
+        <input type="text" class="form-control text-uppercase" id="symbolField" name="symbol" value="{{.Symbol}}" required>
         <div class="form-text">{{T .Lang "watchlist.dropdown_hint" | safeHTML}}</div>
         {{end}}
       </div>
@@ -35,6 +35,7 @@
 
     {{if .Recommendation}}
     <h2 class="h4"><a class="atlas-symbol" href="{{yahooURL .Recommendation.Symbol}}" target="_blank" rel="noopener noreferrer" title="{{T .Lang "table.open_in_yahoo"}}">{{.Recommendation.Symbol}}</a>: <span class="{{actionClass .Recommendation.Action}}">{{actionLabel .Lang .Recommendation.Action}}</span></h2>
+    {{if .Recommendation.Degraded}}<div class="alert alert-warning py-2"><strong>{{T .Lang "rec.degraded"}}:</strong> {{T .Lang "rec.degraded_hint"}}</div>{{end}}
     <div class="table-responsive">
       <table class="table">
         <tbody>
@@ -47,6 +48,7 @@
           {{if .Recommendation.MarketCondition}}<tr><th scope="row">{{T .Lang "table.market_condition"}}</th><td>{{.Recommendation.MarketCondition}}</td></tr>{{end}}
           <tr><th scope="row">{{T .Lang "table.model"}}</th><td>{{.Recommendation.ModelVersion}}</td></tr>
           <tr><th scope="row">{{T .Lang "table.ml_model"}}</th><td>{{if .Recommendation.MLModelVersion}}{{.Recommendation.MLModelVersion}}{{else}}{{T .Lang "table.ml_model_none"}}{{end}}</td></tr>
+          {{if .Recommendation.MLRecoveryModelVersion}}<tr><th scope="row">{{T .Lang "table.ml_recovery_model"}}</th><td>{{.Recommendation.MLRecoveryModelVersion}}</td></tr>{{end}}
         </tbody>
       </table>
     </div>

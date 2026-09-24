@@ -1,5 +1,5 @@
 // Package trainer is a thin HTTP client for cmd/trainer's internal-only API — the real trigger
-// behind the Account dashboard's "Train new candidate" button (see docker-compose.yml's
+// behind the Settings page's "Train new candidate" button (see docker-compose.yml's
 // atlas-trainer service and docs/ml.md's "Model selection and retraining" section).
 package trainer
 

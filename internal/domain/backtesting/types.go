@@ -98,6 +98,13 @@ type MLEvaluation struct {
 	Recall     float64 `json:"recall"`
 	F1Score    float64 `json:"f1_score"`
 	ROCAUC     float64 `json:"roc_auc"`
+	// Label describes the correction event the predictions were scored against, and
+	// LabelFromModel whether it is the one the model was trained on (its metadata's
+	// label_params) or the default, used only because the model does not record its own. A
+	// false LabelFromModel means these numbers may compare the model against an event it never
+	// learned.
+	Label          string `json:"label"`
+	LabelFromModel bool   `json:"label_from_model"`
 }
 
 // WalkForwardResult reports docs/backtesting.md's "Walk Forward Testing": the bar range is

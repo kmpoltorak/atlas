@@ -28,7 +28,7 @@ func (a *Application) watchlistPageHandler(w http.ResponseWriter, r *http.Reques
 		a.renderWatchlistPage(w, r, "", "")
 	case http.MethodPost:
 		if err := r.ParseForm(); err != nil {
-			a.renderWatchlistPage(w, r, "Invalid form submission.", "")
+			a.renderWatchlistPage(w, r, a.tr(r, "msg.invalid_form"), "")
 			return
 		}
 		symbol := strings.ToUpper(strings.TrimSpace(r.FormValue("symbol")))
@@ -39,7 +39,7 @@ func (a *Application) watchlistPageHandler(w http.ResponseWriter, r *http.Reques
 		if err := a.fetchAndSaveSymbolInfo(r.Context(), symbol); err != nil {
 			a.Logger.Warn("failed to fetch symbol info for newly added watchlist item", zap.String("symbol", symbol), zap.Error(err))
 		}
-		a.renderWatchlistPage(w, r, "", "Added "+symbol+" to the watchlist.")
+		a.renderWatchlistPage(w, r, "", a.tr(r, "msg.watchlist_added", symbol))
 	default:
 		methodNotAllowed(w)
 	}
@@ -97,12 +97,12 @@ func (a *Application) watchlistRefreshInfoHandler(w http.ResponseWriter, r *http
 		updated++
 	}
 
-	message := fmt.Sprintf("Fetched info for %d symbol(s).", updated)
+	message := a.tr(r, "msg.info_fetched", updated)
 	switch {
 	case len(missing) == 0:
-		message = "Every symbol already has info."
+		message = a.tr(r, "msg.info_complete")
 	case failed > 0:
-		message += fmt.Sprintf(" %d failed — try again in a moment.", failed)
+		message += a.tr(r, "msg.info_failed_suffix", failed)
 	}
 	a.renderWatchlistPage(w, r, "", message)
 }
@@ -131,21 +131,21 @@ func (a *Application) watchlistDeleteHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		a.renderWatchlistPage(w, r, "Invalid form submission.", "")
+		a.renderWatchlistPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	symbols := upperAll(formValues(r, "symbols", "symbol"))
 	if len(symbols) == 0 {
-		a.renderWatchlistPage(w, r, "No symbols selected.", "")
+		a.renderWatchlistPage(w, r, a.tr(r, "msg.no_symbols_selected"), "")
 		return
 	}
 	if err := a.Watchlist.RemoveMany(symbols); err != nil {
 		a.renderWatchlistPage(w, r, err.Error(), "")
 		return
 	}
-	message := fmt.Sprintf("%d symbol(s) removed from the watchlist.", len(symbols))
+	message := a.tr(r, "msg.watchlist_removed_many", len(symbols))
 	if len(symbols) == 1 {
-		message = "Removed " + symbols[0] + " from the watchlist."
+		message = a.tr(r, "msg.watchlist_removed_one", symbols[0])
 	}
 	a.renderWatchlistPage(w, r, "", message)
 }

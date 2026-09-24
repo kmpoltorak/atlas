@@ -1,11 +1,7 @@
 # Infrastructure-level alerting rules — distinct from the business alerts already sent to
 # Discord by internal/app/alerts_loop.go (recommendation changes for watched symbols). These
 # fire on the health of Atlas itself: is it up, is it crash-looping, is it erroring a lot.
-#
-# Plain Prometheus rule-file format, not a Prometheus Operator PrometheusRule CRD — this repo's
-# deploy/ manifests don't assume the Operator is installed (see deploy/README.md's Scope note),
-# so these rules are written to load via prometheus.yml's `rule_files`, which works against any
-# Prometheus, Operator-managed or not.
+# Loaded through prometheus.yml's `rule_files` by the Compose stack's own Prometheus.
 groups:
   - name: atlas-infrastructure
     rules:
@@ -30,21 +26,6 @@ groups:
         annotations:
           summary: "Atlas API is flapping"
           description: "atlas-api's up/down state changed more than 4 times in 15 minutes — likely crash-looping."
-
-      - alert: AtlasPodCrashLooping
-        # Kubernetes-specific and needs kube-state-metrics scraped as a target, which isn't
-        # configured anywhere in this repo (deploy/ has no TimescaleDB/Redis manifests either —
-        # see deploy/README.md's Scope note; the same "not this repo's job" reasoning applies to
-        # cluster-level monitoring add-ons). Left in so the rule exists once kube-state-metrics
-        # is available; until then it simply never fires because the metric it reads doesn't
-        # exist. AtlasAPIFlapping above is the working substitute today.
-        expr: increase(kube_pod_container_status_restarts_total{namespace="atlas", pod=~"atlas-api.*"}[15m]) > 3
-        for: 0m
-        labels:
-          severity: critical
-        annotations:
-          summary: "atlas-api pod is crash-looping"
-          description: "An atlas-api pod restarted more than 3 times in 15 minutes."
 
       - alert: AtlasHighErrorRate
         expr: |

@@ -23,7 +23,7 @@
     </div>
     <form method="post" action="/dashboard/watchlist/delete" id="watchlistForm"
           data-confirm-bulk="{{T .Lang "confirm.remove_watchlist_bulk"}}">
-      <input type="text" class="form-control form-control-sm mb-2" id="watchlistFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
+      <input type="text" class="form-control form-control-sm mb-2" id="watchlistFilter" placeholder="{{T .Lang "table.filter_placeholder"}}" aria-label="{{T .Lang "table.filter_placeholder"}}">
       <div class="table-responsive">
         <table class="table table-striped table-hover align-middle" id="watchlistTable">
           <thead><tr>
@@ -34,7 +34,7 @@
           {{range .Items}}
           {{$info := index $.Info .Symbol}}
           <tr>
-            <td><input type="checkbox" class="form-check-input watchlist-checkbox" name="symbols" value="{{.Symbol}}"></td>
+            <td><input type="checkbox" class="form-check-input watchlist-checkbox" name="symbols" value="{{.Symbol}}" aria-label="{{.Symbol}}"></td>
             <td><a class="atlas-symbol" href="{{yahooURL .Symbol}}" target="_blank" rel="noopener noreferrer" title="{{T $.Lang "table.open_in_yahoo"}}">{{.Symbol}}</a></td>
             <td>{{$info.Name}}</td>
             <td>{{$info.Type}}</td>
@@ -64,7 +64,7 @@
     {{end}}
 
     {{/* Section heading outside the cards, then one card per action in a row: the same shape
-         the Account page uses for its side-by-side model pickers. h-100 keeps the three cards
+         the Settings page uses for its side-by-side model pickers. h-100 keeps the three cards
          the same height even though the import form is the tallest. */}}
     <h2 class="h4 mt-5 mb-2">{{T .Lang "watchlist.manage"}}</h2>
     <p class="text-body-secondary small">{{T .Lang "watchlist.manage_hint"}}</p>

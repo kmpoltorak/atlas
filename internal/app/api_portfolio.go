@@ -179,6 +179,16 @@ func (a *Application) refreshRecommendation(symbol string) {
 	// goroutine running for the life of the process.
 	ctx, cancel := context.WithTimeout(context.Background(), refreshRecommendationTimeout)
 	defer cancel()
+	// The storage handle too, not only the fetch. a is the request-scoped copy (forPortfolio), so
+	// a.Storage is bound to the request's context: persistRecommendation and
+	// persistIndicatorSnapshot ran after the response had been written and failed with "context
+	// canceled", leaving the stale recommendation in place — the very thing this refresh exists
+	// to replace.
+	if a.Storage != nil {
+		background := *a
+		background.Storage = a.Storage.WithContext(ctx)
+		a = &background
+	}
 	bars, err := a.collectBars(ctx, symbol, a.Config.CollectorWindow)
 	if err != nil {
 		a.Logger.Warn("failed to refresh recommendation after transaction", zap.String("symbol", symbol), zap.Error(err))

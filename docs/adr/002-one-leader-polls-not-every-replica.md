@@ -2,6 +2,11 @@
 
 **Status**: Accepted (2026-09-05)
 
+> **2026-09-24:** the Kubernetes manifests this context describes were removed; Atlas now runs
+> as one `atlas-api` process under Docker Compose ([deployment.md](../deployment.md)). The lease
+> still decides which process polls, which is what keeps an overlapping restart from polling
+> twice.
+
 ## Context
 
 `deploy/deployment.yaml` ran two replicas and the HPA scaled to six, while the code assumed one

@@ -264,3 +264,24 @@ func TestQuoteToPLNLeavesPLNUnconverted(t *testing.T) {
 		}
 	}
 }
+
+// A degraded recommendation must not reach Discord looking exactly like a complete one.
+func TestAlertEmbedMarksIncompleteInputs(t *testing.T) {
+	alert := stubAlert("AAPL", "BUY")
+	if hasInputsField(buildAlertEmbed(alert)) {
+		t.Fatal("a complete recommendation should not carry an Inputs warning")
+	}
+	alert.Recommendation.Degraded = true
+	if !hasInputsField(buildAlertEmbed(alert)) {
+		t.Fatal("a degraded recommendation must say so in the alert")
+	}
+}
+
+func hasInputsField(embed infraNotifications.Embed) bool {
+	for _, field := range embed.Fields {
+		if field.Name == "Inputs" {
+			return true
+		}
+	}
+	return false
+}

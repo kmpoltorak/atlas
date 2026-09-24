@@ -49,7 +49,7 @@ services:
       # True by default (unchanged behavior). Set to "false" to make BUY/SELL/HOLD scoring use
       # the technical term alone (RSI/MACD/Bollinger/momentum), skipping the ML+Portfolio+Risk
       # blend entirely — MODEL_PATH/RECOVERY_MODEL_PATH below still load and stay usable via
-      # /predict and the Account page either way, this only stops the decision engine from
+      # /predict and the Settings page either way, this only stops the decision engine from
       # factoring them in. See internal/config.Config.MLEnabled.
       ML_ENABLED: ${ML_ENABLED:-true}
       # Empty by default: no model loaded, Atlas falls back to the deterministic RSI stub
@@ -67,26 +67,10 @@ services:
       # a working default (ENV LIBONNXRUNTIME_PATH=/usr/lib/libonnxruntime.so) matching where
       # it bundles the real onnxruntime .so; only override this if you rebuilt the image with
       # a different runtime location.
-      # Both empty by default: no login gate at all (see internal/application/auth's Enabled),
-      # matching every prior curl-based workflow this project already relies on. Set these in
-      # the shell/.env before `docker compose up` to protect the web dashboard/API — use
-      # `go run ./cmd/generate-admin-credentials` to produce a real hash, e.g.:
-      #   ADMIN_USERNAME=admin ADMIN_PASSWORD_HASH='$2a$...' docker compose up -d
-      # 2FA is not configured here at all: enable it from the dashboard after logging in
-      # (Account → Set up 2FA), which walks through a real QR-code enrollment — see
-      # internal/application/auth's doc comment.
-      AUTH_DISABLED: ${AUTH_DISABLED:-true}
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-}
-      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
-      # False by default, matching this stack running over plain HTTP with no reverse proxy in
-      # front. Set to "true" once Atlas is actually served over HTTPS — see internal/config.
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
-      # Empty by default: the Account page's "Train new candidate" button then just explains how
-      # to run training/retrain.sh by hand instead. Only meaningful together with the
-      # atlas-trainer service below (off by default, profile "trainer") — set this to
-      # http://atlas-trainer:8091 in .env once you've started that profile, e.g.:
-      #   docker compose --profile trainer up -d
-      TRAINER_URL: ${TRAINER_URL:-}
+      # The atlas-trainer service below runs as part of the default stack, so the Settings page's
+      # "Train new candidate" and model-delete buttons work out of the box. Set TRAINER_URL= (empty)
+      # in .env to hide them; the page then explains how to run training/retrain.sh by hand.
+      TRAINER_URL: ${TRAINER_URL-http://atlas-trainer:8091}
     volumes:
       # Read-only: lets MODEL_PATH above reference a locally-trained model (training/models/
       # is gitignored — these are locally/CI-generated artifacts, not committed source).
@@ -111,7 +95,7 @@ services:
     volumes:
       # Read-write, the whole repo: retrain.sh needs cmd/export-training-data's Go source and
       # training/train.py, and writes into training/data/ and training/models/ — the same
-      # directory atlas-api's MODEL_PATH/RECOVERY_MODEL_PATH and Account-page picker already
+      # directory atlas-api's MODEL_PATH/RECOVERY_MODEL_PATH and Settings-page picker already
       # read from (./training/models:/models:ro above). training/.venv (gitignored) persists
       # across restarts here exactly like it would running retrain.sh on the host directly.
       - .:/app
@@ -155,7 +139,10 @@ services:
     restart: unless-stopped
 
   timescaledb:
-    image: timescale/timescaledb:latest-pg16
+    # Pinned, not latest-pg16: the extension version lives in the data volume, so an image that
+    # moves underneath it changes what an existing database is upgraded to on the next pull.
+    # Bump deliberately, and take a backup first (docs/runbook.md).
+    image: timescale/timescaledb:2.29.1-pg16
     container_name: atlas-timescaledb
     environment:
       POSTGRES_DB: atlas
@@ -179,13 +166,10 @@ services:
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.10-alpine
     container_name: atlas-redis
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      # 0 keeps every recommendation/indicator/prediction row forever, which is fine for a
-      # laptop run. Set a day count on anything long-lived (see config.DerivedRetentionDays).
-      DERIVED_RETENTION_DAYS: ${DERIVED_RETENTION_DAYS:-0}
     # Same variable as atlas-api's REDIS_PASSWORD, so requirepass and the client credential can
     # never disagree. Unset means no password at all, rather than an empty one Redis rejects.
     command: ["sh", "-c", 'exec redis-server ${REDIS_PASSWORD:+--requirepass "$$REDIS_PASSWORD"}']

@@ -16,8 +16,7 @@ import (
 // NBPProvider fetches NBP's Table A — the average/mid reference rate NBP itself publishes once
 // per business day (~11:45 CET), one rate per currency. Table A (not Table C, NBP's buy/sell
 // cash-exchange spread) is the standard choice for valuation rather than physical currency
-// exchange — see PROJECT_CONTEXT.md's "Market data providers" for what this endpoint actually
-// does and does not guarantee.
+// exchange.
 type NBPProvider struct {
 	BaseURL string
 	Client  *http.Client

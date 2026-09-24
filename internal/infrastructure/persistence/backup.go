@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -26,7 +27,7 @@ import (
 var backupTables = []string{
 	"symbols", "portfolios", "watchlists", "watchlist_items", "positions", "transactions",
 	"prices", "indicators", "recommendations", "predictions", "backtest_runs",
-	"engine_settings", "ml_model_selection", "auth_settings",
+	"engine_settings", "ml_model_selection",
 	// alert_cursor is included because losing it is not neutral: restored without it, the next
 	// poll sees every action as new and re-announces the entire watchlist.
 	"alert_cursor",
@@ -48,7 +49,7 @@ var runtimeOnlyTables = []string{"leader_election", "alert_outbox"}
 
 // BackupAll dumps every row of every table in backupTables as JSON, keyed by table name — a
 // full, portable snapshot suitable for RestoreAll on this same database or a fresh one (see
-// account.html's "Backup" button). row_to_json/json_agg do the type-to-JSON encoding inside
+// settings.html's "Backup" button). row_to_json/json_agg do the type-to-JSON encoding inside
 // Postgres itself (timestamps, UUIDs, jsonb, NULLs), so this needs no per-table Go struct that
 // could drift from the schema.
 func (t *TimescaleDB) BackupAll() ([]byte, error) {
@@ -69,7 +70,7 @@ func (t *TimescaleDB) BackupAll() ([]byte, error) {
 // recommendations — the two that only grow (see PruneDerivedData). Row by row, nothing about how
 // long the instance has been running changes the memory this needs. Note that BackupAll itself
 // still buffers the whole document by definition; the streaming path is what
-// accountBackupHandler uses.
+// settingsBackupHandler uses.
 //
 // The snapshot is still one REPEATABLE READ transaction, so streaming does not cost consistency:
 // every table is read at the same point in time regardless of how long the write takes.
@@ -158,10 +159,12 @@ func writeTableRows(ctx context.Context, tx *sqlx.Tx, w io.Writer, table string)
 // other JSON that happens to be an object (see validateBackup).
 const (
 	backupFormat = "atlas-backup"
-	// backupVersion 2 added alert_cursor. Version 1 documents are still restorable — see
-	// validateBackup — because refusing yesterday's backup is a worse failure than restoring one
-	// without a notification cursor, which simply means the next poll re-announces the watchlist.
-	backupVersion = 2
+	// backupVersion 2 added alert_cursor; 3 dropped auth_settings along with login itself
+	// (migrations/023). Older documents are still restorable — see validateBackup — because
+	// refusing yesterday's backup is a worse failure than restoring one without a notification
+	// cursor, which simply means the next poll re-announces the watchlist. Their auth_settings
+	// rows are ignored: there is no table left to put them in.
+	backupVersion = 3
 	// backupMinVersion is the oldest document this build can restore.
 	backupMinVersion = 1
 )
@@ -170,17 +173,18 @@ const (
 // table to a backup is a format change, and pretending otherwise is how a restore starts silently
 // rejecting every file taken before the change.
 func tablesForVersion(version int) []string {
-	if version < 2 {
-		// v1 predates alert_cursor.
-		v1 := make([]string, 0, len(backupTables))
-		for _, table := range backupTables {
-			if table != "alert_cursor" {
-				v1 = append(v1, table)
-			}
-		}
-		return v1
+	if version >= 3 {
+		return backupTables
 	}
-	return backupTables
+	// v1 and v2 still carried auth_settings; v1 also predates alert_cursor.
+	tables := make([]string, 0, len(backupTables)+1)
+	for _, table := range backupTables {
+		if version < 2 && table == "alert_cursor" {
+			continue
+		}
+		tables = append(tables, table)
+	}
+	return append(tables, "auth_settings")
 }
 
 // backupTimeout bounds a whole backup or restore. Deliberately far longer than queryTimeout:
@@ -190,7 +194,7 @@ const backupTimeout = 2 * time.Minute
 // RecordBackup durably marks that a full backup was just taken — the safety record FlushAll
 // checks before allowing a wipe (see migrations/017). Deliberately NOT called by BackupAll:
 // producing the bytes is not the same event as the operator actually holding the file, and the
-// FlushAll safety net has to mean the latter. accountBackupHandler calls this only after the
+// FlushAll safety net has to mean the latter. settingsBackupHandler calls this only after the
 // whole payload has been written to the client without error.
 func (t *TimescaleDB) RecordBackup() error {
 	ctx, cancel := t.context()
@@ -262,21 +266,44 @@ func validateBackup(payload []byte) (map[string]json.RawMessage, error) {
 			version, len(expected), len(dump))
 	}
 	for _, table := range expected {
-		raw := bytes.TrimSpace(dump[table])
-		if len(raw) == 0 || raw[0] != '[' {
-			return nil, fmt.Errorf("backup table %s must be an array", table)
-		}
-		var rows []map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &rows); err != nil {
-			return nil, fmt.Errorf("invalid backup table %s: %w", table, err)
-		}
-		for _, row := range rows {
-			if len(row) == 0 {
-				return nil, fmt.Errorf("invalid empty row in %s", table)
-			}
+		if err := validateRows(table, dump[table]); err != nil {
+			return nil, err
 		}
 	}
 	return dump, nil
+}
+
+// validateRows checks that raw is a JSON array of non-empty objects, one row at a time.
+//
+// It used to decode the whole table into []map[string]json.RawMessage just to look at it. For a
+// prices table that is a map per row, and measured on a 51 MiB backup the restore then peaked at
+// roughly 450 MiB of heap — beyond the Kubernetes deployment's memory limit for a backup a
+// fraction of the 200 MiB the upload accepts. Only one row is held here at a time.
+func validateRows(table string, raw json.RawMessage) error {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || raw[0] != '[' {
+		return fmt.Errorf("backup table %s must be an array", table)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	if _, err := decoder.Token(); err != nil {
+		return fmt.Errorf("invalid backup table %s: %w", table, err)
+	}
+	for decoder.More() {
+		var row json.RawMessage
+		if err := decoder.Decode(&row); err != nil {
+			return fmt.Errorf("invalid backup table %s: %w", table, err)
+		}
+		if row[0] != '{' {
+			return fmt.Errorf("invalid row in %s: not an object", table)
+		}
+		if len(bytes.TrimSpace(row[1:len(row)-1])) == 0 {
+			return fmt.Errorf("invalid empty row in %s", table)
+		}
+	}
+	if _, err := decoder.Token(); err != nil {
+		return fmt.Errorf("invalid backup table %s: %w", table, err)
+	}
+	return nil
 }
 
 func (t *TimescaleDB) RestoreAll(payload []byte) error {
@@ -301,7 +328,16 @@ func (t *TimescaleDB) RestoreAll(payload []byte) error {
 		if !ok || string(rows) == "null" {
 			continue
 		}
-		query := fmt.Sprintf(`INSERT INTO %s SELECT * FROM json_populate_recordset(null::%s, $1::json)`, table, table)
+		columns, err := restoreColumns(ctx, tx, table, string(rows))
+		if err != nil {
+			return err
+		}
+		if len(columns) == 0 {
+			continue // an empty table in the backup: nothing to insert
+		}
+		list := strings.Join(columns, ", ")
+		query := fmt.Sprintf(`INSERT INTO %s (%s) SELECT %s FROM json_populate_recordset(null::%s, $1::json)`,
+			table, list, list, table)
 		if _, err := tx.ExecContext(ctx, query, string(rows)); err != nil {
 			return fmt.Errorf("restore %s: %w", table, err)
 		}
@@ -312,10 +348,61 @@ func (t *TimescaleDB) RestoreAll(payload []byte) error {
 	return nil
 }
 
+// restoreColumns is how a backup taken on an older schema restores onto this one. It returns the
+// columns of table that the backup's rows actually carry, quoted and in schema order.
+//
+// Inserting every column (SELECT * from json_populate_recordset) turned a key the backup never had
+// into an explicit NULL, and an explicit NULL skips the column's DEFAULT. So every column added
+// since the backup was taken failed the restore if it was NOT NULL: transactions.created_at
+// (migrations/021) broke every backup taken before it with SQLSTATE 23502. Listing only the
+// columns the backup has lets the rest take their defaults, which is what the migration that
+// added them did to the rows that existed at the time.
+//
+// A column this schema requires that has no default cannot be filled in, and that is reported by
+// name rather than as a constraint violation. Keys the schema no longer has are ignored, exactly
+// as json_populate_recordset already ignored them.
+func restoreColumns(ctx context.Context, tx *sqlx.Tx, table, rows string) ([]string, error) {
+	var catalog []struct {
+		Name     string `db:"column_name"`
+		Required bool   `db:"required"`
+		Present  bool   `db:"present"`
+	}
+	if err := tx.SelectContext(ctx, &catalog, `
+		SELECT c.column_name,
+		       (c.is_nullable = 'NO' AND c.column_default IS NULL) AS required,
+		       (k.key IS NOT NULL) AS present
+		FROM information_schema.columns c
+		LEFT JOIN (SELECT DISTINCT json_object_keys(e) AS key FROM json_array_elements($1::json) e) k
+		       ON k.key = c.column_name
+		WHERE c.table_schema = current_schema() AND c.table_name = $2
+		ORDER BY c.ordinal_position`, rows, table); err != nil {
+		return nil, fmt.Errorf("read columns of %s: %w", table, err)
+	}
+	var columns, missing []string
+	anyPresent := false
+	for _, column := range catalog {
+		switch {
+		case column.Present:
+			anyPresent = true
+			columns = append(columns, pgx.Identifier{column.Name}.Sanitize())
+		case column.Required:
+			missing = append(missing, column.Name)
+		}
+	}
+	if !anyPresent {
+		return nil, nil
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("backup of %s lacks required column(s) %s, which have no default to restore from",
+			table, strings.Join(missing, ", "))
+	}
+	return columns, nil
+}
+
 // ErrNoBackupTaken is FlushAll's refusal when no backup has ever been recorded (see
-// LastBackupAt) — checked by name so accountFlushHandler can show a specific, actionable message
+// LastBackupAt) — checked by name so settingsFlushHandler can show a specific, actionable message
 // instead of a generic failure.
-var ErrNoBackupTaken = errors.New("no backup has been taken yet — download one from the Account page first")
+var ErrNoBackupTaken = errors.New("no backup has been taken yet — download one from the Settings page first")
 
 // ErrBackupTooOld is FlushAll's refusal when a backup exists but predates FlushBackupFreshness —
 // a backup from before recent changes wouldn't actually get you back to where the database is
@@ -329,11 +416,8 @@ var ErrBackupTooOld = fmt.Errorf("last backup is more than %s old — download a
 const FlushBackupFreshness = 5 * time.Minute
 
 // FlushAll deletes every row of every table in backupTables — a full factory reset, back to the
-// state a freshly migrated, never-used database would be in. Login itself is unaffected: the
-// admin username/password come from ADMIN_USERNAME/ADMIN_PASSWORD_HASH (see config.Load), not
-// any of these tables — only 2FA enrollment (auth_settings) is reset, matching a real fresh
-// install where 2FA has never been set up. Callers must also reset whatever in-memory state
-// mirrors these tables (see portfolio.UseCase.Reload/watchlist.UseCase.Reload) — this only
+// state a freshly migrated, never-used database would be in. Callers must also reset whatever
+// in-memory state mirrors these tables (see portfolio.UseCase.Reload/watchlist.UseCase.Reload) — this only
 // touches the database.
 //
 // Refuses outright — a server-side gate, not just a disabled button (see migrations/017's

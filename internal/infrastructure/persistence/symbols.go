@@ -72,7 +72,8 @@ func nullIfEmpty(value string) any {
 }
 
 // UpsertSymbolQuote durably records a symbol's current live price and prior close (see
-// market.Quote) — called once per alert-poll cycle for every watchlist symbol (see
+// market.Quote), with two timestamps: quote_updated_at is when Atlas fetched it, quoted_at when
+// the market last traded at that price (migrations/022) — called once per alert-poll cycle for every watchlist symbol (see
 // internal/app/alerts_loop.go), unlike UpsertSymbolInfo above which runs once per symbol ever.
 // A zero Price (provider returned nothing usable) is skipped entirely rather than overwriting a
 // real previous reading with a blank one — the Watchlist page keeps showing the last good quote
@@ -85,15 +86,22 @@ func (t *TimescaleDB) UpsertSymbolQuote(ticker string, quote market.Quote) error
 	defer cancel()
 
 	if _, err := t.db.ExecContext(ctx, `
-		INSERT INTO symbols (ticker, last_price, previous_close, quote_updated_at)
-		VALUES ($1, $2, $3, NOW())
+		INSERT INTO symbols (ticker, last_price, previous_close, quote_updated_at, quoted_at)
+		VALUES ($1, $2, $3, NOW(), $4)
 		ON CONFLICT (ticker) DO UPDATE SET
 			last_price = EXCLUDED.last_price, previous_close = EXCLUDED.previous_close,
-			quote_updated_at = EXCLUDED.quote_updated_at`,
-		ticker, quote.Price, nullIfZero(quote.PreviousClose)); err != nil {
+			quote_updated_at = EXCLUDED.quote_updated_at, quoted_at = EXCLUDED.quoted_at`,
+		ticker, quote.Price, nullIfZero(quote.PreviousClose), nullIfZeroTime(quote.QuotedAt)); err != nil {
 		return fmt.Errorf("upsert symbol quote for %s: %w", ticker, err)
 	}
 	return nil
+}
+
+func nullIfZeroTime(value time.Time) any {
+	if value.IsZero() {
+		return nil
+	}
+	return value
 }
 
 func nullIfZero(value float64) any {

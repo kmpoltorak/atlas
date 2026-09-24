@@ -11,13 +11,6 @@ import (
 	"atlas/internal/domain/watchlist"
 )
 
-// LoginPage is the view model for templates/login.html.
-type LoginPage struct {
-	Lang         Lang
-	Error        string
-	RequiresTOTP bool
-}
-
 // ErrorPage is the view model for templates/error.html — see RenderError.
 type ErrorPage struct {
 	Lang    Lang
@@ -40,9 +33,9 @@ type DashboardPage struct {
 	// denominated figure in all three currencies. Empty when NBP is unreachable and nothing is
 	// cached yet — money degrades to PLN-only in that case, not an error.
 	Rates map[string]float64
-	// PriceAsOf maps a Position's Symbol to its most recent transaction's RFC3339 timestamp —
-	// see priceAsOf (web_handlers.go). The same event that set Position.CurrentPrice, so this is
-	// genuinely "as of when" that price is from, not a live quote timestamp.
+	// PriceAsOf maps a Position's Symbol to when its CurrentPrice is from: the quote's market
+	// trade time for a quoted position, its most recent transaction otherwise — see
+	// livePricedPositions (web_handlers.go). The priceState template func says which.
 	PriceAsOf map[string]string
 	// AlertCounts is the watchlist's current non-HOLD recommendations, grouped by action (e.g.
 	// {"BUY": 2, "SELL": 1}) — see alertCountsByAction. Nil when there are none (or the
@@ -70,6 +63,28 @@ type PortfolioPage struct {
 	PriceAsOf map[string]string
 	Error     string
 	Success   string
+	// Form is what the record-transaction form renders with: a fresh key and today's date, or —
+	// after a rejected submission — exactly what was submitted, key included, so correcting one
+	// field and resubmitting neither retypes the rest nor risks recording the trade twice.
+	Form TransactionForm
+}
+
+// TransactionForm is the record-transaction form's state (see PortfolioPage.Form).
+type TransactionForm struct {
+	// Key is the transaction id the form submits (portfolio.Transaction.ID). It is issued when
+	// the form is rendered and reused on every resubmission of that form, so a double click or a
+	// retry after a dropped connection records one transaction: RecordTransaction treats a
+	// repeated id with the same data as already done.
+	Key         string
+	PortfolioID string
+	Symbol      string
+	Type        string
+	Quantity    string
+	Price       string
+	Currency    string
+	// Date is the trade date, YYYY-MM-DD; Today bounds the date picker.
+	Date  string
+	Today string
 }
 
 // RecommendationsPage is the view model for templates/recommendations.html. Symbols is the
@@ -214,18 +229,12 @@ func (s SymbolInfo) ChangePercent() float64 {
 	return (s.LastPrice/s.PreviousClose - 1) * 100
 }
 
-// AccountPage is the view model for templates/account.html.
-type AccountPage struct {
-	Lang        Lang
-	Username    string
-	TOTPEnabled bool
-	Error       string
-	Success     string
+// SettingsPage is the view model for templates/settings.html.
+type SettingsPage struct {
+	Lang    Lang
+	Error   string
+	Success string
 
-	// AuthEnabled gates the password re-entry fields on Restore and Flush. With no login gate
-	// configured there is no password to ask for, so the fields would be an unanswerable prompt
-	// rather than a safeguard (see auth.UseCase.Reauthenticate).
-	AuthEnabled bool
 	// Leader/LeaderIsSelf say which replica currently holds the polling lease, so "why is
 	// nothing polling" is answerable from the UI rather than a database session (see app.Leader).
 	Leader       string
@@ -278,7 +287,7 @@ type AccountPage struct {
 	LastBackupAt time.Time
 }
 
-// TrainerStatus mirrors trainer.Status (internal/infrastructure/trainer) for the Account page —
+// TrainerStatus mirrors trainer.Status (internal/infrastructure/trainer) for the Settings page —
 // kept as its own type so this package doesn't need to import the infrastructure layer.
 type TrainerStatus struct {
 	Running    bool
@@ -289,7 +298,7 @@ type TrainerStatus struct {
 	Failed     bool
 }
 
-// ModelOption is one selectable entry in the Account page's model-activation dropdowns —
+// ModelOption is one selectable entry in the Settings page's model-activation dropdowns —
 // Description is entirely derived from real training metadata (ml.ModelInfo.Description), never
 // a fabricated or hand-edited string. Active marks whichever option (if any) is the model
 // currently loaded for that role, pre-selected in the dropdown.
@@ -303,11 +312,4 @@ type ModelOption struct {
 	Label       string
 	Description string
 	Active      bool
-}
-
-// TOTPEnrollPage is the view model for templates/totp_enroll.html.
-type TOTPEnrollPage struct {
-	Lang   Lang
-	Secret string
-	Error  string
 }

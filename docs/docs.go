@@ -1023,7 +1023,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "prometheus": {
-                    "description": "Prometheus/Alertmanager/Grafana are purely informational, like Trainer — omitted when\ntheir URL is configured empty, and never affect Status/the HTTP status code the way\nDatabase/Redis do: atlas-api doesn't depend on any of them to function, so Docker/\nKubernetes restarting it because Grafana (say) is down would be exactly the wrong\nresponse to that outage.",
+                    "description": "Prometheus/Alertmanager/Grafana are purely informational, like Trainer — omitted when\ntheir URL is configured empty, and never affect Status/the HTTP status code the way\nDatabase/Redis do: atlas-api doesn't depend on any of them to function, so Docker\nrestarting it because Grafana (say) is down would be exactly the wrong\nresponse to that outage.",
                     "type": "string"
                 },
                 "redis": {
@@ -1036,7 +1036,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "trainer": {
-                    "description": "Trainer is omitted entirely when TRAINER_URL isn't configured — the trainer sidecar is a\ngenuinely optional component (see docker-compose.yml's \"trainer\" profile), so its absence\nis not reported as an error the way Database/Redis would be.",
+                    "description": "Trainer is omitted entirely when TRAINER_URL isn't configured — the trainer sidecar is a\ngenuinely optional component (TRAINER_URL empty hides it), so its absence\nis not reported as an error the way Database/Redis would be.",
                     "type": "string"
                 }
             }
@@ -1096,6 +1096,13 @@ const docTemplate = `{
                 },
                 "f1_score": {
                     "type": "number"
+                },
+                "label": {
+                    "description": "Label describes the correction event the predictions were scored against, and\nLabelFromModel whether it is the one the model was trained on (its metadata's\nlabel_params) or the default, used only because the model does not record its own. A\nfalse LabelFromModel means these numbers may compare the model against an event it never\nlearned.",
+                    "type": "string"
+                },
+                "label_from_model": {
+                    "type": "boolean"
                 },
                 "precision": {
                     "type": "number"
@@ -1236,6 +1243,10 @@ const docTemplate = `{
                 "confidence": {
                     "type": "number"
                 },
+                "degraded": {
+                    "description": "Degraded is true when an input the engine expected to have was unavailable — an ML\nprediction that errored, a portfolio that could not be read, or a held position without a\ncurrent market price — so the score reflects\nfewer signals than a normal one. Reason carries the specifics. A degraded recommendation\nis still a real one, but it is a weaker claim than a complete one, and callers should not\npresent the two identically.",
+                    "type": "boolean"
+                },
                 "market_condition": {
                     "description": "MarketCondition is BULL/BEAR/SIDEWAYS (see ml.ClassifyMarketCondition) — a deterministic\nADX+EMA technical rule, not a trained model. Empty string when there isn't enough history\nto compute it (see ml.ClassifyMarketCondition's own warm-up requirement).",
                     "type": "string"
@@ -1244,11 +1255,15 @@ const docTemplate = `{
                     "description": "MLModelVersion is the actual ML model that produced MLScore (ml.Prediction.ModelVersion —\ne.g. a real trained model's version, or ml.StubModelVersion when none is loaded/wired in).\nEmpty when ML wasn't part of scoring at all (NewOrchestrator without ML — see\nNewOrchestratorWithML), distinct from the stub case where ML ran but with a placeholder\nmodel.",
                     "type": "string"
                 },
+                "ml_recovery_model_version": {
+                    "description": "MLRecoveryModelVersion is the recovery model that fed the ML term alongside\nMLModelVersion's correction model (see decision.mlScoreFromPrediction). Empty when no\nrecovery model ran.",
+                    "type": "string"
+                },
                 "ml_score": {
                     "type": "number"
                 },
                 "model_version": {
-                    "description": "ModelVersion identifies the decision-engine scoring logic itself (weights, thresholds —\nsee Orchestrator.EngineVersion), not the ML sub-model that fed MLScore above. Always\n\"atlas-decision-v1\" today since the engine has never been re-versioned — don't confuse a\nconstant engine tag with \"no ML model is being used.\"",
+                    "description": "ModelVersion identifies the decision-engine scoring logic itself (weights, thresholds —\nsee Orchestrator.EngineVersion), not the ML sub-model that fed MLScore above. It changes\nonly when the scoring rules do, so a constant value is not a sign that no ML model ran.",
                     "type": "string"
                 },
                 "portfolio_score": {
@@ -1259,6 +1274,10 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "risk_data_available": {
+                    "description": "RiskDataAvailable is false when RiskScore sits at its neutral 1.0 ceiling only because the\nportfolio has no exposure to measure yet (empty, or every position's price still equals its\ncost basis), or when a held position has no current market price — see\nOrchestrator.computeRiskScore. Callers should render \"n/a\" rather than the\nraw score in that case, since 1.0 there means \"nothing observed,\" not \"no risk found.\"",
+                    "type": "boolean"
                 },
                 "risk_score": {
                     "description": "RiskScore is a portfolio-wide risk signal (see portfolio.UseCase.ComputeRisk), distinct\nfrom PortfolioScore (a single symbol's own P\u0026L) — it reflects overall exposure/drawdown/\nvolatility across every held position, per docs/decision_engine.md's \"Risk Context\" being\na portfolio-wide concept. On the same [0,1] scale as the other components (higher = more\nsupportive of buying).",
@@ -1348,10 +1367,15 @@ const docTemplate = `{
                 "quantity": {
                     "type": "number"
                 },
+                "recorded_at": {
+                    "description": "RecordedAt is when Atlas accepted this transaction, which is a different question from\nwhen the trade happened and is what breaks ties between them.\n\nTwo trades can share a Timestamp honestly: the dashboard form submits a past trade date with\nno time, and two entries backdated to the same day are then identical. Replay has to order\nthem anyway, because BUY-then-SELL and SELL-then-BUY are not the same history — the second\nis an oversell. Ordering by transaction id instead ordered them by a random UUID, so the\nsame two trades could replay either way, and after a reload the database's own row order\ndecided. RecordedAt is the acceptance order, persisted (migrations/021) so it survives that\nreload.\n\nEmpty on a transaction that predates the column or was built by a caller directly;\nordering then falls back to the id, which is at least stable.",
+                    "type": "string"
+                },
                 "symbol": {
                     "type": "string"
                 },
                 "timestamp": {
+                    "description": "Timestamp is when the trade happened — the economic date, which the caller may backdate.",
                     "type": "string"
                 },
                 "type": {
@@ -1369,7 +1393,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "Atlas API",
-	Description:      "Decision-support trading-signal API: market data, portfolio, watchlist,\nrecommendations, ML predictions, and backtests. Atlas never executes trades —\nevery recommendation is advisory only.\n\nEvery route except /health, /metrics, /login, and /static/* requires a session\ncookie (see internal/app/auth_middleware.go) whenever ADMIN_USERNAME/\nADMIN_PASSWORD_HASH are set — log in via the dashboard in the same browser first,\nthen \"Try it out\" here reuses that session automatically.",
+	Description:      "Decision-support trading-signal API: market data, portfolio, watchlist,\nrecommendations, ML predictions, and backtests. Atlas never executes trades —\nevery recommendation is advisory only.\n\nThere is no login: Atlas is a local, single-operator tool, reachable on\nloopback only (see docker-compose.yml).",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

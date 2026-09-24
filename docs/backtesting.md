@@ -220,6 +220,13 @@ Average Loss
 ---
 # ML Evaluation
 The ML model must be evaluated independently.
+
+Which correction event it is scored against matters as much as the metric: `evaluateML` uses the
+label the model was trained on, read from its metadata's `label_params`
+(`ml.OnnxModel.LabelParams`), and reports it as `MLEvaluation.Label`. A model whose metadata
+predates `label_params` is scored against `DefaultCorrectionLabelParams()` with
+`LabelFromModel=false`, shown on the Backtests page as "default label" — those numbers may compare
+the model with an event it never learned.
 Metrics:
 ```
 Accuracy
@@ -312,8 +319,8 @@ for comparing "Return/Risk/Drawdown" together, as this section asks). **Cruciall
 touches the live decision engine.** The winning thresholds are reported back
 (`WalkForwardResult.BestThresholds`) for a human to review — promoting them to
 `decision.DefaultThresholds()` is a manual code change, never automatic. This was an explicit
-scoping decision with the Author, consistent with PROJECT_CONTEXT.md's "Atlas is NOT ... an automatic
-investment system."
+scoping decision with the Author, consistent with Atlas being decision support, never an automatic
+investment system.
 ---
 # Reports
 Generate:

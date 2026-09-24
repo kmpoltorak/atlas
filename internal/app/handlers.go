@@ -316,7 +316,7 @@ const backtestHistoryDefaultLimit = 20
 // malformed or hostile upload from being read into memory unbounded.
 const maxWatchlistImportBytes = 1 << 20 // 1 MiB
 
-// maxBackupRestoreBytes caps an uploaded accountRestoreHandler file. A full BackupAll dump
+// maxBackupRestoreBytes caps an uploaded settingsRestoreHandler file. A full BackupAll dump
 // (prices, indicators, recommendations included) is real bulk data, not a handful of symbols
 // like the watchlist import above, so this leaves generous headroom for that while still
 // stopping an unbounded read into memory.

@@ -89,7 +89,7 @@ func (a *Application) StartAlertPolling() func() {
 	// pending is usually a transient channel failure that clears in seconds.
 	deliverTicker := time.NewTicker(deliveryRetryInterval)
 	// Runtime settings are persisted but held in memory (see Orchestrator.SetMLEnabled), so a
-	// toggle flipped on the replica serving the Account page never reaches the others. This
+	// toggle flipped on the replica serving the Settings page never reaches the others. This
 	// ticker is deliberately NOT leader-gated: every replica has to converge on the same
 	// settings, not just whichever one is polling.
 	settingsTicker := time.NewTicker(settingsRefreshInterval)
@@ -157,7 +157,7 @@ const maxOutboxBatch = 50
 const settingsRefreshInterval = 30 * time.Second
 
 // refreshRuntimeSettings re-reads the durable engine settings so every replica converges on the
-// Account page's choices, not just the one that happened to serve the request that made them.
+// Settings page's choices, not just the one that happened to serve the request that made them.
 // Runs on every replica, leader or not — a follower serving a recommendation must score it with
 // the same engine configuration the leader would.
 func (a *Application) refreshRuntimeSettings() {
@@ -174,7 +174,7 @@ func (a *Application) refreshRuntimeSettings() {
 //
 // Without this, activating a model changed only the replica that served the click: every other
 // one kept serving its previous model, and two replicas answered the same question with
-// different models while the UI showed one selection. The Account page's choice is a *desired*
+// different models while the UI showed one selection. The Settings page's choice is a *desired*
 // state; this is the loop that makes each replica's actual state match it.
 //
 // Silent when already correct — the common case, every 30 seconds. Loud only on a real failure,
@@ -594,6 +594,11 @@ func buildAlertEmbed(alert alerts.Alert) notifications.Embed {
 	// it actually says something.
 	if rec.MarketCondition != "" {
 		fields = append(fields, notifications.EmbedField{Name: "Market", Value: rec.MarketCondition, Inline: true})
+	}
+	// A degraded recommendation is a weaker claim than a complete one and must not arrive looking
+	// identical to it; the reasons below say which input was missing.
+	if rec.Degraded {
+		fields = append(fields, notifications.EmbedField{Name: "Inputs", Value: "Incomplete — see reasons", Inline: true})
 	}
 
 	return notifications.Embed{

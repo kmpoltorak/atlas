@@ -105,12 +105,14 @@ type Recommendation struct {
 	RiskScore float64 `json:"risk_score"`
 	// RiskDataAvailable is false when RiskScore sits at its neutral 1.0 ceiling only because the
 	// portfolio has no exposure to measure yet (empty, or every position's price still equals its
-	// cost basis) — see Orchestrator.computeRiskScore. Callers should render "n/a" rather than the
+	// cost basis), or when a held position has no current market price — see
+	// Orchestrator.computeRiskScore. Callers should render "n/a" rather than the
 	// raw score in that case, since 1.0 there means "nothing observed," not "no risk found."
 	RiskDataAvailable bool `json:"risk_data_available"`
 
 	// Degraded is true when an input the engine expected to have was unavailable — an ML
-	// prediction that errored, or a portfolio that could not be read — so the score reflects
+	// prediction that errored, a portfolio that could not be read, or a held position without a
+	// current market price — so the score reflects
 	// fewer signals than a normal one. Reason carries the specifics. A degraded recommendation
 	// is still a real one, but it is a weaker claim than a complete one, and callers should not
 	// present the two identically.
@@ -122,9 +124,8 @@ type Recommendation struct {
 	MarketCondition string `json:"market_condition,omitempty"`
 
 	// ModelVersion identifies the decision-engine scoring logic itself (weights, thresholds —
-	// see Orchestrator.EngineVersion), not the ML sub-model that fed MLScore above. Always
-	// "atlas-decision-v1" today since the engine has never been re-versioned — don't confuse a
-	// constant engine tag with "no ML model is being used."
+	// see Orchestrator.EngineVersion), not the ML sub-model that fed MLScore above. It changes
+	// only when the scoring rules do, so a constant value is not a sign that no ML model ran.
 	ModelVersion string `json:"model_version"`
 	// MLModelVersion is the actual ML model that produced MLScore (ml.Prediction.ModelVersion —
 	// e.g. a real trained model's version, or ml.StubModelVersion when none is loaded/wired in).
@@ -132,4 +133,8 @@ type Recommendation struct {
 	// NewOrchestratorWithML), distinct from the stub case where ML ran but with a placeholder
 	// model.
 	MLModelVersion string `json:"ml_model_version,omitempty"`
+	// MLRecoveryModelVersion is the recovery model that fed the ML term alongside
+	// MLModelVersion's correction model (see decision.mlScoreFromPrediction). Empty when no
+	// recovery model ran.
+	MLRecoveryModelVersion string `json:"ml_recovery_model_version,omitempty"`
 }

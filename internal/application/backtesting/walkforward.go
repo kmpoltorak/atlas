@@ -14,7 +14,7 @@ import (
 // sections: proportional, chronological, never shuffled. The remaining ~20% after train+validate
 // becomes the test split. Fixed at 60/20/20 rather than caller-supplied date ranges — a
 // deliberate simplification agreed on with the Author to keep the API simple (no date-range
-// parameters); see implementation-plan.md's Phase 6 status note.
+// parameters).
 const (
 	trainRatio    = 0.6
 	validateRatio = 0.2

@@ -22,7 +22,7 @@ earlier per-symbol split was not a test of a future period at all — symbols wi
 lengths cut at different dates, so one symbol's training rows could postdate another's holdout.
 It is still not full walk-forward validation, which is a separate, larger backtesting gap (see
 docs/backtesting.md), and it runs on whatever history Atlas has actually collected (see
-PROJECT_CONTEXT.md's Implementation status notes).
+docs/ml.md).
 Class balance, baselines and holdout metrics are always printed and written to the model's
 metadata sidecar so a degenerate or overconfident model is visible, not hidden.
 """
@@ -234,7 +234,7 @@ def main() -> int:
         print("\nWARNING: this model does NOT beat the symbol-base-rate baseline on PR AUC. It is "
               "reproducing per-symbol correction frequencies rather than finding the moments when "
               "a correction is actually likelier — which is what Atlas alerts on. Do not promote "
-              "it from the Account page on the strength of its accuracy figure.", file=sys.stderr)
+              "it from the Settings page on the strength of its accuracy figure.", file=sys.stderr)
 
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     onnx_model = convert_xgboost(

@@ -99,7 +99,7 @@ func NewUseCaseWithRepository(repo Repository) (*UseCase, error) {
 // Reload re-reads Portfolios and ActivePortfolioID's Positions/Transactions from Repository,
 // discarding whatever the in-memory working copy currently holds — used after an out-of-band bulk
 // change to the underlying data (persistence.TimescaleDB's FlushAll/RestoreAll, wired up from the
-// Account page's Backup/Restore/Flush buttons) that per-mutation methods like RecordTransaction
+// Settings page's Backup/Restore/Flush buttons) that per-mutation methods like RecordTransaction
 // can't express, as well as by SwitchPortfolio and NewUseCaseWithRepository. A nil Repository just
 // clears the in-memory copy, matching NewUseCase's zero-value state.
 //
@@ -278,7 +278,7 @@ func (u *UseCase) ActivePortfolio() string {
 	return u.ActivePortfolioID
 }
 
-// PortfolioList returns every portfolio (the dashboard's tab list, and the Account page's
+// PortfolioList returns every portfolio (the dashboard's tab list, and the Settings page's
 // "manage portfolios" list) — a defensive copy, for the same reason as GetPositions.
 func (u *UseCase) PortfolioList() []portfolio.Portfolio {
 	u.mu.Lock()
@@ -313,8 +313,8 @@ func (u *UseCase) RecordTransaction(tx portfolio.Transaction) error {
 	if tx.Type != "BUY" && tx.Type != "SELL" {
 		return errors.New("transaction type is unsupported")
 	}
-	// A caller that never sets Timestamp (both the dashboard form and the JSON API leave it out)
-	// would otherwise store "" here. persistence.SaveTransaction already falls back to time.Now
+	// A caller that leaves Timestamp unset (the JSON API when the field is omitted, the dashboard
+	// form for a trade dated today) would otherwise store "" here. persistence.SaveTransaction already falls back to time.Now
 	// for what it writes to the DB, but that corrected value never makes it back into tx — so
 	// the in-memory Transactions slice (what GetTransactions/the dashboard actually reads until
 	// the next restart) kept the empty string, rendering as the zero time "0001-01-01 00:00".
@@ -696,7 +696,7 @@ func (u *UseCase) ComputeRisk() (portfolio.RiskSnapshot, error) {
 // Drawdown here is a current-state proxy — total unrealized loss across losing positions, as a
 // fraction of total exposure (negative; 0 when nothing is underwater) — not a true historical
 // peak-to-trough max drawdown. A real max drawdown needs a portfolio equity curve over time,
-// which needs portfolio snapshot persistence (not implemented — see PROJECT_CONTEXT.md); this
+// which needs portfolio snapshot persistence, which Atlas does not have; this
 // is what's computable from current position state alone.
 func ComputeRiskSnapshot(positions []portfolio.Position) portfolio.RiskSnapshot {
 	if len(positions) == 0 {

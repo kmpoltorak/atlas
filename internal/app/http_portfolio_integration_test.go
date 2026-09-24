@@ -119,13 +119,7 @@ func TestConcurrentRequestsWriteToTheirOwnPortfolio(t *testing.T) {
 	}
 	wg.Wait()
 
-	t.Cleanup(func() {
-		for _, id := range []string{first, second} {
-			if uc, err := app.Portfolio.ForPortfolio(id, nil); err == nil {
-				_ = uc.RemovePositions([]string{"TESTHTTPA", "TESTHTTPB"})
-			}
-		}
-	})
+	t.Cleanup(func() { removeTestLedger(app, []string{first, second}, "TESTHTTPA", "TESTHTTPB") })
 
 	firstPositions := positionsOf(t, app, first)
 	secondPositions := positionsOf(t, app, second)
@@ -151,13 +145,7 @@ func TestARequestWithoutACookieUsesTheFirstPortfolioNotTheLastSelected(t *testin
 
 	// A request that explicitly selects the second portfolio.
 	postTransaction(t, handler, second, "TESTHTTPC", 1)
-	t.Cleanup(func() {
-		for _, id := range []string{first, second} {
-			if uc, err := app.Portfolio.ForPortfolio(id, nil); err == nil {
-				_ = uc.RemovePositions([]string{"TESTHTTPC", "TESTHTTPD"})
-			}
-		}
-	})
+	t.Cleanup(func() { removeTestLedger(app, []string{first, second}, "TESTHTTPC", "TESTHTTPD") })
 
 	// Then one with no cookie at all: it must fall back to the first portfolio deterministically.
 	request := httptest.NewRequest(http.MethodGet, "/portfolio", nil)
@@ -225,4 +213,33 @@ func quantityOf(positions []portfolio.Position, symbol string) float64 {
 		}
 	}
 	return 0
+}
+
+// removeTestLedger deletes the given symbols' transactions from each portfolio. Removing only the
+// positions is not a cleanup: the ledger survives, and the next run's first trade on the symbol
+// replays it, so a rerun against the same database counted every earlier run's shares too.
+func removeTestLedger(app *Application, portfolioIDs []string, symbols ...string) {
+	wanted := make(map[string]bool, len(symbols))
+	for _, symbol := range symbols {
+		wanted[symbol] = true
+	}
+	for _, id := range portfolioIDs {
+		uc, err := app.Portfolio.ForPortfolio(id, nil)
+		if err != nil {
+			continue
+		}
+		transactions, err := uc.GetTransactions()
+		if err != nil {
+			continue
+		}
+		var ids []string
+		for _, tx := range transactions {
+			if wanted[tx.Symbol] {
+				ids = append(ids, tx.ID)
+			}
+		}
+		if len(ids) > 0 {
+			_ = uc.RemoveTransactions(ids)
+		}
+	}
 }

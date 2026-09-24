@@ -5,7 +5,7 @@ import "atlas/internal/domain/portfolio"
 // Repository persists portfolio state so positions and transaction history survive restarts.
 // Every position/transaction method is scoped to one portfolioID (see UseCase.ActivePortfolioID)
 // except GetAllPositions, which deliberately reads across every portfolio at once — the decision
-// engine's HasPosition/risk scoring treats "do I hold this symbol" as a whole-account question,
+// engine's HasPosition/risk scoring treats "do I hold this symbol" as a all-portfolio question,
 // not a per-portfolio one (see decision.Orchestrator.blendMLAndPortfolio).
 // There are deliberately no per-row write methods here. Every mutation goes through
 // AtomicRepository.MutatePortfolio — one transaction that commits the ledger and the recomputed

@@ -1,7 +1,7 @@
 package web
 
-// Lang is a supported dashboard display language. Atlas is a single-user personal tool (see
-// PROJECT_CONTEXT.md), so this is a simple fixed-list switch, not a full locale system — no
+// Lang is a supported dashboard display language. Atlas is a single-user personal tool, so this
+// is a simple fixed-list switch, not a full locale system — no
 // pluralization rules, number/date formatting, or RTL support.
 type Lang string
 
@@ -36,7 +36,7 @@ var translations = map[string]map[Lang]string{
 	"nav.alerts":          {LangEN: "Alerts", LangPL: "Alerty", LangDE: "Warnungen", LangFR: "Alertes", LangES: "Alertas"},
 	"nav.backtests":       {LangEN: "Backtests", LangPL: "Backtesty", LangDE: "Backtests", LangFR: "Backtests", LangES: "Backtests"},
 	"nav.watchlist":       {LangEN: "Watchlist", LangPL: "Obserwowane", LangDE: "Beobachtungsliste", LangFR: "Liste de surveillance", LangES: "Lista de seguimiento"},
-	"nav.account":         {LangEN: "Account", LangPL: "Konto", LangDE: "Konto", LangFR: "Compte", LangES: "Cuenta"},
+	"nav.settings":        {LangEN: "Settings", LangPL: "Ustawienia", LangDE: "Einstellungen", LangFR: "Paramètres", LangES: "Configuración"},
 	"nav.theme":           {LangEN: "Theme", LangPL: "Motyw", LangDE: "Design", LangFR: "Thème", LangES: "Tema"},
 	"nav.theme_light":     {LangEN: "Light", LangPL: "Jasny", LangDE: "Hell", LangFR: "Clair", LangES: "Claro"},
 	"nav.theme_dark":      {LangEN: "Dark", LangPL: "Ciemny", LangDE: "Dunkel", LangFR: "Sombre", LangES: "Oscuro"},
@@ -47,7 +47,6 @@ var translations = map[string]map[Lang]string{
 	"nav.language_de":     {LangEN: "German", LangPL: "Niemiecki", LangDE: "Deutsch", LangFR: "Allemand", LangES: "Alemán"},
 	"nav.language_fr":     {LangEN: "French", LangPL: "Francuski", LangDE: "Französisch", LangFR: "Français", LangES: "Francés"},
 	"nav.language_es":     {LangEN: "Spanish", LangPL: "Hiszpański", LangDE: "Spanisch", LangFR: "Espagnol", LangES: "Español"},
-	"nav.logout":          {LangEN: "Log out", LangPL: "Wyloguj", LangDE: "Abmelden", LangFR: "Déconnexion", LangES: "Cerrar sesión"},
 	"nav.skip_to_content": {LangEN: "Skip to content", LangPL: "Przejdź do treści", LangDE: "Zum Inhalt springen", LangFR: "Passer au contenu", LangES: "Saltar al contenido"},
 
 	// Shared table headers/labels, reused across multiple pages
@@ -68,9 +67,66 @@ var translations = map[string]map[Lang]string{
 	// was found, falling back to the last transaction's timestamp (the honest label) when not.
 	"table.current_price": {LangEN: "Current Price", LangPL: "Aktualna cena", LangDE: "Aktueller Kurs", LangFR: "Prix actuel", LangES: "Precio actual"},
 	"table.as_of":         {LangEN: "as of", LangPL: "stan na", LangDE: "Stand", LangFR: "au", LangES: "a fecha de"},
-	"table.pnl":           {LangEN: "P&L", LangPL: "Zysk/strata", LangDE: "G/V", LangFR: "P&L", LangES: "G/P"},
-	"table.total":         {LangEN: "Total", LangPL: "Suma", LangDE: "Gesamt", LangFR: "Total", LangES: "Total"},
-	"table.exposure":      {LangEN: "Exposure", LangPL: "Ekspozycja", LangDE: "Exponierung", LangFR: "Exposition", LangES: "Exposición"},
+	// Shown instead of table.as_of when the price is not a current market quote (see the
+	// priceState template func), so a cost basis or a days-old quote is never read as today's value.
+	// Handler messages (flash/success/error lines on the dashboard pages), rendered through
+	// Application.tr. %v/%s/%d are filled by fmt.Sprintf.
+	"msg.invalid_form":               {LangEN: "Invalid form submission.", LangPL: "Nieprawidłowe dane formularza.", LangDE: "Ungültige Formularübermittlung.", LangFR: "Soumission de formulaire invalide.", LangES: "Envío de formulario no válido."},
+	"msg.no_database":                {LangEN: "No database configured.", LangPL: "Nie skonfigurowano bazy danych.", LangDE: "Keine Datenbank konfiguriert.", LangFR: "Aucune base de données configurée.", LangES: "No hay ninguna base de datos configurada."},
+	"msg.ml_setting_failed":          {LangEN: "Could not save the ML setting: %v", LangPL: "Nie udało się zapisać ustawienia ML: %v", LangDE: "Die ML-Einstellung konnte nicht gespeichert werden: %v", LangFR: "Impossible d'enregistrer le paramètre ML : %v", LangES: "No se pudo guardar el ajuste de ML: %v"},
+	"msg.ml_enabled":                 {LangEN: "ML blend enabled — recommendations now factor in the ML signal again.", LangPL: "Włączono mieszanie ML — rekomendacje znów uwzględniają sygnał ML.", LangDE: "ML-Einbindung aktiviert — Empfehlungen berücksichtigen das ML-Signal wieder.", LangFR: "Mélange ML activé — les recommandations tiennent de nouveau compte du signal ML.", LangES: "Mezcla ML activada — las recomendaciones vuelven a tener en cuenta la señal ML."},
+	"msg.ml_disabled":                {LangEN: "ML blend disabled — recommendations now score without the ML signal. Portfolio risk still applies.", LangPL: "Wyłączono mieszanie ML — rekomendacje są liczone bez sygnału ML. Ryzyko portfela nadal jest uwzględniane.", LangDE: "ML-Einbindung deaktiviert — Empfehlungen werden ohne ML-Signal bewertet. Das Portfoliorisiko gilt weiterhin.", LangFR: "Mélange ML désactivé — les recommandations sont calculées sans le signal ML. Le risque du portefeuille s'applique toujours.", LangES: "Mezcla ML desactivada — las recomendaciones se calculan sin la señal ML. El riesgo de la cartera sigue aplicándose."},
+	"msg.unknown_model_role":         {LangEN: "Unknown model role.", LangPL: "Nieznana rola modelu.", LangDE: "Unbekannte Modellrolle.", LangFR: "Rôle de modèle inconnu.", LangES: "Rol de modelo desconocido."},
+	"msg.models_dir_failed":          {LangEN: "Could not read the models directory: %v", LangPL: "Nie udało się odczytać katalogu modeli: %v", LangDE: "Das Modellverzeichnis konnte nicht gelesen werden: %v", LangFR: "Impossible de lire le répertoire des modèles : %v", LangES: "No se pudo leer el directorio de modelos: %v"},
+	"msg.model_gone":                 {LangEN: "That model is no longer available — refresh and try again.", LangPL: "Ten model nie jest już dostępny — odśwież stronę i spróbuj ponownie.", LangDE: "Dieses Modell ist nicht mehr verfügbar — Seite neu laden und erneut versuchen.", LangFR: "Ce modèle n'est plus disponible — actualisez et réessayez.", LangES: "Ese modelo ya no está disponible — actualiza e inténtalo de nuevo."},
+	"msg.model_load_failed":          {LangEN: "Failed to load that model: %v", LangPL: "Nie udało się wczytać modelu: %v", LangDE: "Das Modell konnte nicht geladen werden: %v", LangFR: "Échec du chargement du modèle : %v", LangES: "No se pudo cargar el modelo: %v"},
+	"msg.model_selection_failed":     {LangEN: "Could not record that selection, so nothing was changed: %v", LangPL: "Nie udało się zapisać wyboru, więc nic nie zmieniono: %v", LangDE: "Die Auswahl konnte nicht gespeichert werden, daher wurde nichts geändert: %v", LangFR: "Impossible d'enregistrer ce choix, rien n'a donc été modifié : %v", LangES: "No se pudo guardar la selección, así que no se cambió nada: %v"},
+	"msg.model_activated":            {LangEN: "Activated model %s for %s.", LangPL: "Aktywowano model %s dla roli %s.", LangDE: "Modell %s für %s aktiviert.", LangFR: "Modèle %s activé pour %s.", LangES: "Modelo %s activado para %s."},
+	"msg.model_delete_unavailable":   {LangEN: "Deleting models isn't available (TRAINER_URL is unset) — see training/README.md, or remove the file by hand from training/models/.", LangPL: "Usuwanie modeli jest niedostępne (TRAINER_URL nie jest ustawiony) — zobacz training/README.md albo usuń plik ręcznie z training/models/.", LangDE: "Modelle löschen ist nicht verfügbar (TRAINER_URL ist nicht gesetzt) — siehe training/README.md, oder die Datei von Hand aus training/models/ entfernen.", LangFR: "La suppression des modèles n'est pas disponible (TRAINER_URL n'est pas défini) — voir training/README.md, ou supprimez le fichier à la main dans training/models/.", LangES: "Borrar modelos no está disponible (TRAINER_URL no está definido) — consulta training/README.md o borra el archivo a mano de training/models/."},
+	"msg.model_active_cannot_delete": {LangEN: "Can't remove the model currently active for %s — activate a different one first.", LangPL: "Nie można usunąć modelu aktywnego dla roli %s — najpierw aktywuj inny.", LangDE: "Das aktuell für %s aktive Modell kann nicht entfernt werden — zuerst ein anderes aktivieren.", LangFR: "Impossible de supprimer le modèle actif pour %s — activez-en d'abord un autre.", LangES: "No se puede eliminar el modelo activo para %s — activa primero otro."},
+	"msg.model_delete_failed":        {LangEN: "Failed to delete that model: %v", LangPL: "Nie udało się usunąć modelu: %v", LangDE: "Das Modell konnte nicht gelöscht werden: %v", LangFR: "Échec de la suppression du modèle : %v", LangES: "No se pudo eliminar el modelo: %v"},
+	"msg.model_deleted":              {LangEN: "Deleted %s.", LangPL: "Usunięto %s.", LangDE: "%s gelöscht.", LangFR: "%s supprimé.", LangES: "%s eliminado."},
+	"msg.training_unavailable":       {LangEN: "Training trigger isn't configured (TRAINER_URL is unset) — see training/README.md to run it by hand.", LangPL: "Uruchamianie treningu nie jest skonfigurowane (TRAINER_URL nie jest ustawiony) — zobacz training/README.md, aby uruchomić go ręcznie.", LangDE: "Das Starten des Trainings ist nicht konfiguriert (TRAINER_URL ist nicht gesetzt) — siehe training/README.md, um es von Hand zu starten.", LangFR: "Le déclenchement de l'entraînement n'est pas configuré (TRAINER_URL n'est pas défini) — voir training/README.md pour le lancer à la main.", LangES: "El inicio del entrenamiento no está configurado (TRAINER_URL no está definido) — consulta training/README.md para ejecutarlo a mano."},
+	"msg.training_failed":            {LangEN: "Failed to start training: %v", LangPL: "Nie udało się uruchomić treningu: %v", LangDE: "Das Training konnte nicht gestartet werden: %v", LangFR: "Échec du lancement de l'entraînement : %v", LangES: "No se pudo iniciar el entrenamiento: %v"},
+	"msg.restore_choose_file":        {LangEN: "Choose a backup file to restore.", LangPL: "Wybierz plik kopii zapasowej do przywrócenia.", LangDE: "Eine Sicherungsdatei zum Wiederherstellen auswählen.", LangFR: "Choisissez un fichier de sauvegarde à restaurer.", LangES: "Elige un archivo de copia de seguridad para restaurar."},
+	"msg.upload_read_failed":         {LangEN: "Failed to read the uploaded file: %v", LangPL: "Nie udało się odczytać przesłanego pliku: %v", LangDE: "Die hochgeladene Datei konnte nicht gelesen werden: %v", LangFR: "Impossible de lire le fichier envoyé : %v", LangES: "No se pudo leer el archivo subido: %v"},
+	"msg.backup_too_large":           {LangEN: "Backup file is too large.", LangPL: "Plik kopii zapasowej jest za duży.", LangDE: "Die Sicherungsdatei ist zu groß.", LangFR: "Le fichier de sauvegarde est trop volumineux.", LangES: "El archivo de copia de seguridad es demasiado grande."},
+	"msg.restore_failed":             {LangEN: "Restore failed: %v", LangPL: "Przywracanie nie powiodło się: %v", LangDE: "Wiederherstellung fehlgeschlagen: %v", LangFR: "Échec de la restauration : %v", LangES: "La restauración falló: %v"},
+	"msg.restored":                   {LangEN: "Data restored from backup.", LangPL: "Dane przywrócono z kopii zapasowej.", LangDE: "Daten aus der Sicherung wiederhergestellt.", LangFR: "Données restaurées depuis la sauvegarde.", LangES: "Datos restaurados desde la copia de seguridad."},
+	"msg.flush_failed":               {LangEN: "Flush failed: %v", LangPL: "Czyszczenie nie powiodło się: %v", LangDE: "Löschen fehlgeschlagen: %v", LangFR: "Échec de l'effacement : %v", LangES: "El borrado falló: %v"},
+	"msg.flushed":                    {LangEN: "All data has been wiped. Atlas is back to a freshly installed state.", LangPL: "Wszystkie dane zostały usunięte. Atlas wrócił do stanu świeżej instalacji.", LangDE: "Alle Daten wurden gelöscht. Atlas ist wieder im frisch installierten Zustand.", LangFR: "Toutes les données ont été effacées. Atlas est revenu à un état fraîchement installé.", LangES: "Se han borrado todos los datos. Atlas vuelve a estar como recién instalado."},
+	"msg.watchlist_added":            {LangEN: "Added %s to the watchlist.", LangPL: "Dodano %s do listy obserwowanych.", LangDE: "%s zur Beobachtungsliste hinzugefügt.", LangFR: "%s ajouté à la liste de surveillance.", LangES: "%s añadido a la lista de seguimiento."},
+	"msg.info_fetched":               {LangEN: "Fetched info for %d symbol(s).", LangPL: "Pobrano informacje dla %d symboli.", LangDE: "Informationen für %d Symbol(e) abgerufen.", LangFR: "Informations récupérées pour %d symbole(s).", LangES: "Información obtenida para %d símbolo(s)."},
+	"msg.info_complete":              {LangEN: "Every symbol already has info.", LangPL: "Każdy symbol ma już informacje.", LangDE: "Alle Symbole haben bereits Informationen.", LangFR: "Tous les symboles ont déjà leurs informations.", LangES: "Todos los símbolos ya tienen información."},
+	"msg.info_failed_suffix":         {LangEN: " %d failed — try again in a moment.", LangPL: " %d nie powiodło się — spróbuj ponownie za chwilę.", LangDE: " %d fehlgeschlagen — gleich noch einmal versuchen.", LangFR: " %d en échec — réessayez dans un instant.", LangES: " %d fallaron — inténtalo de nuevo en un momento."},
+	"msg.no_symbols_selected":        {LangEN: "No symbols selected.", LangPL: "Nie zaznaczono żadnych symboli.", LangDE: "Keine Symbole ausgewählt.", LangFR: "Aucun symbole sélectionné.", LangES: "No hay símbolos seleccionados."},
+	"msg.watchlist_removed_many":     {LangEN: "%d symbol(s) removed from the watchlist.", LangPL: "Usunięto %d symboli z listy obserwowanych.", LangDE: "%d Symbol(e) von der Beobachtungsliste entfernt.", LangFR: "%d symbole(s) retiré(s) de la liste de surveillance.", LangES: "%d símbolo(s) eliminado(s) de la lista de seguimiento."},
+	"msg.watchlist_removed_one":      {LangEN: "Removed %s from the watchlist.", LangPL: "Usunięto %s z listy obserwowanych.", LangDE: "%s von der Beobachtungsliste entfernt.", LangFR: "%s retiré de la liste de surveillance.", LangES: "%s eliminado de la lista de seguimiento."},
+	"msg.portfolio_created":          {LangEN: "Portfolio \"%s\" created.", LangPL: "Utworzono portfel „%s”.", LangDE: "Portfolio „%s“ erstellt.", LangFR: "Portefeuille « %s » créé.", LangES: "Cartera «%s» creada."},
+	"msg.portfolio_renamed":          {LangEN: "Portfolio renamed to \"%s\".", LangPL: "Zmieniono nazwę portfela na „%s”.", LangDE: "Portfolio in „%s“ umbenannt.", LangFR: "Portefeuille renommé en « %s ».", LangES: "Cartera renombrada a «%s»."},
+	"msg.portfolio_removed":          {LangEN: "Portfolio removed.", LangPL: "Usunięto portfel.", LangDE: "Portfolio entfernt.", LangFR: "Portefeuille supprimé.", LangES: "Cartera eliminada."},
+	"msg.qty_price_numbers":          {LangEN: "Quantity and price must both be numbers.", LangPL: "Ilość i cena muszą być liczbami.", LangDE: "Menge und Preis müssen Zahlen sein.", LangFR: "La quantité et le prix doivent être des nombres.", LangES: "La cantidad y el precio deben ser números."},
+	"msg.form_expired":               {LangEN: "This form has expired — reload the page and submit again.", LangPL: "Ten formularz wygasł — odśwież stronę i wyślij ponownie.", LangDE: "Dieses Formular ist abgelaufen — Seite neu laden und erneut senden.", LangFR: "Ce formulaire a expiré — rechargez la page et renvoyez-le.", LangES: "Este formulario ha caducado — recarga la página y envíalo de nuevo."},
+	"msg.transaction_recorded":       {LangEN: "Transaction recorded.", LangPL: "Zapisano transakcję.", LangDE: "Transaktion gespeichert.", LangFR: "Transaction enregistrée.", LangES: "Transacción registrada."},
+	"msg.no_positions_selected":      {LangEN: "No positions selected.", LangPL: "Nie zaznaczono żadnych pozycji.", LangDE: "Keine Positionen ausgewählt.", LangFR: "Aucune position sélectionnée.", LangES: "No hay posiciones seleccionadas."},
+	"msg.positions_hidden_many":      {LangEN: "%d position(s) hidden. Their transactions are kept.", LangPL: "Ukryto %d pozycji. Ich transakcje zostały zachowane.", LangDE: "%d Position(en) ausgeblendet. Ihre Transaktionen bleiben erhalten.", LangFR: "%d position(s) masquée(s). Leurs transactions sont conservées.", LangES: "%d posición(es) ocultada(s). Sus transacciones se conservan."},
+	"msg.position_hidden_one":        {LangEN: "%s hidden. Its transactions are kept.", LangPL: "Ukryto %s. Transakcje zostały zachowane.", LangDE: "%s ausgeblendet. Die Transaktionen bleiben erhalten.", LangFR: "%s masqué. Ses transactions sont conservées.", LangES: "%s ocultado. Sus transacciones se conservan."},
+	"msg.no_transactions_selected":   {LangEN: "No transactions selected.", LangPL: "Nie zaznaczono żadnych transakcji.", LangDE: "Keine Transaktionen ausgewählt.", LangFR: "Aucune transaction sélectionnée.", LangES: "No hay transacciones seleccionadas."},
+	"msg.transactions_removed_many":  {LangEN: "%d transaction(s) removed and positions recomputed.", LangPL: "Usunięto %d transakcji i przeliczono pozycje.", LangDE: "%d Transaktion(en) entfernt und Positionen neu berechnet.", LangFR: "%d transaction(s) supprimée(s) et positions recalculées.", LangES: "%d transacción(es) eliminada(s) y posiciones recalculadas."},
+	"msg.transaction_removed_one":    {LangEN: "Transaction removed and position recomputed.", LangPL: "Usunięto transakcję i przeliczono pozycję.", LangDE: "Transaktion entfernt und Position neu berechnet.", LangFR: "Transaction supprimée et position recalculée.", LangES: "Transacción eliminada y posición recalculada."},
+	// A recommendation scored with an expected input missing (decision.Recommendation.Degraded).
+	// Which correction event backtesting's ML evaluation scored the model against (MLEvaluation.Label).
+	"table.ml_label":              {LangEN: "Evaluated against", LangPL: "Oceniany względem", LangDE: "Bewertet gegen", LangFR: "Évalué par rapport à", LangES: "Evaluado frente a"},
+	"table.ml_label_default":      {LangEN: "default label", LangPL: "domyślna etykieta", LangDE: "Standard-Label", LangFR: "étiquette par défaut", LangES: "etiqueta por defecto"},
+	"table.ml_label_default_hint": {LangEN: "This model's metadata does not record the label it was trained on, so it was scored against the default definition, which may not be the event it learned.", LangPL: "Metadane tego modelu nie zapisują etykiety, na której go wytrenowano, więc oceniono go według domyślnej definicji, która może nie odpowiadać zdarzeniu, którego się uczył.", LangDE: "Die Metadaten dieses Modells enthalten nicht das Label, mit dem es trainiert wurde; es wurde daher gegen die Standarddefinition bewertet, die nicht dem gelernten Ereignis entsprechen muss.", LangFR: "Les métadonnées de ce modèle n'indiquent pas l'étiquette sur laquelle il a été entraîné ; il a donc été évalué selon la définition par défaut, qui peut ne pas correspondre à l'événement appris.", LangES: "Los metadatos de este modelo no registran la etiqueta con la que se entrenó, así que se evaluó con la definición por defecto, que puede no ser el evento que aprendió."},
+	"rec.degraded":                {LangEN: "incomplete inputs", LangPL: "niepełne dane wejściowe", LangDE: "unvollständige Eingaben", LangFR: "données incomplètes", LangES: "datos incompletos"},
+	"rec.degraded_hint":           {LangEN: "An input the engine expected (ML prediction, portfolio state or a current price) was unavailable, so this recommendation rests on fewer signals than usual. The reasons say which.", LangPL: "Zabrakło danych, których silnik oczekiwał (predykcji ML, stanu portfela lub aktualnej ceny), więc ta rekomendacja opiera się na mniejszej liczbie sygnałów niż zwykle. Szczegóły podają uzasadnienia.", LangDE: "Eine erwartete Eingabe (ML-Prognose, Portfoliostand oder aktueller Kurs) war nicht verfügbar; diese Empfehlung stützt sich daher auf weniger Signale als üblich. Die Begründungen nennen, welche.", LangFR: "Une donnée attendue par le moteur (prédiction ML, état du portefeuille ou prix actuel) était indisponible ; cette recommandation repose donc sur moins de signaux que d'habitude. Les justifications précisent laquelle.", LangES: "Faltó un dato que el motor esperaba (predicción ML, estado de la cartera o un precio actual), así que esta recomendación se basa en menos señales de lo habitual. Los motivos indican cuál."},
+	"table.ml_recovery_model":     {LangEN: "ML recovery model", LangPL: "Model ML odbicia", LangDE: "ML-Erholungsmodell", LangFR: "Modèle ML de rebond", LangES: "Modelo ML de recuperación"},
+	"price.trade":                 {LangEN: "last trade price, not a market quote — as of", LangPL: "cena ostatniej transakcji, nie notowanie — stan na", LangDE: "Preis der letzten Transaktion, kein Marktkurs — Stand", LangFR: "prix de la dernière transaction, pas une cotation — au", LangES: "precio de la última operación, no una cotización — a fecha de"},
+	"price.stale":                 {LangEN: "stale quote — last traded", LangPL: "nieaktualne notowanie — ostatni obrót", LangDE: "veralteter Kurs — zuletzt gehandelt", LangFR: "cotation périmée — dernier échange le", LangES: "cotización desactualizada — última negociación"},
+	"table.pnl":                   {LangEN: "P&L", LangPL: "Zysk/strata", LangDE: "G/V", LangFR: "P&L", LangES: "G/P"},
+	"table.total":                 {LangEN: "Total", LangPL: "Suma", LangDE: "Gesamt", LangFR: "Total", LangES: "Total"},
+	"table.exposure":              {LangEN: "Exposure", LangPL: "Ekspozycja", LangDE: "Exponierung", LangFR: "Exposition", LangES: "Exposición"},
 	// table.drawdown and table.avg_deviation are the dashboard/portfolio Risk table's own
 	// simple heuristics (portfolio.RiskSnapshot — see its doc comment), deliberately named for
 	// what they actually compute rather than reusing "Drawdown"/"Volatility", which
@@ -119,7 +175,6 @@ var translations = map[string]map[Lang]string{
 	"table.roc_auc":            {LangEN: "ROC AUC", LangPL: "ROC AUC", LangDE: "ROC AUC", LangFR: "ROC AUC", LangES: "ROC AUC"},
 	"table.added":              {LangEN: "Added", LangPL: "Dodano", LangDE: "Hinzugefügt", LangFR: "Ajouté", LangES: "Añadido"},
 	"table.filter_placeholder": {LangEN: "Filter…", LangPL: "Filtruj…", LangDE: "Filtern…", LangFR: "Filtrer…", LangES: "Filtrar…"},
-	"table.username":           {LangEN: "Username", LangPL: "Nazwa użytkownika", LangDE: "Benutzername", LangFR: "Nom d'utilisateur", LangES: "Nombre de usuario"},
 
 	"common.remove":   {LangEN: "Remove", LangPL: "Usuń", LangDE: "Entfernen", LangFR: "Supprimer", LangES: "Eliminar"},
 	"common.choose":   {LangEN: "Choose…", LangPL: "Wybierz…", LangDE: "Auswählen…", LangFR: "Choisir…", LangES: "Elegir…"},
@@ -136,20 +191,6 @@ var translations = map[string]map[Lang]string{
 	// Error page (error.html) — see web.RenderError.
 	"error.title":     {LangEN: "Atlas — Error", LangPL: "Atlas — Błąd", LangDE: "Atlas — Fehler", LangFR: "Atlas — Erreur", LangES: "Atlas — Error"},
 	"error.not_found": {LangEN: "Page not found.", LangPL: "Nie znaleziono strony.", LangDE: "Seite nicht gefunden.", LangFR: "Page introuvable.", LangES: "Página no encontrada."},
-
-	// Login (login.html)
-	"login.title": {LangEN: "Atlas — Log in", LangPL: "Atlas — Logowanie", LangDE: "Atlas — Anmelden", LangFR: "Atlas — Connexion", LangES: "Atlas — Iniciar sesión"},
-	"login.subtitle": {
-		LangEN: "AI portfolio decision support — sign in to continue.",
-		LangPL: "Wsparcie decyzyjne AI dla portfela — zaloguj się, aby kontynuować.",
-		LangDE: "KI-gestützte Portfolio-Entscheidungshilfe — melde dich an, um fortzufahren.",
-		LangFR: "Aide à la décision de portefeuille par IA — connectez-vous pour continuer.",
-		LangES: "Apoyo a la decisión de cartera con IA — inicia sesión para continuar.",
-	},
-	"login.username":  {LangEN: "Username", LangPL: "Nazwa użytkownika", LangDE: "Benutzername", LangFR: "Nom d'utilisateur", LangES: "Nombre de usuario"},
-	"login.password":  {LangEN: "Password", LangPL: "Hasło", LangDE: "Passwort", LangFR: "Mot de passe", LangES: "Contraseña"},
-	"login.totp_code": {LangEN: "2FA code", LangPL: "Kod 2FA", LangDE: "2FA-Code", LangFR: "Code 2FA", LangES: "Código 2FA"},
-	"login.submit":    {LangEN: "Log in", LangPL: "Zaloguj się", LangDE: "Anmelden", LangFR: "Se connecter", LangES: "Iniciar sesión"},
 
 	// Dashboard (dashboard.html)
 	"dashboard.title":     {LangEN: "Atlas — Dashboard", LangPL: "Atlas — Panel główny", LangDE: "Atlas — Übersicht", LangFR: "Atlas — Tableau de bord", LangES: "Atlas — Panel de control"},
@@ -189,12 +230,18 @@ var translations = map[string]map[Lang]string{
 	},
 	"portfolio.record_submit":    {LangEN: "Record transaction", LangPL: "Zapisz transakcję", LangDE: "Transaktion speichern", LangFR: "Enregistrer la transaction", LangES: "Registrar transacción"},
 	"portfolio.record_portfolio": {LangEN: "Portfolio", LangPL: "Portfel", LangDE: "Portfolio", LangFR: "Portefeuille", LangES: "Cartera"},
+	"portfolio.record_busy":      {LangEN: "Recording…", LangPL: "Zapisywanie…", LangDE: "Wird gespeichert…", LangFR: "Enregistrement…", LangES: "Registrando…"},
+	"portfolio.trade_date":       {LangEN: "Trade date", LangPL: "Data transakcji", LangDE: "Handelsdatum", LangFR: "Date de l'opération", LangES: "Fecha de la operación"},
+	"portfolio.trade_date_hint":  {LangEN: "A EUR or USD trade is converted to PLN at the NBP rate for this date.", LangPL: "Transakcja w EUR lub USD jest przeliczana na PLN po kursie NBP z tego dnia.", LangDE: "Ein Geschäft in EUR oder USD wird zum NBP-Kurs dieses Tages in PLN umgerechnet.", LangFR: "Une opération en EUR ou USD est convertie en PLN au taux NBP de cette date.", LangES: "Una operación en EUR o USD se convierte a PLN al tipo del NBP de esa fecha."},
+	// "Hide", not "Remove": the ledger is kept, so the next trade on the symbol rebuilds the
+	// position from its whole history (portfolio.UseCase.RemovePosition). The confirmation says so
+	// and points at the two operations that do change what you hold.
 	"confirm.remove_position": {
-		LangEN: "Remove %s entirely? Transaction history is kept, only the current position is cleared.",
-		LangPL: "Usunąć %s całkowicie? Historia transakcji zostaje zachowana, czyszczona jest tylko bieżąca pozycja.",
-		LangDE: "%s vollständig entfernen? Der Transaktionsverlauf bleibt erhalten, nur die aktuelle Position wird gelöscht.",
-		LangFR: "Supprimer %s entièrement ? L'historique des transactions est conservé, seule la position actuelle est effacée.",
-		LangES: "¿Eliminar %s por completo? El historial de transacciones se conserva, solo se borra la posición actual.",
+		LangEN: "Hide %s? Its transactions are kept, and the next transaction on this symbol rebuilds the position from all of them. To record a sale, add a SELL; to undo a trade entered by mistake, delete that transaction below.",
+		LangPL: "Ukryć %s? Transakcje zostają zachowane, a następna transakcja na tym symbolu odtworzy pozycję z nich wszystkich. Aby zapisać sprzedaż, dodaj SELL; aby cofnąć błędnie wpisaną transakcję, usuń ją poniżej.",
+		LangDE: "%s ausblenden? Die Transaktionen bleiben erhalten, und die nächste Transaktion auf dieses Symbol baut die Position aus allen wieder auf. Für einen Verkauf ein SELL erfassen; um eine versehentlich erfasste Transaktion rückgängig zu machen, diese unten löschen.",
+		LangFR: "Masquer %s ? Ses transactions sont conservées, et la prochaine transaction sur ce symbole reconstruira la position à partir de toutes. Pour enregistrer une vente, ajoutez un SELL ; pour annuler une transaction saisie par erreur, supprimez-la ci-dessous.",
+		LangES: "¿Ocultar %s? Sus transacciones se conservan, y la próxima transacción en este símbolo reconstruirá la posición a partir de todas ellas. Para registrar una venta, añade un SELL; para deshacer una operación introducida por error, elimínala abajo.",
 	},
 	"confirm.remove_transaction": {
 		LangEN: "Remove this transaction and recompute %s's position from what remains?",
@@ -211,13 +258,18 @@ var translations = map[string]map[Lang]string{
 		LangES: "¿Eliminar %d transacción(es) seleccionada(s) y recalcular las posiciones afectadas con lo que queda?",
 	},
 	"confirm.remove_positions_bulk": {
-		LangEN: "Remove %d selected position(s) entirely? Transaction history is kept, only the current positions are cleared.",
-		LangPL: "Usunąć %d wybranych pozycji całkowicie? Historia transakcji zostaje zachowana, czyszczone są tylko bieżące pozycje.",
-		LangDE: "%d ausgewählte Position(en) vollständig entfernen? Der Transaktionsverlauf bleibt erhalten, nur die aktuellen Positionen werden gelöscht.",
-		LangFR: "Supprimer entièrement %d position(s) sélectionnée(s) ? L'historique des transactions est conservé, seules les positions actuelles sont effacées.",
-		LangES: "¿Eliminar %d posición(es) seleccionada(s) por completo? El historial de transacciones se conserva, solo se borran las posiciones actuales.",
+		LangEN: "Hide %d selected position(s)? Their transactions are kept, and the next transaction on any of these symbols rebuilds its position from all of them.",
+		LangPL: "Ukryć %d wybranych pozycji? Transakcje zostają zachowane, a następna transakcja na którymkolwiek z tych symboli odtworzy jego pozycję z nich wszystkich.",
+		LangDE: "%d ausgewählte Position(en) ausblenden? Die Transaktionen bleiben erhalten, und die nächste Transaktion auf eines dieser Symbole baut dessen Position aus allen wieder auf.",
+		LangFR: "Masquer %d position(s) sélectionnée(s) ? Leurs transactions sont conservées, et la prochaine transaction sur l'un de ces symboles reconstruira sa position à partir de toutes.",
+		LangES: "¿Ocultar %d posición(es) seleccionada(s)? Sus transacciones se conservan, y la próxima transacción en cualquiera de estos símbolos reconstruirá su posición a partir de todas ellas.",
 	},
+	"portfolio.hide_position":   {LangEN: "Hide", LangPL: "Ukryj", LangDE: "Ausblenden", LangFR: "Masquer", LangES: "Ocultar"},
+	"portfolio.hide_selected":   {LangEN: "Hide selected", LangPL: "Ukryj zaznaczone", LangDE: "Auswahl ausblenden", LangFR: "Masquer la sélection", LangES: "Ocultar selección"},
+	"portfolio.hide_hint":       {LangEN: "Hiding clears a position but keeps its transactions: the next trade on that symbol rebuilds it from its whole history. To record a sale, add a SELL. To correct history, delete the transaction.", LangPL: "Ukrycie czyści pozycję, ale zachowuje jej transakcje: następna transakcja na tym symbolu odtworzy ją z całej historii. Aby zapisać sprzedaż, dodaj SELL. Aby poprawić historię, usuń transakcję.", LangDE: "Ausblenden leert eine Position, behält aber ihre Transaktionen: Die nächste Transaktion auf dieses Symbol baut sie aus dem gesamten Verlauf wieder auf. Für einen Verkauf ein SELL erfassen. Um den Verlauf zu korrigieren, die Transaktion löschen.", LangFR: "Masquer vide une position mais conserve ses transactions : la prochaine transaction sur ce symbole la reconstruit à partir de tout l'historique. Pour enregistrer une vente, ajoutez un SELL. Pour corriger l'historique, supprimez la transaction.", LangES: "Ocultar vacía una posición pero conserva sus transacciones: la próxima operación en ese símbolo la reconstruye con todo el historial. Para registrar una venta, añade un SELL. Para corregir el historial, elimina la transacción."},
 	"portfolio.delete_selected": {LangEN: "Delete selected", LangPL: "Usuń zaznaczone", LangDE: "Auswahl löschen", LangFR: "Supprimer la sélection", LangES: "Eliminar selección"},
+	"table.page_previous":       {LangEN: "Previous page", LangPL: "Poprzednia strona", LangDE: "Vorherige Seite", LangFR: "Page précédente", LangES: "Página anterior"},
+	"table.page_next":           {LangEN: "Next page", LangPL: "Następna strona", LangDE: "Nächste Seite", LangFR: "Page suivante", LangES: "Página siguiente"},
 	"table.select_all":          {LangEN: "Select all", LangPL: "Zaznacz wszystkie", LangDE: "Alle auswählen", LangFR: "Tout sélectionner", LangES: "Seleccionar todo"},
 
 	// Recommendations (recommendations.html)
@@ -328,37 +380,23 @@ var translations = map[string]map[Lang]string{
 		LangES: "¿Dejar de seguir %d símbolo(s) seleccionado(s)?",
 	},
 
-	// Account (account.html)
-	"account.title":            {LangEN: "Atlas — Account", LangPL: "Atlas — Konto", LangDE: "Atlas — Konto", LangFR: "Atlas — Compte", LangES: "Atlas — Cuenta"},
-	"account.heading":          {LangEN: "Account", LangPL: "Konto", LangDE: "Konto", LangFR: "Compte", LangES: "Cuenta"},
-	"account.two_factor":       {LangEN: "Two-factor authentication", LangPL: "Uwierzytelnianie dwuskładnikowe", LangDE: "Zwei-Faktor-Authentifizierung", LangFR: "Authentification à deux facteurs", LangES: "Autenticación de dos factores"},
-	"account.disable_2fa":      {LangEN: "Disable two-factor authentication", LangPL: "Wyłącz uwierzytelnianie dwuskładnikowe", LangDE: "Zwei-Faktor-Authentifizierung deaktivieren", LangFR: "Désactiver l'authentification à deux facteurs", LangES: "Desactivar la autenticación de dos factores"},
-	"account.disable_2fa_hint": {LangEN: "Requires your current password to confirm.", LangPL: "Wymaga potwierdzenia aktualnym hasłem.", LangDE: "Erfordert zur Bestätigung dein aktuelles Passwort.", LangFR: "Nécessite votre mot de passe actuel pour confirmer.", LangES: "Requiere tu contraseña actual para confirmar."},
-	"account.current_password": {LangEN: "Current password", LangPL: "Aktualne hasło", LangDE: "Aktuelles Passwort", LangFR: "Mot de passe actuel", LangES: "Contraseña actual"},
-	"account.disable_submit":   {LangEN: "Disable 2FA", LangPL: "Wyłącz 2FA", LangDE: "2FA deaktivieren", LangFR: "Désactiver la 2FA", LangES: "Desactivar 2FA"},
-	"account.enable_2fa":       {LangEN: "Enable two-factor authentication", LangPL: "Włącz uwierzytelnianie dwuskładnikowe", LangDE: "Zwei-Faktor-Authentifizierung aktivieren", LangFR: "Activer l'authentification à deux facteurs", LangES: "Activar la autenticación de dos factores"},
-	"account.enable_2fa_hint": {
-		LangEN: "Adds a verification code from an authenticator app (Google Authenticator, Authy, etc.) to every login.",
-		LangPL: "Dodaje do każdego logowania kod weryfikacyjny z aplikacji uwierzytelniającej (Google Authenticator, Authy itp.).",
-		LangDE: "Fügt jeder Anmeldung einen Bestätigungscode aus einer Authenticator-App (Google Authenticator, Authy usw.) hinzu.",
-		LangFR: "Ajoute un code de vérification provenant d'une application d'authentification (Google Authenticator, Authy, etc.) à chaque connexion.",
-		LangES: "Añade un código de verificación de una aplicación de autenticación (Google Authenticator, Authy, etc.) a cada inicio de sesión.",
-	},
-	"account.setup_submit": {LangEN: "Set up 2FA", LangPL: "Skonfiguruj 2FA", LangDE: "2FA einrichten", LangFR: "Configurer la 2FA", LangES: "Configurar 2FA"},
+	// Settings (settings.html)
+	"settings.title":   {LangEN: "Atlas — Settings", LangPL: "Atlas — Ustawienia", LangDE: "Atlas — Einstellungen", LangFR: "Atlas — Paramètres", LangES: "Atlas — Configuración"},
+	"settings.heading": {LangEN: "Settings", LangPL: "Ustawienia", LangDE: "Einstellungen", LangFR: "Paramètres", LangES: "Configuración"},
 
-	"account.portfolios_heading": {LangEN: "Portfolios", LangPL: "Portfele", LangDE: "Portfolios", LangFR: "Portefeuilles", LangES: "Carteras"},
-	"account.portfolios_hint": {
+	"settings.portfolios_heading": {LangEN: "Portfolios", LangPL: "Portfele", LangDE: "Portfolios", LangFR: "Portefeuilles", LangES: "Carteras"},
+	"settings.portfolios_hint": {
 		LangEN: "Separate buckets of positions/transactions — e.g. \"Main\", \"Safe\", \"Speculative\". Switch which one the Dashboard/Portfolio pages show using the tabs there; manage the list itself here.",
 		LangPL: "Osobne zestawy pozycji/transakcji — np. \"Główny\", \"Bezpieczny\", \"Spekulacyjny\". Przełączaj, który z nich pokazują strony Dashboard/Portfel, tabami na tych stronach; samą listę zarządzasz tutaj.",
 		LangDE: "Getrennte Gruppen von Positionen/Transaktionen — z. B. \"Haupt\", \"Sicher\", \"Spekulativ\". Wechsle über die Tabs auf den Seiten Übersicht/Portfolio, welches angezeigt wird; die Liste selbst verwaltest du hier.",
 		LangFR: "Ensembles distincts de positions/transactions — par ex. \"Principal\", \"Sûr\", \"Spéculatif\". Changez celui affiché sur les pages Tableau de bord/Portefeuille via les onglets correspondants ; gérez la liste elle-même ici.",
 		LangES: "Grupos independientes de posiciones/transacciones — p. ej. \"Principal\", \"Segura\", \"Especulativa\". Cambia cuál muestran las páginas Panel de control/Cartera con las pestañas correspondientes; la lista en sí se gestiona aquí.",
 	},
-	"account.portfolio_rename_submit": {LangEN: "Rename", LangPL: "Zmień nazwę", LangDE: "Umbenennen", LangFR: "Renommer", LangES: "Renombrar"},
-	"account.portfolio_remove_submit": {LangEN: "Delete", LangPL: "Usuń", LangDE: "Löschen", LangFR: "Supprimer", LangES: "Eliminar"},
-	"account.portfolio_new_name":      {LangEN: "New portfolio name", LangPL: "Nazwa nowego portfela", LangDE: "Name des neuen Portfolios", LangFR: "Nom du nouveau portefeuille", LangES: "Nombre de la nueva cartera"},
-	"account.portfolio_create_submit": {LangEN: "Create portfolio", LangPL: "Utwórz portfel", LangDE: "Portfolio erstellen", LangFR: "Créer un portefeuille", LangES: "Crear cartera"},
-	"account.portfolios_max_reached": {
+	"settings.portfolio_rename_submit": {LangEN: "Rename", LangPL: "Zmień nazwę", LangDE: "Umbenennen", LangFR: "Renommer", LangES: "Renombrar"},
+	"settings.portfolio_remove_submit": {LangEN: "Delete", LangPL: "Usuń", LangDE: "Löschen", LangFR: "Supprimer", LangES: "Eliminar"},
+	"settings.portfolio_new_name":      {LangEN: "New portfolio name", LangPL: "Nazwa nowego portfela", LangDE: "Name des neuen Portfolios", LangFR: "Nom du nouveau portefeuille", LangES: "Nombre de la nueva cartera"},
+	"settings.portfolio_create_submit": {LangEN: "Create portfolio", LangPL: "Utwórz portfel", LangDE: "Portfolio erstellen", LangFR: "Créer un portefeuille", LangES: "Crear cartera"},
+	"settings.portfolios_max_reached": {
 		LangEN: "Maximum number of portfolios reached. Delete one to create another.",
 		LangPL: "Osiągnięto maksymalną liczbę portfeli. Usuń jeden, aby utworzyć kolejny.",
 		LangDE: "Maximale Anzahl an Portfolios erreicht. Lösche eines, um ein neues zu erstellen.",
@@ -373,32 +411,32 @@ var translations = map[string]map[Lang]string{
 		LangES: "¿Eliminar la cartera y todo su contenido? Esta acción no se puede deshacer. ¿Continuar?",
 	},
 
-	"account.ml_engine_heading": {LangEN: "ML in recommendations", LangPL: "ML w rekomendacjach", LangDE: "ML in Empfehlungen", LangFR: "ML dans les recommandations", LangES: "ML en las recomendaciones"},
-	"account.ml_engine_hint": {
+	"settings.ml_engine_heading": {LangEN: "ML in recommendations", LangPL: "ML w rekomendacjach", LangDE: "ML in Empfehlungen", LangFR: "ML dans les recommandations", LangES: "ML en las recomendaciones"},
+	"settings.ml_engine_hint": {
 		LangEN: "Master switch for whether BUY/SELL/HOLD scoring factors in ML/portfolio/risk at all, on top of the technical score. Takes effect immediately, no restart needed. Model files below stay loaded and usable via /predict either way.",
 		LangPL: "Główny przełącznik decydujący, czy ocena BUY/SELL/HOLD w ogóle uwzględnia ML/portfel/ryzyko, poza wynikiem technicznym. Działa natychmiast, bez restartu. Pliki modeli poniżej zostają załadowane i dostępne przez /predict niezależnie od tego ustawienia.",
 		LangDE: "Hauptschalter dafür, ob die BUY/SELL/HOLD-Bewertung überhaupt ML/Portfolio/Risiko zusätzlich zum technischen Score berücksichtigt. Wirkt sofort, kein Neustart nötig. Die Modelldateien unten bleiben in jedem Fall geladen und über /predict nutzbar.",
 		LangFR: "Interrupteur principal déterminant si le score BUY/SELL/HOLD prend en compte ML/portefeuille/risque en plus du score technique. Effet immédiat, aucun redémarrage nécessaire. Les fichiers de modèle ci-dessous restent chargés et utilisables via /predict dans tous les cas.",
 		LangES: "Interruptor principal que determina si la puntuación BUY/SELL/HOLD tiene en cuenta ML/cartera/riesgo, además del score técnico. Se aplica de inmediato, sin necesidad de reiniciar. Los archivos de modelo de abajo permanecen cargados y utilizables vía /predict en cualquier caso.",
 	},
-	"account.ml_engine_enable_submit":  {LangEN: "Enable ML additive", LangPL: "Włącz dodatek ML", LangDE: "ML-Zusatz aktivieren", LangFR: "Activer l'apport ML", LangES: "Activar el aporte de ML"},
-	"account.ml_engine_disable_submit": {LangEN: "Disable ML additive", LangPL: "Wyłącz dodatek ML", LangDE: "ML-Zusatz deaktivieren", LangFR: "Désactiver l'apport ML", LangES: "Desactivar el aporte de ML"},
+	"settings.ml_engine_enable_submit":  {LangEN: "Enable ML additive", LangPL: "Włącz dodatek ML", LangDE: "ML-Zusatz aktivieren", LangFR: "Activer l'apport ML", LangES: "Activar el aporte de ML"},
+	"settings.ml_engine_disable_submit": {LangEN: "Disable ML additive", LangPL: "Wyłącz dodatek ML", LangDE: "ML-Zusatz deaktivieren", LangFR: "Désactiver l'apport ML", LangES: "Desactivar el aporte de ML"},
 
-	"account.ml_models_heading": {LangEN: "ML models", LangPL: "Modele ML", LangDE: "ML-Modelle", LangFR: "Modèles ML", LangES: "Modelos ML"},
-	"account.ml_models_hint": {
+	"settings.ml_models_heading": {LangEN: "ML models", LangPL: "Modele ML", LangDE: "ML-Modelle", LangFR: "Modèles ML", LangES: "Modelos ML"},
+	"settings.ml_models_hint": {
 		LangEN: "Pick which trained model is active for each prediction. Takes effect immediately, no restart needed.",
 		LangPL: "Wybierz, który wytrenowany model jest aktywny dla każdej predykcji. Działa natychmiast, bez restartu.",
 		LangDE: "Wähle aus, welches trainierte Modell für jede Vorhersage aktiv ist. Wirkt sofort, kein Neustart nötig.",
 		LangFR: "Choisissez quel modèle entraîné est actif pour chaque prédiction. Effet immédiat, aucun redémarrage nécessaire.",
 		LangES: "Elige qué modelo entrenado está activo para cada predicción. Se aplica de inmediato, sin necesidad de reiniciar.",
 	},
-	"account.ml_correction_heading": {LangEN: "Correction probability", LangPL: "Prawdopodobieństwo korekty", LangDE: "Korrekturwahrscheinlichkeit", LangFR: "Probabilité de correction", LangES: "Probabilidad de corrección"},
-	"account.ml_recovery_heading":   {LangEN: "Recovery probability", LangPL: "Prawdopodobieństwo odbicia", LangDE: "Erholungswahrscheinlichkeit", LangFR: "Probabilité de reprise", LangES: "Probabilidad de recuperación"},
-	"account.ml_no_models":          {LangEN: "No trained models found in the models directory.", LangPL: "Nie znaleziono wytrenowanych modeli w katalogu modeli.", LangDE: "Keine trainierten Modelle im Modellverzeichnis gefunden.", LangFR: "Aucun modèle entraîné trouvé dans le répertoire des modèles.", LangES: "No se encontraron modelos entrenados en el directorio de modelos."},
-	"account.ml_none_active":        {LangEN: "None active — using the deterministic stub.", LangPL: "Brak aktywnego — używany deterministyczny placeholder.", LangDE: "Keines aktiv — es wird der deterministische Platzhalter verwendet.", LangFR: "Aucun actif — utilisation du substitut déterministe.", LangES: "Ninguno activo — se usa el sustituto determinista."},
-	"account.ml_active_badge":       {LangEN: "active", LangPL: "aktywny", LangDE: "aktiv", LangFR: "actif", LangES: "activo"},
-	"account.ml_activate_submit":    {LangEN: "Activate", LangPL: "Aktywuj", LangDE: "Aktivieren", LangFR: "Activer", LangES: "Activar"},
-	"account.ml_delete_submit":      {LangEN: "Remove", LangPL: "Usuń", LangDE: "Entfernen", LangFR: "Supprimer", LangES: "Eliminar"},
+	"settings.ml_correction_heading": {LangEN: "Correction probability", LangPL: "Prawdopodobieństwo korekty", LangDE: "Korrekturwahrscheinlichkeit", LangFR: "Probabilité de correction", LangES: "Probabilidad de corrección"},
+	"settings.ml_recovery_heading":   {LangEN: "Recovery probability", LangPL: "Prawdopodobieństwo odbicia", LangDE: "Erholungswahrscheinlichkeit", LangFR: "Probabilité de reprise", LangES: "Probabilidad de recuperación"},
+	"settings.ml_no_models":          {LangEN: "No trained models found in the models directory.", LangPL: "Nie znaleziono wytrenowanych modeli w katalogu modeli.", LangDE: "Keine trainierten Modelle im Modellverzeichnis gefunden.", LangFR: "Aucun modèle entraîné trouvé dans le répertoire des modèles.", LangES: "No se encontraron modelos entrenados en el directorio de modelos."},
+	"settings.ml_none_active":        {LangEN: "None active — using the deterministic stub.", LangPL: "Brak aktywnego — używany deterministyczny placeholder.", LangDE: "Keines aktiv — es wird der deterministische Platzhalter verwendet.", LangFR: "Aucun actif — utilisation du substitut déterministe.", LangES: "Ninguno activo — se usa el sustituto determinista."},
+	"settings.ml_active_badge":       {LangEN: "active", LangPL: "aktywny", LangDE: "aktiv", LangFR: "actif", LangES: "activo"},
+	"settings.ml_activate_submit":    {LangEN: "Activate", LangPL: "Aktywuj", LangDE: "Aktivieren", LangFR: "Activer", LangES: "Activar"},
+	"settings.ml_delete_submit":      {LangEN: "Remove", LangPL: "Usuń", LangDE: "Entfernen", LangFR: "Supprimer", LangES: "Eliminar"},
 	"confirm.remove_model": {
 		LangEN: "Delete %s permanently? This can't be undone.",
 		LangPL: "Usunąć %s na stałe? Tej operacji nie można cofnąć.",
@@ -407,45 +445,44 @@ var translations = map[string]map[Lang]string{
 		LangES: "¿Eliminar %s de forma permanente? Esta acción no se puede deshacer.",
 	},
 
-	"account.train_heading": {LangEN: "Train new candidate", LangPL: "Wytrenuj nowego kandydata", LangDE: "Neuen Kandidaten trainieren", LangFR: "Entraîner un nouveau candidat", LangES: "Entrenar nuevo candidato"},
-	"account.train_hint": {
+	"settings.train_heading": {LangEN: "Train new candidate", LangPL: "Wytrenuj nowego kandydata", LangDE: "Neuen Kandidaten trainieren", LangFR: "Entraîner un nouveau candidat", LangES: "Entrenar nuevo candidato"},
+	"settings.train_hint": {
 		LangEN: "Exports fresh training data and trains a new, uniquely-versioned candidate for both models. Never changes what's active — pick it above once it looks good.",
 		LangPL: "Eksportuje świeże dane treningowe i trenuje nowego, jednoznacznie wersjonowanego kandydata dla obu modeli. Nigdy nie zmienia aktywnego modelu — wybierz go powyżej, gdy wygląda dobrze.",
 		LangDE: "Exportiert frische Trainingsdaten und trainiert für beide Modelle einen neuen, eindeutig versionierten Kandidaten. Ändert nie, welches Modell aktiv ist — wähle ihn oben aus, sobald er gut aussieht.",
 		LangFR: "Exporte des données d'entraînement fraîches et entraîne un nouveau candidat, versionné de façon unique, pour les deux modèles. Ne change jamais ce qui est actif — sélectionnez-le ci-dessus une fois qu'il semble satisfaisant.",
 		LangES: "Exporta datos de entrenamiento nuevos y entrena un candidato nuevo, con versión única, para ambos modelos. Nunca cambia cuál está activo — selecciónalo arriba cuando tenga buen aspecto.",
 	},
-	"account.train_submit": {LangEN: "Train now", LangPL: "Trenuj teraz", LangDE: "Jetzt trainieren", LangFR: "Entraîner maintenant", LangES: "Entrenar ahora"},
-	"account.train_not_configured": {
+	"settings.train_submit": {LangEN: "Train now", LangPL: "Trenuj teraz", LangDE: "Jetzt trainieren", LangFR: "Entraîner maintenant", LangES: "Entrenar ahora"},
+	"settings.train_not_configured": {
 		LangEN: "Not configured — set TRAINER_URL and start the atlas-trainer service to enable this, or run training/retrain.sh by hand/cron instead.",
 		LangPL: "Nie skonfigurowano — ustaw TRAINER_URL i uruchom usługę atlas-trainer, żeby to włączyć, albo uruchom training/retrain.sh ręcznie/przez cron.",
 		LangDE: "Nicht konfiguriert — setze TRAINER_URL und starte den atlas-trainer-Dienst, um dies zu aktivieren, oder führe stattdessen training/retrain.sh manuell/per Cron aus.",
 		LangFR: "Non configuré — définissez TRAINER_URL et démarrez le service atlas-trainer pour l'activer, ou exécutez plutôt training/retrain.sh manuellement/via cron.",
 		LangES: "No configurado — define TRAINER_URL e inicia el servicio atlas-trainer para habilitar esto, o ejecuta training/retrain.sh manualmente o por cron.",
 	},
-	"account.train_unreachable": {LangEN: "Trainer isn't reachable right now:", LangPL: "Trener jest teraz nieosiągalny:", LangDE: "Der Trainer ist momentan nicht erreichbar:", LangFR: "Le service d'entraînement est actuellement injoignable :", LangES: "El entrenador no está disponible en este momento:"},
-	"account.train_running":     {LangEN: "Training is currently running…", LangPL: "Trening jest w trakcie…", LangDE: "Training läuft gerade…", LangFR: "Entraînement en cours…", LangES: "El entrenamiento está en curso…"},
-	"account.train_last_result": {LangEN: "Last run", LangPL: "Ostatnie uruchomienie", LangDE: "Letzter Lauf", LangFR: "Dernière exécution", LangES: "Última ejecución"},
-	"account.train_succeeded":   {LangEN: "succeeded", LangPL: "zakończone sukcesem", LangDE: "erfolgreich", LangFR: "réussi", LangES: "correcto"},
-	"account.train_failed":      {LangEN: "failed", LangPL: "nieudane", LangDE: "fehlgeschlagen", LangFR: "échoué", LangES: "fallido"},
-	"account.train_output":      {LangEN: "Output", LangPL: "Wynik", LangDE: "Ausgabe", LangFR: "Résultat", LangES: "Salida"},
+	"settings.train_unreachable": {LangEN: "Trainer isn't reachable right now:", LangPL: "Trener jest teraz nieosiągalny:", LangDE: "Der Trainer ist momentan nicht erreichbar:", LangFR: "Le service d'entraînement est actuellement injoignable :", LangES: "El entrenador no está disponible en este momento:"},
+	"settings.train_running":     {LangEN: "Training is currently running…", LangPL: "Trening jest w trakcie…", LangDE: "Training läuft gerade…", LangFR: "Entraînement en cours…", LangES: "El entrenamiento está en curso…"},
+	"settings.train_last_result": {LangEN: "Last run", LangPL: "Ostatnie uruchomienie", LangDE: "Letzter Lauf", LangFR: "Dernière exécution", LangES: "Última ejecución"},
+	"settings.train_succeeded":   {LangEN: "succeeded", LangPL: "zakończone sukcesem", LangDE: "erfolgreich", LangFR: "réussi", LangES: "correcto"},
+	"settings.train_failed":      {LangEN: "failed", LangPL: "nieudane", LangDE: "fehlgeschlagen", LangFR: "échoué", LangES: "fallido"},
+	"settings.train_output":      {LangEN: "Output", LangPL: "Wynik", LangDE: "Ausgabe", LangFR: "Résultat", LangES: "Salida"},
 
-	"account.data_heading": {LangEN: "Database backup", LangPL: "Kopia zapasowa bazy danych", LangDE: "Datenbank-Backup", LangFR: "Sauvegarde de la base de données", LangES: "Copia de seguridad de la base de datos"},
-	"account.data_hint": {
+	"settings.data_heading": {LangEN: "Database backup", LangPL: "Kopia zapasowa bazy danych", LangDE: "Datenbank-Backup", LangFR: "Sauvegarde de la base de données", LangES: "Copia de seguridad de la base de datos"},
+	"settings.data_hint": {
 		LangEN: "Downloads everything Atlas stores — positions, transactions, watchlist, price/indicator history, recommendations, settings — as one JSON file, restorable here or on a fresh environment.",
 		LangPL: "Pobiera wszystko, co przechowuje Atlas — pozycje, transakcje, listę obserwowanych, historię cen/wskaźników, rekomendacje, ustawienia — jako jeden plik JSON, możliwy do przywrócenia tutaj lub na nowym środowisku.",
 		LangDE: "Lädt alles herunter, was Atlas speichert — Positionen, Transaktionen, Beobachtungsliste, Kurs-/Indikatorenverlauf, Empfehlungen, Einstellungen — als eine einzige JSON-Datei, die hier oder in einer neuen Umgebung wiederhergestellt werden kann.",
 		LangFR: "Télécharge tout ce qu'Atlas stocke — positions, transactions, liste de surveillance, historique des prix/indicateurs, recommandations, paramètres — en un seul fichier JSON, restaurable ici ou sur un nouvel environnement.",
 		LangES: "Descarga todo lo que almacena Atlas — posiciones, transacciones, lista de seguimiento, historial de precios/indicadores, recomendaciones, configuración — en un único archivo JSON, restaurable aquí o en un entorno nuevo.",
 	},
-	"account.backup_submit":    {LangEN: "Download backup", LangPL: "Pobierz kopię zapasową", LangDE: "Backup herunterladen", LangFR: "Télécharger la sauvegarde", LangES: "Descargar copia de seguridad"},
-	"account.confirm_password": {LangEN: "Confirm with your password", LangPL: "Potwierdź hasłem", LangDE: "Mit Passwort bestätigen", LangFR: "Confirmez avec votre mot de passe", LangES: "Confirma con tu contraseña"},
-	"account.leader_heading":   {LangEN: "Background polling", LangPL: "Odpytywanie w tle", LangDE: "Hintergrund-Polling", LangFR: "Interrogation en arrière-plan", LangES: "Sondeo en segundo plano"},
-	"account.leader_self":      {LangEN: "This instance is polling.", LangPL: "Ta instancja odpytuje.", LangDE: "Diese Instanz fragt ab.", LangFR: "Cette instance interroge.", LangES: "Esta instancia sondea."},
-	"account.leader_other":     {LangEN: "Another instance is polling:", LangPL: "Odpytuje inna instancja:", LangDE: "Eine andere Instanz fragt ab:", LangFR: "Une autre instance interroge :", LangES: "Otra instancia sondea:"},
-	"account.leader_none":      {LangEN: "No instance currently holds the polling lease.", LangPL: "Żadna instancja nie ma teraz dzierżawy odpytywania.", LangDE: "Keine Instanz hält derzeit die Polling-Lease.", LangFR: "Aucune instance ne détient actuellement le bail d'interrogation.", LangES: "Ninguna instancia tiene actualmente el arrendamiento de sondeo."},
-	"account.restore_file":     {LangEN: "Backup JSON file", LangPL: "Plik JSON kopii zapasowej", LangDE: "Backup-JSON-Datei", LangFR: "Fichier JSON de sauvegarde", LangES: "Archivo JSON de copia de seguridad"},
-	"account.restore_submit":   {LangEN: "Restore from backup", LangPL: "Przywróć z kopii zapasowej", LangDE: "Aus Backup wiederherstellen", LangFR: "Restaurer depuis la sauvegarde", LangES: "Restaurar desde copia de seguridad"},
+	"settings.backup_submit":  {LangEN: "Download backup", LangPL: "Pobierz kopię zapasową", LangDE: "Backup herunterladen", LangFR: "Télécharger la sauvegarde", LangES: "Descargar copia de seguridad"},
+	"settings.leader_heading": {LangEN: "Background polling", LangPL: "Odpytywanie w tle", LangDE: "Hintergrund-Polling", LangFR: "Interrogation en arrière-plan", LangES: "Sondeo en segundo plano"},
+	"settings.leader_self":    {LangEN: "This instance is polling.", LangPL: "Ta instancja odpytuje.", LangDE: "Diese Instanz fragt ab.", LangFR: "Cette instance interroge.", LangES: "Esta instancia sondea."},
+	"settings.leader_other":   {LangEN: "Another instance is polling:", LangPL: "Odpytuje inna instancja:", LangDE: "Eine andere Instanz fragt ab:", LangFR: "Une autre instance interroge :", LangES: "Otra instancia sondea:"},
+	"settings.leader_none":    {LangEN: "No instance currently holds the polling lease.", LangPL: "Żadna instancja nie ma teraz dzierżawy odpytywania.", LangDE: "Keine Instanz hält derzeit die Polling-Lease.", LangFR: "Aucune instance ne détient actuellement le bail d'interrogation.", LangES: "Ninguna instancia tiene actualmente el arrendamiento de sondeo."},
+	"settings.restore_file":   {LangEN: "Backup JSON file", LangPL: "Plik JSON kopii zapasowej", LangDE: "Backup-JSON-Datei", LangFR: "Fichier JSON de sauvegarde", LangES: "Archivo JSON de copia de seguridad"},
+	"settings.restore_submit": {LangEN: "Restore from backup", LangPL: "Przywróć z kopii zapasowej", LangDE: "Aus Backup wiederherstellen", LangFR: "Restaurer depuis la sauvegarde", LangES: "Restaurar desde copia de seguridad"},
 	"confirm.restore_backup": {
 		LangEN: "Restoring will replace ALL current data with the contents of this file. Continue?",
 		LangPL: "Przywrócenie zastąpi WSZYSTKIE obecne dane zawartością tego pliku. Kontynuować?",
@@ -454,24 +491,24 @@ var translations = map[string]map[Lang]string{
 		LangES: "La restauración reemplazará TODOS los datos actuales con el contenido de este archivo. ¿Continuar?",
 	},
 
-	"account.danger_heading": {LangEN: "Danger zone", LangPL: "Strefa zagrożenia", LangDE: "Gefahrenzone", LangFR: "Zone dangereuse", LangES: "Zona de peligro"},
-	"account.flush_hint": {
-		LangEN: "Permanently wipes positions, transactions, watchlist, price/indicator history, recommendations, and ML/2FA settings — back to a freshly installed Atlas. Your login isn't affected. There is no undo short of restoring a backup taken beforehand.",
-		LangPL: "Trwale usuwa pozycje, transakcje, listę obserwowanych, historię cen/wskaźników, rekomendacje oraz ustawienia ML/2FA — Atlas wraca do stanu świeżej instalacji. Logowanie pozostaje bez zmian. Nie ma cofnięcia poza przywróceniem wcześniej zrobionej kopii zapasowej.",
-		LangDE: "Löscht dauerhaft Positionen, Transaktionen, Beobachtungsliste, Kurs-/Indikatorenverlauf, Empfehlungen sowie ML-/2FA-Einstellungen — Atlas kehrt in den Zustand einer frischen Installation zurück. Dein Login ist davon nicht betroffen. Es gibt kein Rückgängigmachen außer dem Wiederherstellen eines zuvor erstellten Backups.",
-		LangFR: "Efface définitivement les positions, transactions, la liste de surveillance, l'historique des prix/indicateurs, les recommandations et les paramètres ML/2FA — retour à un Atlas fraîchement installé. Votre connexion n'est pas affectée. Il n'y a aucune annulation possible, hormis la restauration d'une sauvegarde effectuée au préalable.",
-		LangES: "Borra permanentemente posiciones, transacciones, lista de seguimiento, historial de precios/indicadores, recomendaciones y configuración de ML/2FA — vuelve a un Atlas recién instalado. Tu inicio de sesión no se ve afectado. No hay forma de deshacerlo salvo restaurar una copia de seguridad hecha de antemano.",
+	"settings.danger_heading": {LangEN: "Danger zone", LangPL: "Strefa zagrożenia", LangDE: "Gefahrenzone", LangFR: "Zone dangereuse", LangES: "Zona de peligro"},
+	"settings.flush_hint": {
+		LangEN: "Permanently wipes positions, transactions, watchlist, price/indicator history, recommendations, and ML settings — back to a freshly installed Atlas. Your login isn't affected. There is no undo short of restoring a backup taken beforehand.",
+		LangPL: "Trwale usuwa pozycje, transakcje, listę obserwowanych, historię cen/wskaźników, rekomendacje oraz ustawienia ML — Atlas wraca do stanu świeżej instalacji. Logowanie pozostaje bez zmian. Nie ma cofnięcia poza przywróceniem wcześniej zrobionej kopii zapasowej.",
+		LangDE: "Löscht dauerhaft Positionen, Transaktionen, Beobachtungsliste, Kurs-/Indikatorenverlauf, Empfehlungen sowie ML-Einstellungen — Atlas kehrt in den Zustand einer frischen Installation zurück. Dein Login ist davon nicht betroffen. Es gibt kein Rückgängigmachen außer dem Wiederherstellen eines zuvor erstellten Backups.",
+		LangFR: "Efface définitivement les positions, transactions, la liste de surveillance, l'historique des prix/indicateurs, les recommandations et les paramètres ML — retour à un Atlas fraîchement installé. Votre connexion n'est pas affectée. Il n'y a aucune annulation possible, hormis la restauration d'une sauvegarde effectuée au préalable.",
+		LangES: "Borra permanentemente posiciones, transacciones, lista de seguimiento, historial de precios/indicadores, recomendaciones y configuración de ML — vuelve a un Atlas recién instalado. Tu inicio de sesión no se ve afectado. No hay forma de deshacerlo salvo restaurar una copia de seguridad hecha de antemano.",
 	},
-	"account.flush_submit": {LangEN: "Flush all data", LangPL: "Wyczyść wszystkie dane", LangDE: "Alle Daten löschen", LangFR: "Effacer toutes les données", LangES: "Borrar todos los datos"},
-	"account.last_backup":  {LangEN: "Last backup:", LangPL: "Ostatnia kopia zapasowa:", LangDE: "Letztes Backup:", LangFR: "Dernière sauvegarde :", LangES: "Última copia de seguridad:"},
-	"account.flush_locked_hint": {
+	"settings.flush_submit": {LangEN: "Flush all data", LangPL: "Wyczyść wszystkie dane", LangDE: "Alle Daten löschen", LangFR: "Effacer toutes les données", LangES: "Borrar todos los datos"},
+	"settings.last_backup":  {LangEN: "Last backup:", LangPL: "Ostatnia kopia zapasowa:", LangDE: "Letztes Backup:", LangFR: "Dernière sauvegarde :", LangES: "Última copia de seguridad:"},
+	"settings.flush_locked_hint": {
 		LangEN: "Locked — no backup has been taken yet. Download one above first; the button unlocks as soon as one exists.",
 		LangPL: "Zablokowane — nie wykonano jeszcze żadnej kopii zapasowej. Najpierw pobierz ją powyżej; przycisk odblokuje się, gdy tylko kopia będzie istnieć.",
 		LangDE: "Gesperrt — es wurde noch kein Backup erstellt. Lade zuerst oben eines herunter; der Button wird freigeschaltet, sobald eines existiert.",
 		LangFR: "Verrouillé — aucune sauvegarde n'a encore été effectuée. Téléchargez-en d'abord une ci-dessus ; le bouton se débloque dès qu'une sauvegarde existe.",
 		LangES: "Bloqueado — aún no se ha hecho ninguna copia de seguridad. Descarga una arriba primero; el botón se desbloquea en cuanto exista una.",
 	},
-	"account.flush_stale_hint": {
+	"settings.flush_stale_hint": {
 		LangEN: "Locked — your last backup is more than 5 minutes old. Download a fresh one above; the button unlocks right after.",
 		LangPL: "Zablokowane — ostatnia kopia zapasowa ma ponad 5 minut. Pobierz nową powyżej; przycisk odblokuje się od razu potem.",
 		LangDE: "Gesperrt — dein letztes Backup ist älter als 5 Minuten. Lade oben ein neues herunter; der Button wird direkt danach freigeschaltet.",
@@ -479,34 +516,12 @@ var translations = map[string]map[Lang]string{
 		LangES: "Bloqueado — tu última copia de seguridad tiene más de 5 minutos. Descarga una nueva arriba; el botón se desbloquea justo después.",
 	},
 	"confirm.flush_all": {
-		LangEN: "This permanently deletes ALL Atlas data (positions, transactions, watchlist, price history, recommendations, ML/2FA settings) and cannot be undone. Have you downloaded a backup? Continue?",
-		LangPL: "To trwale usuwa WSZYSTKIE dane Atlasa (pozycje, transakcje, listę obserwowanych, historię cen, rekomendacje, ustawienia ML/2FA) i nie da się tego cofnąć. Czy pobrałeś(-aś) kopię zapasową? Kontynuować?",
-		LangDE: "Dies löscht dauerhaft ALLE Atlas-Daten (Positionen, Transaktionen, Beobachtungsliste, Kursverlauf, Empfehlungen, ML-/2FA-Einstellungen) und kann nicht rückgängig gemacht werden. Hast du ein Backup heruntergeladen? Fortfahren?",
-		LangFR: "Ceci supprime définitivement TOUTES les données d'Atlas (positions, transactions, liste de surveillance, historique des prix, recommandations, paramètres ML/2FA) et ne peut pas être annulé. Avez-vous téléchargé une sauvegarde ? Continuer ?",
-		LangES: "Esto elimina permanentemente TODOS los datos de Atlas (posiciones, transacciones, lista de seguimiento, historial de precios, recomendaciones, configuración de ML/2FA) y no se puede deshacer. ¿Has descargado una copia de seguridad? ¿Continuar?",
+		LangEN: "This permanently deletes ALL Atlas data (positions, transactions, watchlist, price history, recommendations, ML settings) and cannot be undone. Have you downloaded a backup? Continue?",
+		LangPL: "To trwale usuwa WSZYSTKIE dane Atlasa (pozycje, transakcje, listę obserwowanych, historię cen, rekomendacje, ustawienia ML) i nie da się tego cofnąć. Czy pobrałeś(-aś) kopię zapasową? Kontynuować?",
+		LangDE: "Dies löscht dauerhaft ALLE Atlas-Daten (Positionen, Transaktionen, Beobachtungsliste, Kursverlauf, Empfehlungen, ML-Einstellungen) und kann nicht rückgängig gemacht werden. Hast du ein Backup heruntergeladen? Fortfahren?",
+		LangFR: "Ceci supprime définitivement TOUTES les données d'Atlas (positions, transactions, liste de surveillance, historique des prix, recommandations, paramètres ML) et ne peut pas être annulé. Avez-vous téléchargé une sauvegarde ? Continuer ?",
+		LangES: "Esto elimina permanentemente TODOS los datos de Atlas (posiciones, transacciones, lista de seguimiento, historial de precios, recomendaciones, configuración de ML) y no se puede deshacer. ¿Has descargado una copia de seguridad? ¿Continuar?",
 	},
-
-	// TOTP enrollment (totp_enroll.html)
-	"totp.title":   {LangEN: "Atlas — Set up 2FA", LangPL: "Atlas — Konfiguracja 2FA", LangDE: "Atlas — 2FA einrichten", LangFR: "Atlas — Configuration de la 2FA", LangES: "Atlas — Configurar 2FA"},
-	"totp.heading": {LangEN: "Set up two-factor authentication", LangPL: "Konfiguracja uwierzytelniania dwuskładnikowego", LangDE: "Zwei-Faktor-Authentifizierung einrichten", LangFR: "Configurer l'authentification à deux facteurs", LangES: "Configurar la autenticación de dos factores"},
-	"totp.scan_hint": {
-		LangEN: "Scan this QR code with an authenticator app (Google Authenticator, Authy, etc.):",
-		LangPL: "Zeskanuj ten kod QR aplikacją uwierzytelniającą (Google Authenticator, Authy itp.):",
-		LangDE: "Scanne diesen QR-Code mit einer Authenticator-App (Google Authenticator, Authy usw.):",
-		LangFR: "Scannez ce code QR avec une application d'authentification (Google Authenticator, Authy, etc.) :",
-		LangES: "Escanea este código QR con una aplicación de autenticación (Google Authenticator, Authy, etc.):",
-	},
-	"totp.manual_hint":     {LangEN: "Can't scan? Enter this key manually:", LangPL: "Nie możesz zeskanować? Wpisz ten klucz ręcznie:", LangDE: "Kannst du nicht scannen? Gib diesen Schlüssel manuell ein:", LangFR: "Impossible de scanner ? Saisissez cette clé manuellement :", LangES: "¿No puedes escanear? Introduce esta clave manualmente:"},
-	"totp.confirm_heading": {LangEN: "Confirm", LangPL: "Potwierdź", LangDE: "Bestätigen", LangFR: "Confirmer", LangES: "Confirmar"},
-	"totp.confirm_hint": {
-		LangEN: "Enter the current 6-digit code from the app to finish enabling 2FA.",
-		LangPL: "Wpisz aktualny 6-cyfrowy kod z aplikacji, aby zakończyć włączanie 2FA.",
-		LangDE: "Gib den aktuellen 6-stelligen Code aus der App ein, um die Aktivierung von 2FA abzuschließen.",
-		LangFR: "Saisissez le code actuel à 6 chiffres de l'application pour terminer l'activation de la 2FA.",
-		LangES: "Introduce el código actual de 6 dígitos de la aplicación para terminar de activar la 2FA.",
-	},
-	"totp.verification_code": {LangEN: "Verification code", LangPL: "Kod weryfikacyjny", LangDE: "Bestätigungscode", LangFR: "Code de vérification", LangES: "Código de verificación"},
-	"totp.submit":            {LangEN: "Confirm and enable", LangPL: "Potwierdź i włącz", LangDE: "Bestätigen und aktivieren", LangFR: "Confirmer et activer", LangES: "Confirmar y activar"},
 
 	// Recommendation/trade action labels — applied via actionLabel wherever a raw BUY/SELL/HOLD/
 	// ACCUMULATE/REDUCE/WAIT value is displayed (recommendations, alerts, backtests trades, the

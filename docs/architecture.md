@@ -1,8 +1,6 @@
 # Architecture
 
-**Implementation status** (as of this pass — this is the up-to-date per-module breakdown;
-PROJECT_CONTEXT.md keeps only a short summary pointing back here, to stop the two from drifting
-out of sync with each other): Collector, Analyzer (RSI/EMA/MACD/ATR/Volume/OBV/ADX/Bollinger Bands),
+**Implementation status** (the up-to-date per-module breakdown): Collector, Analyzer (RSI/EMA/MACD/ATR/Volume/OBV/ADX/Bollinger Bands),
 Decision Engine (technical + ML + portfolio-risk + risk-engine blend, all six actions
 BUY/ACCUMULATE/HOLD/REDUCE/SELL/WAIT real and differentiated — see docs/decision_engine.md), ML
 Engine (real XGBoost→ONNX training pipeline and Go inference, falling back to a deterministic
@@ -20,8 +18,9 @@ from always seeing `volume = 0` — see docs/decision_engine.md's "The momentum/
 `ml.FeatureVector` still draws on only those same five
 indicators (RSI/EMA/MACD/ATR/Volume), though as scale-free ratios rather than raw price-unit
 values since the price levels themselves were letting the model identify the symbol — see
-docs/ml.md. Extending past those five is the leading open lead for the correction model, which
-currently loses to a per-symbol base-rate baseline. ADX is consumed too,
+docs/ml.md. Extending past those five is the leading open lead for the correction model, whose current
+file clears the per-symbol base-rate baseline on PR AUC only by a hair (0.347 vs 0.346) and trails
+it on ROC AUC — see docs/ml.md. ADX is consumed too,
 but only by the deterministic market-condition classifier (ADX+EMA, see docs/ml.md), not blended
 into scoring or the ML feature vector either.
 Recovery probability is trained and loadable like correction probability — the recovery model
@@ -34,7 +33,7 @@ lower it — the 0.10 weight it used to carry is gone) but still computed inline
 Orchestrator rather than as a separate pipeline stage. Indicators are now persisted from every
 live-recommendation path — `GET /recommendations`, `GET /alerts`, and the background alert-poll
 loop — but deliberately not from backtesting, whose bars are historical/simulated rather than
-live readings (see implementation-plan.md's Phase 3 status note).
+live readings.
 
 ## Core Modules
 
@@ -97,7 +96,7 @@ Implementation status: correction probability and confidence score are real (XGB
 to ONNX, loaded via `github.com/yalue/onnxruntime_go` — see docs/ml.md and training/README.md).
 Market condition is real too, but deliberately not ML — a deterministic ADX+EMA rule (see
 docs/ml.md). Recovery probability is a second, independent model of the same shape — trained,
-exported and loadable (`RECOVERY_MODEL_PATH` or the Account page's picker), and optional in
+exported and loadable (`RECOVERY_MODEL_PATH` or the Settings page's picker), and optional in
 exactly the same way: with none loaded the probability stays 0 instead of being invented.
 
 

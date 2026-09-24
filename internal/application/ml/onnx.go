@@ -46,16 +46,60 @@ type OnnxModel struct {
 	session onnxSession
 	Version string
 	// Filename is the file this model was loaded from, relative to ML_MODELS_DIR. It is what the
-	// durable Account-page selection records, so it is also how a replica answers "am I already
+	// durable Settings-page selection records, so it is also how a replica answers "am I already
 	// serving the selected model" without reloading it to compare versions.
 	Filename        string
 	TrainingDataEnd time.Time
+	// labelParams is the correction label the model was trained against, from its metadata's
+	// label_params; nil when the metadata predates that field. See LabelParams.
+	labelParams *CorrectionLabelParams
 }
 
 type modelMetadata struct {
-	Version         string   `json:"version"`
-	FeatureOrder    []string `json:"feature_order"`
-	TrainingDataEnd string   `json:"train_label_end"`
+	Version         string               `json:"version"`
+	FeatureOrder    []string             `json:"feature_order"`
+	TrainingDataEnd string               `json:"train_label_end"`
+	LabelParams     *metadataLabelParams `json:"label_params"`
+}
+
+// metadataLabelParams is the label_params object training/train.py copies from
+// cmd/export-training-data's sidecar (see writeLabelParams there).
+type metadataLabelParams struct {
+	LabelType          string  `json:"label_type"`
+	HorizonBars        int     `json:"horizon_bars"`
+	ThresholdPct       float64 `json:"threshold_pct"`
+	VolatilityMultiple float64 `json:"volatility_multiple"`
+	VolatilityWindow   int     `json:"volatility_window"`
+	MinThresholdPct    float64 `json:"min_threshold_pct"`
+}
+
+// correctionParams returns the correction label the metadata describes, or nil when it has none
+// or it is not usable as one (no horizon).
+func (m *metadataLabelParams) correctionParams() *CorrectionLabelParams {
+	if m == nil || m.HorizonBars <= 0 {
+		return nil
+	}
+	return &CorrectionLabelParams{
+		HorizonBars: m.HorizonBars, ThresholdPct: m.ThresholdPct,
+		VolatilityMultiple: m.VolatilityMultiple, VolatilityWindow: m.VolatilityWindow,
+		MinThresholdPct: m.MinThresholdPct,
+	}
+}
+
+// LabelParams is the correction label to judge this model against, and whether that came from
+// the model itself.
+//
+// The exporter accepts a custom horizon and barrier, and the model records the ones it was
+// trained on. Scoring it against DefaultCorrectionLabelParams regardless measured it against a
+// different event than the one it learned, with nothing to say so. A model whose metadata
+// predates label_params cannot say what it learned; it falls back to the defaults, and fromModel
+// is false so the caller can report that rather than present the result as a like-for-like
+// measurement.
+func (m *OnnxModel) LabelParams() (params CorrectionLabelParams, fromModel bool) {
+	if m != nil && m.labelParams != nil {
+		return *m.labelParams, true
+	}
+	return DefaultCorrectionLabelParams(), false
 }
 
 // LoadOnnxModel loads an ONNX model file and its metadata sidecar (same path with .json instead
@@ -101,6 +145,7 @@ func LoadOnnxModel(modelPath, libPath string) (*OnnxModel, error) {
 	return &OnnxModel{
 		session: session, Version: metadata.Version,
 		Filename: filepath.Base(modelPath), TrainingDataEnd: trainingEnd,
+		labelParams: metadata.LabelParams.correctionParams(),
 	}, nil
 }
 

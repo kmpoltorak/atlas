@@ -10,7 +10,6 @@ import (
 	"time"
 
 	analyzerUC "atlas/internal/application/analyzer"
-	authUC "atlas/internal/application/auth"
 	decisionUC "atlas/internal/application/decision"
 	portfolioUC "atlas/internal/application/portfolio"
 	"atlas/internal/config"
@@ -21,14 +20,14 @@ import (
 )
 
 // The 2026-09-07 review's fifth finding: creating a portfolio goes through a request-scoped view
-// and writes to the database, but the Account page it redirects to rendered PortfolioList() off
+// and writes to the database, but the Settings page it redirects to rendered PortfolioList() off
 // the shared use case — a snapshot loaded at startup. The portfolio the operator had just created
 // was therefore missing from the page confirming they had created it.
 //
 // Driven over real HTTP against a real database, because that is where the staleness lives: the
 // use case is not wrong, the page was reading the wrong instance of it.
-func TestAccountPageShowsAPortfolioCreatedThroughTheDashboard(t *testing.T) {
-	app, handler := newAccountHTTPTestApplication(t)
+func TestSettingsPageShowsAPortfolioCreatedThroughTheDashboard(t *testing.T) {
+	app, handler := newSettingsHTTPTestApplication(t)
 
 	// A previous crashed run can leave its portfolio behind, and the limit is five — clear any
 	// leftovers of this test's own before adding another.
@@ -60,24 +59,24 @@ func TestAccountPageShowsAPortfolioCreatedThroughTheDashboard(t *testing.T) {
 		}
 	})
 
-	account := httptest.NewRequest(http.MethodGet, "/dashboard/account", nil)
-	account.Header.Set("Sec-Fetch-Site", "same-origin")
-	accountRecorder := httptest.NewRecorder()
-	handler.ServeHTTP(accountRecorder, account)
+	request := httptest.NewRequest(http.MethodGet, "/dashboard/settings", nil)
+	request.Header.Set("Sec-Fetch-Site", "same-origin")
+	settingsRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(settingsRecorder, request)
 
-	if accountRecorder.Code != http.StatusOK {
-		t.Fatalf("expected the account page to render, got %d", accountRecorder.Code)
+	if settingsRecorder.Code != http.StatusOK {
+		t.Fatalf("expected the settings page to render, got %d", settingsRecorder.Code)
 	}
-	if !strings.Contains(accountRecorder.Body.String(), name) {
-		t.Fatalf("the account page does not list the portfolio just created (%s)", name)
+	if !strings.Contains(settingsRecorder.Body.String(), name) {
+		t.Fatalf("the settings page does not list the portfolio just created (%s)", name)
 	}
 }
 
-func newAccountHTTPTestApplication(t *testing.T) (*Application, http.Handler) {
+func newSettingsHTTPTestApplication(t *testing.T) (*Application, http.Handler) {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_DSN")
 	if dsn == "" {
-		t.Skip("TEST_DATABASE_DSN not set; skipping account page integration test")
+		t.Skip("TEST_DATABASE_DSN not set; skipping settings page integration test")
 	}
 	storage, err := persistence.NewTimescaleDB(context.Background(), dsn, persistence.PoolLimits{})
 	if err != nil {
@@ -95,9 +94,6 @@ func newAccountHTTPTestApplication(t *testing.T) (*Application, http.Handler) {
 		Logger:    zap.NewNop(),
 		Storage:   storage,
 		Portfolio: uc,
-		// No credentials configured: auth is off, which is the same state the dashboard runs in
-		// locally and is all this page needs to render.
-		Auth: authUC.NewUseCase("", "", nil, storage),
 		// A real orchestrator: the page reads its ML toggle. ML itself stays nil, which is the
 		// normal "no model configured" state the page has to render anyway.
 		Orchestrator: decisionUC.NewOrchestrator(analyzerUC.NewUseCase(), uc, decisionUC.NewUseCase()),

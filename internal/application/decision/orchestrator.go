@@ -18,8 +18,15 @@ import (
 
 // EngineVersion tags every Recommendation this orchestrator produces (Recommendation.
 // ModelVersion), independent of ML's own model_version (see ml.Prediction) — it identifies the
-// decision-engine scoring logic (weights, thresholds), not the ML sub-model.
-const EngineVersion = "atlas-decision-v1"
+// decision-engine scoring logic (weights, thresholds, which inputs count as current), not the ML
+// sub-model.
+//
+// Bump it in the same change as anything that alters what a given input scores or how it is
+// flagged, so persisted history can be split at the change. v1 was never bumped and spans several
+// scoring revisions — the move from a weighted average to multiplicative risk factors among
+// them — so a v1 row does not identify one rule set. v2 starts with wall-clock quote freshness
+// (see clock) and recorded input quality (Degraded, RiskDataAvailable).
+const EngineVersion = "atlas-decision-v2"
 
 // Orchestrator composes the analyzer, ML, portfolio, and decision use cases into an explainable
 // recommendation workflow, per docs/decision_engine.md's "Scoring Model" (Technical + ML +
@@ -33,12 +40,19 @@ type Orchestrator struct {
 
 	// mlEnabled is a runtime on/off switch for the ML+Portfolio+Risk blend, independent of
 	// whether ML is wired in at all (see NewOrchestrator vs NewOrchestratorWithML) — the
-	// Account dashboard page flips this live (see SetMLEnabled) so a toggle takes effect
+	// Settings page flips this live (see SetMLEnabled) so a toggle takes effect
 	// immediately, with no restart needed, unlike the ML_ENABLED env var it defaults from
 	// (config.Config.MLEnabled). Defaults true: unset, it preserves NewOrchestratorWithML's
 	// existing behavior exactly.
 	mlEnabled            atomic.Bool
 	portfolioRiskEnabled atomic.Bool
+
+	// HistoricalClock makes quote freshness be measured against the last bar scored rather than
+	// the wall clock. Only a backtest sets it: a simulated 2024 position must not be called stale
+	// for having a 2024 price. Live scoring must not, because the last bar is exactly what goes
+	// stale when a provider stops updating — measured against it, a series weeks out of date
+	// made its equally old quotes look current.
+	HistoricalClock bool
 }
 
 func NewOrchestrator(analyzerUC *analyzerUC.UseCase, portfolioUC *portfolioUC.UseCase, decisionUC *UseCase) *Orchestrator {
@@ -62,7 +76,7 @@ func NewOrchestratorWithML(analyzerUC *analyzerUC.UseCase, portfolioUC *portfoli
 }
 
 // MLEnabled reports whether the ML+Portfolio+Risk blend is currently switched on (see
-// mlEnabled) — read by the Account page to render the toggle's current state.
+// mlEnabled) — read by the Settings page to render the toggle's current state.
 func (o *Orchestrator) PortfolioRiskEnabled() bool           { return o.portfolioRiskEnabled.Load() }
 func (o *Orchestrator) SetPortfolioRiskEnabled(enabled bool) { o.portfolioRiskEnabled.Store(enabled) }
 
@@ -70,7 +84,7 @@ func (o *Orchestrator) MLEnabled() bool {
 	return o.mlEnabled.Load()
 }
 
-// SetMLEnabled flips the runtime ML-blend toggle — called by the Account page's handler after
+// SetMLEnabled flips the runtime ML-blend toggle — called by the Settings page's handler after
 // durably recording the choice (persistence.TimescaleDB.SetMLEnabled), and by the composition
 // root at startup to apply config.Config.MLEnabled/the durable override. Safe to call whether or
 // not ML was wired in at construction (NewOrchestrator vs NewOrchestratorWithML); with o.ML nil,
@@ -112,6 +126,7 @@ func (o *Orchestrator) BuildRecommendationFromBars(symbol string, bars []market.
 	recommendation.MarketCondition = mlUC.ClassifyMarketCondition(o.Analyzer, symbol, bars)
 	recommendation.ModelVersion = EngineVersion
 	recommendation.MLModelVersion = blend.MLModelVersion
+	recommendation.MLRecoveryModelVersion = blend.MLRecoveryModelVersion
 	return recommendation, nil
 }
 
@@ -228,8 +243,10 @@ type blendResult struct {
 	// MLModelVersion so a caller can see which real model (or the stub) actually produced
 	// MLScore, distinct from Recommendation.ModelVersion (the decision engine's own tag).
 	MLModelVersion string
-	HasPosition    bool
-	Reasons        []string
+	// MLRecoveryModelVersion is ml.Prediction.RecoveryModelVersion, empty when none ran.
+	MLRecoveryModelVersion string
+	HasPosition            bool
+	Reasons                []string
 	// Degraded marks a recommendation produced with one of its inputs missing — an ML prediction
 	// that errored, or a portfolio that could not be read. The score is still returned (a
 	// technical signal is better than nothing) but it is not the same claim as a full one, and
@@ -308,7 +325,7 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 	// no-penalty value is 0.5, the top of portfolioRiskSignal's own scale.
 	result := blendResult{Overall: technical.Overall, MLScore: 1.0, PortfolioScore: 0.5, RiskScore: 1.0, MLConfidence: 1.0}
 
-	// mlActive also gates the runtime mlEnabled toggle (see SetMLEnabled), so the Account page's
+	// mlActive also gates the runtime mlEnabled toggle (see SetMLEnabled), so the Settings page's
 	// switch reproduces exactly what NewOrchestrator (ML never wired in) already does for the
 	// prediction call and the multiplication below: no prediction call, no ML/Portfolio/Risk
 	// multiplication, MLConfidence stays at its never-triggers-WAIT default, MLModelVersion stays
@@ -330,12 +347,13 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 			result.MLScore = mlScoreFromPrediction(prediction)
 			result.MLConfidence = prediction.Confidence
 			result.MLModelVersion = prediction.ModelVersion
+			result.MLRecoveryModelVersion = prediction.RecoveryModelVersion
 		}
 	}
 
 	// Deliberately GetAllPositions (every portfolio combined), not GetPositions (only the
 	// dashboard's currently active one): "do I already hold this symbol" and "how risky is my
-	// overall exposure" are whole-account questions. A symbol bought in one portfolio should
+	// overall exposure" are all-portfolio questions. A symbol bought in one portfolio should
 	// still read as ACCUMULATE, not BUY, while a different portfolio tab happens to be active.
 	if o.Portfolio != nil {
 		positions, err := o.Portfolio.GetAllPositions()
@@ -356,7 +374,7 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 			// live quote that price is the last trade, so its unrealized P&L is exactly zero by
 			// construction — which the risk terms read as "nothing wrong" when it means "not
 			// valued". Say so rather than scoring a stale book as a healthy one.
-			if stale := stalelyPricedSymbols(positions, asOf(bars)); len(stale) > 0 {
+			if stale := stalelyPricedSymbols(positions, o.clock(bars)); len(stale) > 0 {
 				result.RiskDataAvailable = false
 				result.Degraded = true
 				result.Reasons = append(result.Reasons,
@@ -415,12 +433,10 @@ func computeRiskScore(risk portfolio.RiskSnapshot, positions []portfolio.Positio
 	return clamp01((drawdownComponent + volatilityComponent) / 2)
 }
 
-// asOf is the clock a recommendation is being made against: the timestamp of the most recent bar
-// it can see. For live scoring that is a few minutes ago; for a backtest it is the simulation's
-// own position in history, which is why this is not time.Now() — a simulated 2024 position must
-// not be called stale for having a 2024 price.
-func asOf(bars []market.Bar) time.Time {
-	if len(bars) == 0 {
+// clock is the time a recommendation is being made against: now for live scoring, the most
+// recent bar for a backtest (see HistoricalClock).
+func (o *Orchestrator) clock(bars []market.Bar) time.Time {
+	if !o.HistoricalClock || len(bars) == 0 {
 		return time.Now().UTC()
 	}
 	return bars[len(bars)-1].Timestamp.UTC()

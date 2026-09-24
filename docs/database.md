@@ -5,8 +5,10 @@ migrations/001-020):
 
 - `symbols` — ticker registry, upserted on demand by every write path that needs a symbol_id.
   `name`/`exchange`/`asset_class` (migrations/016) hold what the symbol actually is (fetched once,
-  rarely); `last_price`/`previous_close`/`quote_updated_at` (migrations/016) hold a live quote
-  refreshed every alert-poll cycle — see the Watchlist/Alerts pages' "Today" column and the
+  rarely); `last_price`/`previous_close` (migrations/016) hold a live quote refreshed every
+  alert-poll cycle, with two clocks: `quote_updated_at` is when Atlas fetched it, `quoted_at`
+  (migrations/022) when the market last traded at that price — valuation and freshness read the
+  latter, since a provider keeps returning a stopped instrument's last price — see the Watchlist/Alerts pages' "Today" column and the
   Dashboard/Portfolio pages' live P&L overlay.
 - `prices` — OHLCV bars, a real TimescaleDB hypertable (`create_hypertable`, migrations/001).
 - `indicators` — one row per computed indicator value.
@@ -22,25 +24,30 @@ migrations/001-020):
   for how the decision engine deliberately reads across all of them instead).
 - `positions` — current position snapshot per symbol, foreign-keyed to a portfolio.
 - `transactions` — append-only trade history; `currency`/`price_in_pln` (migrations/009) support
-  recording a transaction in PLN/EUR/USD while all internal math stays in PLN.
+  recording a transaction in PLN/EUR/USD while all internal math stays in PLN. `timestamp` is the
+  trade date, `created_at` (migrations/021) when Atlas accepted the row — the tie-break replay
+  orders same-day trades by. The id doubles as an idempotency key: recording an id that already
+  exists with the same data is a no-op, which is what makes a resubmitted dashboard form safe.
 - `watchlists` — a single bootstrap row, same pattern as `portfolios`.
 - `watchlist_items` — tracked symbols.
 - `recommendations` — append-only decision-engine output; `market_condition` (migrations/007,
   BULL/BEAR/SIDEWAYS) and `ml_model_version` (migrations/012, distinct from `model_version` —
-  see docs/decision_engine.md) were both added after the initial schema.
+  see docs/decision_engine.md) were both added after the initial schema, and `degraded`,
+  `risk_data_available` and `ml_recovery_model_version` by migrations/022 — rows written before
+  that hold NULL for all three, since that history never recorded them.
 - `backtest_runs` (migrations/005) — one row per backtest run, holding its metrics and ML
   evaluation results.
-- `auth_settings` (migrations/008) — a single-row 2FA enrollment state (TOTP secret, enabled
-  flag) for the one admin account.
+- `auth_settings` (migrations/008) held the two-factor login secret; dropped by migrations/023
+  when login was removed. Backups taken before that still restore, with that table ignored.
 - `ml_model_selection` (migrations/011) — which trained model file is active per role
-  (correction/recovery), set from the Account dashboard page — see docs/ml.md.
+  (correction/recovery), set from the Settings page — see docs/ml.md.
 - `schema_migrations` (migrations/013) — which migration versions have actually been applied to
   this database; see the "Migrations" note below.
 - `engine_settings` (migrations/015) — a single-row durable override for whether the ML+Portfolio+
-  Risk blend is active, set from the Account dashboard page; no row means it's never been toggled
+  Risk blend is active, set from the Settings page; no row means it's never been toggled
   there, and the composition root falls back to the `ML_ENABLED` env var.
 - `backup_log` (migrations/017) — a single row recording when a full-database backup
-  (`persistence.TimescaleDB.BackupAll`, the Account page's "Backup" button) was last taken. Purely
+  (`persistence.TimescaleDB.BackupAll`, the Settings page's "Backup" button) was last taken. Purely
   a safety gate for the "Flush all data" button, not user data: `FlushAll` refuses outright unless
   this row exists and is less than five minutes old, so it's deliberately excluded from the
   backup/restore/flush cycle itself (see `internal/infrastructure/persistence/backup.go`) — a
@@ -61,10 +68,16 @@ migrations/001-020):
   the same transaction as the outbox row that announced it. This is not the same claim as
   `recommendations`, which ordinary HTTP browsing also writes; deriving "have we told the user"
   from that table meant a crash between the two could silently suppress a real alert. Included in
-  backups (format version 2).
+  backups since format version 2.
 
-There is no `alerts` table — alerts are computed live from the watchlist on every request, not
-persisted (see `internal/application/alerts`).
+There is no `alerts` table: the Alerts page and `GET /alerts` show each watched symbol's latest
+row in `recommendations`, written by the background poll (`LatestRecommendations`).
+
+**Backup format.** The Settings page's backup is a JSON document of every user-data table, tagged
+with a format version. Version 1 predates `alert_cursor`, version 2 adds it, version 3 drops
+`auth_settings` with login. Every version restores: a table the schema no longer has is ignored,
+and a column added since the backup takes its default, so a backup taken before a migration still
+restores after it (`persistence.RestoreAll`).
 
 ## Implementation status
 
@@ -82,8 +95,8 @@ compression or retention *policy* is configured; the "10 years" figure below was
 implemented. Retention that does exist is application-level and covers derived data only:
 `PruneDerivedData` drops indicator, recommendation and prediction rows past
 `DERIVED_RETENTION_DAYS`, once a day, alongside delivered `alert_outbox` rows. It is **off by
-default** — the env var defaults to `0`, meaning keep everything; `deploy/configmap.yaml` sets 365
-for Kubernetes. Prices, portfolio state and transactions are never pruned regardless.
+default** — the env var defaults to `0`, meaning keep everything; set it (e.g. 365) on a long-lived
+instance. Prices, portfolio state and transactions are never pruned regardless.
 
 Indexes: `symbols.ticker`, `prices(symbol_id, ts)` (a real unique constraint,
 `prices_symbol_ts_unique` from migrations/002, is what makes the collector's upsert idempotent),
@@ -94,7 +107,7 @@ Migrations are hand-written, numbered SQL files, embedded with `go:embed` and ap
 application itself at startup under a `pg_advisory_lock` — so a fresh volume and an existing one
 converge on the same schema without anyone running `psql` by hand. Which versions actually landed
 is recorded in `schema_migrations` (migrations/013); every migration from 013 onward inserts its
-own row. See `CLAUDE.md` for the constraints this puts on writing one (Postgres has no
-`ADD CONSTRAINT IF NOT EXISTS`, so a migration that only works once is broken) and for the real
-`pg_restore -c` hypertable-constraint bug this project hit and fixed (see `deploy/RUNBOOK.md`'s
-recovery drill).
+own row. Every migration must be safe to run twice: Postgres has no `ADD CONSTRAINT IF NOT EXISTS`, so a
+constraint migration checks `pg_constraint` inside a `DO $$` block, and a migration that only works
+once is broken. Restoring a `pg_dump` with `pg_restore -c` silently drops `prices`' constraints on
+this schema — restore into a fresh database instead ([runbook.md](runbook.md)).

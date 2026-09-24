@@ -8,8 +8,8 @@ models trained by the identical procedure below, just pointed at a different exp
 
 ## 1. Collect real history
 
-Atlas only trains on bars it has actually collected via the live market provider (see
-PROJECT_CONTEXT.md's Implementation status note — no synthetic/external datasets). Point
+Atlas only trains on bars it has actually collected via the live market provider (no
+synthetic or external datasets — see docs/ml.md). Point
 Atlas at your watchlist symbols and let it collect a real window of history first, e.g.:
 
 ```
@@ -62,6 +62,9 @@ go run ./cmd/export-training-data -label-type=recovery --output training/data/re
 
 ## 3. Train and export to ONNX
 
+The pinned requirements target Python 3.11 (the trainer image's). With a newer host Python, run
+these inside the `atlas-trainer` container or a `python:3.11-slim-bookworm` one instead.
+
 ```
 cd training
 python3 -m venv .venv && source .venv/bin/activate
@@ -103,18 +106,20 @@ else: it never produces a candidate anyone can promote.
 
 ### Reading the printed metrics
 
-Three numbers matter, and **accuracy is not one of them**. Roughly 6% of bars precede a
-correction, so "always predict no correction" already scores ~0.94 accuracy; a model can look
-excellent on that figure while being useless. Each run therefore prints its own baselines
-alongside every metric:
+A few numbers matter, and **accuracy is not one of them**. Corrections are rare, so "always
+predict no correction" already scores a high accuracy (the run prints it as the majority-class
+baseline); a model can look excellent on that figure while being useless. Each run therefore
+prints its own baselines alongside every metric:
 
-- **ROC AUC vs the symbol-base-rate baseline.** The baseline is a predictor using *no features
-  at all*, only each symbol's positive rate in the training data. It is the bar to clear: a
-  model at or below it has learned which symbols tend to fall, not what a fall looks like.
-  `train.py` prints a loud WARNING and records `beats_symbol_base_rate: false` in the sidecar
-  when this happens, and the Account page's model picker repeats it as "DOES NOT BEAT BASELINE".
-- **PR AUC vs the no-skill baseline** (the positive rate itself). More informative than ROC AUC
-  on a target this imbalanced.
+- **PR AUC vs the symbol-base-rate baseline — the verdict.** The baseline is a predictor using *no
+  features at all*, only each symbol's positive rate in the training data. It is the bar to clear:
+  a model at or below it has learned which symbols tend to fall, not what a fall looks like.
+  `train.py` judges this on PR AUC (average precision) because Atlas alerts on the top of the
+  ranking, prints a loud WARNING and records `beats_symbol_base_rate: false` in the sidecar when
+  the model loses, and the Settings page's model picker repeats it as "DOES NOT BEAT BASELINE".
+- **ROC AUC vs the same baseline**, reported for context. It is dominated by the uneventful middle
+  of the ranking that no alert touches, so it can disagree with PR AUC — and when it does, PR AUC
+  is the one that describes what Atlas does with the model.
 - **accuracy@0.5 vs the majority-class baseline**, reported only for continuity.
 - **Brier score, with the mean predicted probability next to the actual rate.** Atlas consumes
   this output as a probability (the decision engine blends `1 - correction_probability`, and the
@@ -165,7 +170,7 @@ start — see `internal/application/ml`'s doc comments.
 
 Instead of (or in addition to) `MODEL_PATH`/`RECOVERY_MODEL_PATH`, any trained model already
 sitting in `training/models/` (i.e. under `ML_MODELS_DIR`, `/models` inside the container) can be
-activated from the **Account** dashboard page (`/dashboard/account`) — it lists every model it
+activated from the **Settings** dashboard page (`/dashboard/settings`) — it lists every model it
 finds a metadata sidecar for, with the same real holdout AUC/accuracy/row-count numbers step 3
 above printed, and swaps the picked one into live inference immediately (no restart) via
 `ml.UseCase.SetModel`/`SetRecoveryModel`. The choice is durably recorded (`migrations/011`) so it
@@ -206,22 +211,17 @@ can't notify its own failure either way).
 
 ## 7. Triggering training from the dashboard
 
-retrain.sh can also be triggered on demand from the Account page's "Train new candidate" button
+retrain.sh can also be triggered on demand from the Settings page's "Train new candidate" button
 instead of a shell/cron — it calls a small internal-only service (`cmd/trainer`) that just runs
 retrain.sh and reports back its status/output. This lives in its own container
 (`training/Dockerfile`), never inside `atlas-api`'s own image: retrain.sh needs the Go toolchain
 and a Python virtualenv at runtime, and the production image is explicitly not supposed to depend
-on either (see `CLAUDE.md`).
+on either: Python trains, Go infers.
 
-Off by default — start it explicitly:
-
-```
-docker compose --profile trainer up -d
-```
-
-then set `TRAINER_URL=http://atlas-trainer:8091` in `.env` and restart `atlas-api`. Without
-either step, the Account page's button just explains how to run retrain.sh by hand instead —
-nothing breaks, this is a genuinely optional enhancement over the manual/cron path above.
+It is part of the default stack: `docker compose up -d` starts it, and atlas-api reaches it at
+`TRAINER_URL=http://atlas-trainer:8091` (the Compose default). Set `TRAINER_URL=` to an empty
+value in `.env` to hide the dashboard buttons; the Settings page then explains how to run
+retrain.sh by hand, and the manual/cron path above keeps working either way.
 
 Set `ALERTMANAGER_DISCORD_WEBHOOK_URL` in `.env` (docker-compose.yml passes it through as
 `TRAINING_DISCORD_WEBHOOK_URL`) to be notified when a dashboard-triggered run fails — `cmd/trainer`
