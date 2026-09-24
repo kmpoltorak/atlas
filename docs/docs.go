@@ -1097,6 +1097,13 @@ const docTemplate = `{
                 "f1_score": {
                     "type": "number"
                 },
+                "label": {
+                    "description": "Label describes the correction event the predictions were scored against, and\nLabelFromModel whether it is the one the model was trained on (its metadata's\nlabel_params) or the default, used only because the model does not record its own. A\nfalse LabelFromModel means these numbers may compare the model against an event it never\nlearned.",
+                    "type": "string"
+                },
+                "label_from_model": {
+                    "type": "boolean"
+                },
                 "precision": {
                     "type": "number"
                 },
@@ -1237,7 +1244,7 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "degraded": {
-                    "description": "Degraded is true when an input the engine expected to have was unavailable — an ML\nprediction that errored, a portfolio that could not be read, or a held position without a\ncurrent price — so the score reflects fewer signals than a normal one. Reason carries the\nspecifics.",
+                    "description": "Degraded is true when an input the engine expected to have was unavailable — an ML\nprediction that errored, a portfolio that could not be read, or a held position without a\ncurrent market price — so the score reflects\nfewer signals than a normal one. Reason carries the specifics. A degraded recommendation\nis still a real one, but it is a weaker claim than a complete one, and callers should not\npresent the two identically.",
                     "type": "boolean"
                 },
                 "market_condition": {
@@ -1269,7 +1276,7 @@ const docTemplate = `{
                     }
                 },
                 "risk_data_available": {
-                    "description": "RiskDataAvailable is false when RiskScore sits at its neutral 1.0 ceiling only because the\nportfolio has no exposure to measure yet, or when a held position has no current price —\nsee Orchestrator.computeRiskScore. Callers should render \"n/a\" rather than the raw score\nin that case.",
+                    "description": "RiskDataAvailable is false when RiskScore sits at its neutral 1.0 ceiling only because the\nportfolio has no exposure to measure yet (empty, or every position's price still equals its\ncost basis), or when a held position has no current market price — see\nOrchestrator.computeRiskScore. Callers should render \"n/a\" rather than the\nraw score in that case, since 1.0 there means \"nothing observed,\" not \"no risk found.\"",
                     "type": "boolean"
                 },
                 "risk_score": {
@@ -1360,10 +1367,15 @@ const docTemplate = `{
                 "quantity": {
                     "type": "number"
                 },
+                "recorded_at": {
+                    "description": "RecordedAt is when Atlas accepted this transaction, which is a different question from\nwhen the trade happened and is what breaks ties between them.\n\nTwo trades can share a Timestamp honestly: the dashboard form submits a past trade date with\nno time, and two entries backdated to the same day are then identical. Replay has to order\nthem anyway, because BUY-then-SELL and SELL-then-BUY are not the same history — the second\nis an oversell. Ordering by transaction id instead ordered them by a random UUID, so the\nsame two trades could replay either way, and after a reload the database's own row order\ndecided. RecordedAt is the acceptance order, persisted (migrations/021) so it survives that\nreload.\n\nEmpty on a transaction that predates the column or was built by a caller directly;\nordering then falls back to the id, which is at least stable.",
+                    "type": "string"
+                },
                 "symbol": {
                     "type": "string"
                 },
                 "timestamp": {
+                    "description": "Timestamp is when the trade happened — the economic date, which the caller may backdate.",
                     "type": "string"
                 },
                 "type": {

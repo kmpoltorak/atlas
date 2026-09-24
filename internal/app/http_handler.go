@@ -47,7 +47,7 @@ func (a *Application) NewHandler() http.Handler {
 	mux.HandleFunc("/backtests/history", a.scoped((*Application).backtestHistoryHandler))
 	mux.HandleFunc("/backtests/walkforward", a.scoped((*Application).backtestWalkForwardHandler))
 
-	// Server-rendered dashboard (Phase 8 — see implementation-plan.md and internal/app/web).
+	// Server-rendered dashboard (see internal/app/web).
 	mux.HandleFunc("/dashboard/lang", a.scoped((*Application).langSetHandler))
 	mux.HandleFunc("/dashboard/portfolio", a.scoped((*Application).portfolioPageHandler))
 	// One route per thing being deleted, not one per selection shape: each handler takes either

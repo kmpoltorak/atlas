@@ -30,8 +30,8 @@ func main() {
 
 	logger, err := observability.NewLogger(cfg.LogLevel)
 	if err != nil {
-		// No logger exists yet to log through (CLAUDE.md bans panic() and bare stderr
-		// printing for everything else — this is the one unavoidable exception, at the
+		// No logger exists yet to log through (the codebase uses no panic() and no bare
+		// stderr printing anywhere else — this is the one unavoidable exception, at the
 		// single point before logging itself is available).
 		fmt.Fprintln(os.Stderr, "failed to initialize logger:", err)
 		os.Exit(1)

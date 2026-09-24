@@ -1,7 +1,7 @@
 package web
 
-// Lang is a supported dashboard display language. Atlas is a single-user personal tool (see
-// PROJECT_CONTEXT.md), so this is a simple fixed-list switch, not a full locale system — no
+// Lang is a supported dashboard display language. Atlas is a single-user personal tool, so this
+// is a simple fixed-list switch, not a full locale system — no
 // pluralization rules, number/date formatting, or RTL support.
 type Lang string
 

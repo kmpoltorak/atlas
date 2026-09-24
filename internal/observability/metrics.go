@@ -15,8 +15,7 @@ type Metrics struct {
 	// ProviderRequests counts market data provider calls, labeled by provider name, outcome
 	// (success/error), and kind ("bars": historical OHLCV via Collector.Collect, "quote": a live
 	// price via Provider.FetchQuote directly — see alerts_loop.go's refreshWatchlistQuotes) so a
-	// provider outage shows which call shape is actually failing, satisfying PROJECT_CONTEXT.md's
-	// "provider metrics" requirement.
+	// provider outage shows which call shape is actually failing.
 	ProviderRequests *prometheus.CounterVec
 	// RecommendationsTotal counts recommendations issued by the decision engine, labeled by
 	// action (BUY/SELL/HOLD/...), satisfying the "decision metrics" requirement.

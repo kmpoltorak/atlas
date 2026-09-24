@@ -50,3 +50,7 @@ training/data/
 training/models/
 __pycache__/
 *.pyc
+
+# Working documents kept locally, never committed: review reports and the original phase plan.
+docs/review-*.md
+/implementation-plan.md

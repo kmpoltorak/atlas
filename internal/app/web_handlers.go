@@ -87,8 +87,7 @@ func (a *Application) dashboardPageHandler(w http.ResponseWriter, r *http.Reques
 }
 
 // portfolioPageHandler lists positions (GET) and records a transaction (POST) — the dashboard
-// equivalent of GET/POST /portfolio, and currently the only reason Phase 8 exists at all (see
-// implementation-plan.md): recording BUY/SELL without hand-crafting an HTTP request.
+// equivalent of GET/POST /portfolio: recording BUY/SELL without hand-crafting an HTTP request.
 func (a *Application) portfolioPageHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:

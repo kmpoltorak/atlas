@@ -696,7 +696,7 @@ func (u *UseCase) ComputeRisk() (portfolio.RiskSnapshot, error) {
 // Drawdown here is a current-state proxy — total unrealized loss across losing positions, as a
 // fraction of total exposure (negative; 0 when nothing is underwater) — not a true historical
 // peak-to-trough max drawdown. A real max drawdown needs a portfolio equity curve over time,
-// which needs portfolio snapshot persistence (not implemented — see PROJECT_CONTEXT.md); this
+// which needs portfolio snapshot persistence, which Atlas does not have; this
 // is what's computable from current position state alone.
 func ComputeRiskSnapshot(positions []portfolio.Position) portfolio.RiskSnapshot {
 	if len(positions) == 0 {

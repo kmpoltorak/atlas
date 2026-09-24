@@ -20,15 +20,14 @@ GET /backtests/walkforward
 
 Interactive, always-current documentation for every route above — request/response schemas,
 "Try it out" against the real running instance — is served at `/swagger/index.html`
-(`swaggo/swag` annotations on each handler, see `internal/app/handlers.go`). It's not in
-`publicPaths`, so it needs the same session as the API itself when auth is enabled; log into the
-dashboard first and "Try it out" reuses that session's cookie automatically.
+(`swaggo/swag` annotations on each handler, see `internal/app/handlers.go`).
 
 The committed specification is `docs/docs.go`, embedded in the API binary. Regenerate it
 after changing handler annotations or response types:
 
 ```sh
-go run github.com/swaggo/swag/cmd/swag@v1.16.6 init -g cmd/api/main.go --output docs --outputTypes go
+go run github.com/swaggo/swag/cmd/swag@v1.16.6 init -g cmd/api/main.go --output docs --outputTypes go \
+  --parseDependency --parseInternal
 ```
 
 The Swagger handler serves the JSON specification at `/swagger/doc.json` from this embedded

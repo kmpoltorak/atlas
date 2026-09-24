@@ -105,12 +105,14 @@ type Recommendation struct {
 	RiskScore float64 `json:"risk_score"`
 	// RiskDataAvailable is false when RiskScore sits at its neutral 1.0 ceiling only because the
 	// portfolio has no exposure to measure yet (empty, or every position's price still equals its
-	// cost basis) — see Orchestrator.computeRiskScore. Callers should render "n/a" rather than the
+	// cost basis), or when a held position has no current market price — see
+	// Orchestrator.computeRiskScore. Callers should render "n/a" rather than the
 	// raw score in that case, since 1.0 there means "nothing observed," not "no risk found."
 	RiskDataAvailable bool `json:"risk_data_available"`
 
 	// Degraded is true when an input the engine expected to have was unavailable — an ML
-	// prediction that errored, or a portfolio that could not be read — so the score reflects
+	// prediction that errored, a portfolio that could not be read, or a held position without a
+	// current market price — so the score reflects
 	// fewer signals than a normal one. Reason carries the specifics. A degraded recommendation
 	// is still a real one, but it is a weaker claim than a complete one, and callers should not
 	// present the two identically.

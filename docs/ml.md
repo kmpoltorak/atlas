@@ -14,7 +14,7 @@ is set and loads successfully — verified live end-to-end (train → export →
 loaded (the default), Predict falls back to the same deterministic RSI-derived stub as before
 (`ml.StubModelVersion`, "stub-v0", fixed 0.72 confidence) — this is a normal, non-fatal startup
 state, not an error. Caveats, honestly: training data today is whatever Atlas has actually
-collected (see PROJECT_CONTEXT.md); validation is a **global** time-ordered holdout with a
+collected; validation is a **global** time-ordered holdout with a
 `label_end` purge at the boundary, not full walk-forward validation — the per-symbol split it
 replaced was not a test of a future period at all, since symbols with different history lengths
 put different calendar periods on each side of the cut (a separate, larger backtesting gap, now real —
@@ -227,8 +227,8 @@ unspecified still work.
 
 Both models can be switched at runtime from the Account dashboard page (`/dashboard/account`),
 not only via `MODEL_PATH`/`RECOVERY_MODEL_PATH` at startup: it lists every model
-`ML_MODELS_DIR` has a metadata sidecar for (real holdout AUC against its baseline, accuracy and
-row count, not fabricated — and an explicit "DOES NOT BEAT BASELINE" marker when it applies),
+`ML_MODELS_DIR` has a metadata sidecar for (real holdout PR AUC against its baseline, ROC AUC and
+row counts, not fabricated — and an explicit "DOES NOT BEAT BASELINE" marker when it applies),
 and activating one hot-swaps it into live inference immediately (`ml.UseCase.SetModel`/
 `SetRecoveryModel`, an `atomic.Pointer` swap — safe under concurrent requests) with no restart.
 The choice is durably recorded (`migrations/011`'s `ml_model_selection` table) so it survives one
@@ -244,8 +244,8 @@ ever writes new, uniquely-versioned files; it never changes which model is activ
 always the separate, human, Account-page step above — deliberately, not just unfinished: a person
 should look at a candidate's real metrics before it starts influencing real recommendations, the
 same stance already applied to walk-forward threshold optimization (see docs/backtesting.md).
-That review is only as good as what the picker shows, which is why it leads with AUC against the
-symbol-base-rate baseline rather than accuracy — the correction model that had learned nothing
+That review is only as good as what the picker shows, which is why it leads with PR AUC against
+the symbol-base-rate baseline rather than accuracy — the correction model that had learned nothing
 transferable still reported 0.92 accuracy. It also shows the unseen-symbol score, which is what a
 freshly-watchlisted ticker actually gets.
 
@@ -260,6 +260,22 @@ button, watched it install its own venv and finish for real (`exit_code: 0`, pri
 metrics), saw the new candidates appear in the picker, then deleted an old one and confirmed both
 files were gone while an attempt to delete the active model was rejected.
 
+## Which label a model is judged against
+
+Every export writes the label parameters it used next to the CSV, and `training/train.py` copies
+them into the model's metadata as `label_params`. `ml.OnnxModel.LabelParams` reads them back, and
+the backtest's ML evaluation scores predictions against that exact label, so a model exported with
+a custom horizon or barrier is measured against the event it learned. A model whose metadata has
+no `label_params` is scored against `DefaultCorrectionLabelParams()`, and the result says so
+(`MLEvaluation.LabelFromModel=false`, a "default label" badge on the Backtests page).
+
+The two models currently in `training/models/` — correction `v20260810145759` (holdout PR AUC
+0.347 vs a 0.346 baseline, ROC AUC 0.813 vs 0.823) and recovery `v20260809134009` (PR AUC 0.758 vs
+0.528) — are in that second group: they predate `label_params` and were exported before the
+exporter applied the volatility-scaled barrier, so they learned the older fixed barrier. Their
+numbers are real, but they measure a different event from the one the decision engine now
+describes. Retrain both before comparing them with anything else here.
+
 ## Production Inference
 The production system is written in Go (`internal/application/ml`, `OnnxModel`).
 The ML model is consumed through a stable interface (`UseCase.Predict(FeatureVector) Prediction`) —
@@ -269,5 +285,9 @@ entirely, changes nothing else in the calling code.
 
 This is the repo's first cgo dependency (`onnxruntime_go` dlopens the native
 `libonnxruntime.so`/`.dylib` at runtime) — the Dockerfile moved off Alpine to a glibc base
-(`debian:bookworm-slim`) to safely bundle it; see the Dockerfile's comments for why Alpine/musl
+(`debian:bookworm-slim`) to safely bundle it, and downloads ONNX Runtime 1.28.0 for the image's
+own architecture (`x64` for amd64, `aarch64` for arm64). The arm64 library's load is verified only
+as far as an x86 host allows: under QEMU emulation both the image and Microsoft's own 1.28.0
+arm64 Python wheel crash inside the library while 1.20.1 loads, so arm64 inference needs one run
+on real ARM hardware before it is called verified; see the Dockerfile's comments for why Alpine/musl
 isn't viable here.

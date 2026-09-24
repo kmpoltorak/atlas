@@ -319,8 +319,8 @@ for comparing "Return/Risk/Drawdown" together, as this section asks). **Cruciall
 touches the live decision engine.** The winning thresholds are reported back
 (`WalkForwardResult.BestThresholds`) for a human to review — promoting them to
 `decision.DefaultThresholds()` is a manual code change, never automatic. This was an explicit
-scoping decision with the Author, consistent with PROJECT_CONTEXT.md's "Atlas is NOT ... an automatic
-investment system."
+scoping decision with the Author, consistent with Atlas being decision support, never an automatic
+investment system.
 ---
 # Reports
 Generate:

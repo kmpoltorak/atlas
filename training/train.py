@@ -22,7 +22,7 @@ earlier per-symbol split was not a test of a future period at all — symbols wi
 lengths cut at different dates, so one symbol's training rows could postdate another's holdout.
 It is still not full walk-forward validation, which is a separate, larger backtesting gap (see
 docs/backtesting.md), and it runs on whatever history Atlas has actually collected (see
-PROJECT_CONTEXT.md's Implementation status notes).
+docs/ml.md).
 Class balance, baselines and holdout metrics are always printed and written to the model's
 metadata sidecar so a degenerate or overconfident model is visible, not hidden.
 """

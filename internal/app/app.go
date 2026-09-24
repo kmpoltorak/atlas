@@ -301,8 +301,8 @@ func (a *Application) Close() error {
 }
 
 // marketProviderLabel tags atlas_provider_requests_total and provider-failure log lines (see
-// handlers.go/alerts_loop.go). Yahoo Finance has no official, supported API (see
-// PROJECT_CONTEXT.md); its unofficial endpoint is the only provider now — confirmed reachable
+// handlers.go/alerts_loop.go). Yahoo Finance has no official, supported API; its
+// unofficial endpoint is the only provider now — confirmed reachable
 // with a browser-like User-Agent header and confirmed to support the hourly bars this engine
 // needs. Stooq was evaluated as a free alternative and removed: its free endpoint serves a
 // client-side JavaScript bot challenge instead of data from this environment, and even where

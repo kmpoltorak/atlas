@@ -1,4 +1,4 @@
-// Package web is the server-rendered dashboard (Phase 8 — see implementation-plan.md):
+// Package web is the server-rendered dashboard:
 // html/template pages served directly by atlas-api, no separate frontend build/deploy, no JS
 // framework. Deliberately minimal, functional HTML — this is a personal decision-support tool,
 // not a product with a design system.
