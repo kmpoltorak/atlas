@@ -139,7 +139,10 @@ services:
     restart: unless-stopped
 
   timescaledb:
-    image: timescale/timescaledb:latest-pg16
+    # Pinned, not latest-pg16: the extension version lives in the data volume, so an image that
+    # moves underneath it changes what an existing database is upgraded to on the next pull.
+    # Bump deliberately, and take a backup first (docs/runbook.md).
+    image: timescale/timescaledb:2.29.1-pg16
     container_name: atlas-timescaledb
     environment:
       POSTGRES_DB: atlas
@@ -163,7 +166,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.10-alpine
     container_name: atlas-redis
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}

@@ -48,11 +48,13 @@ echo "==> Training candidate models"
 
 echo
 echo "==> Done. New candidate model files are listed above (wrote ...)."
-echo "    Nothing was activated. Before picking one from /dashboard/account, read its printed"
-echo "    ROC AUC against the symbol-base-rate baseline on the line above it — a model that"
-echo "    doesn't beat that baseline is reproducing per-symbol correction frequencies, not"
-echo "    learning price dynamics, however good its accuracy looks (on this target, predicting"
-echo "    'no correction' every time already scores ~0.94). Old candidates are never deleted or"
+echo "    Nothing was activated. Before picking one from /dashboard/account, compare its printed"
+echo "    PR AUC (average precision) with the symbol-base-rate baseline's — the verdict train.py"
+echo "    prints is judged on PR AUC, because Atlas alerts on the top of the ranking and ROC AUC is"
+echo "    dominated by the uneventful middle no alert touches. A model that doesn't beat that"
+echo "    baseline is reproducing per-symbol correction frequencies, not learning price dynamics,"
+echo "    however good its accuracy looks (predicting 'no correction' every time scores highly on"
+echo "    this target by construction). Old candidates are never deleted or"
 echo "    overwritten automatically; prune training/models/ by hand once you no longer need them."
 
 # Log-only, deliberately not pushed to Discord/Slack/Telegram: a "new candidates ready" ping

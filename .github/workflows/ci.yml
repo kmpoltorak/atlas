@@ -27,7 +27,7 @@ jobs:
     # untested. Matches docker-compose.yml's timescaledb/redis service definitions.
     services:
       timescaledb:
-        image: timescale/timescaledb:latest-pg16
+        image: timescale/timescaledb:2.29.1-pg16
         env:
           POSTGRES_DB: atlas
           POSTGRES_USER: atlas
@@ -40,7 +40,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:7-alpine
+        image: redis:7.4.10-alpine
         ports:
           - 6379:6379
         options: >-
