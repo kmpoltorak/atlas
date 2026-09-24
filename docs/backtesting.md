@@ -220,6 +220,13 @@ Average Loss
 ---
 # ML Evaluation
 The ML model must be evaluated independently.
+
+Which correction event it is scored against matters as much as the metric: `evaluateML` uses the
+label the model was trained on, read from its metadata's `label_params`
+(`ml.OnnxModel.LabelParams`), and reports it as `MLEvaluation.Label`. A model whose metadata
+predates `label_params` is scored against `DefaultCorrectionLabelParams()` with
+`LabelFromModel=false`, shown on the Backtests page as "default label" — those numbers may compare
+the model with an event it never learned.
 Metrics:
 ```
 Accuracy

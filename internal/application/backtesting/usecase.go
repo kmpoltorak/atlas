@@ -321,7 +321,7 @@ func (u *UseCase) evaluateML(symbol string, bars []market.Bar) *backtesting.MLEv
 		return nil
 	}
 
-	labelParams := mlUC.DefaultCorrectionLabelParams()
+	labelParams, fromModel := model.LabelParams()
 	var trueLabels []int
 	var predictedProbs []float64
 
@@ -343,7 +343,10 @@ func (u *UseCase) evaluateML(symbol string, bars []market.Bar) *backtesting.MLEv
 	if len(trueLabels) == 0 {
 		return nil
 	}
-	return computeMLEvaluation(trueLabels, predictedProbs)
+	evaluation := computeMLEvaluation(trueLabels, predictedProbs)
+	evaluation.Label = labelParams.String()
+	evaluation.LabelFromModel = fromModel
+	return evaluation
 }
 
 // computeMLEvaluation scores correction-probability predictions (threshold 0.5 for the

@@ -68,6 +68,7 @@
           <tr><th scope="row">{{T .Lang "table.recall"}}</th><td class="tabular-nums">{{printf "%.2f%%" (percent .Result.MLEvaluation.Recall)}}</td></tr>
           <tr><th scope="row">{{T .Lang "table.f1_score"}}</th><td class="tabular-nums">{{printf "%.3f" .Result.MLEvaluation.F1Score}}</td></tr>
           <tr><th scope="row">{{T .Lang "table.roc_auc"}}</th><td class="tabular-nums">{{printf "%.3f" .Result.MLEvaluation.ROCAUC}}</td></tr>
+          {{if .Result.MLEvaluation.Label}}<tr><th scope="row">{{T .Lang "table.ml_label"}}</th><td>{{.Result.MLEvaluation.Label}}{{if not .Result.MLEvaluation.LabelFromModel}} <span class="badge text-bg-warning" title="{{T .Lang "table.ml_label_default_hint"}}">{{T .Lang "table.ml_label_default"}}</span>{{end}}</td></tr>{{end}}
         </tbody>
       </table>
     </div>

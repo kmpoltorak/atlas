@@ -1,6 +1,7 @@
 package ml
 
 import (
+	"fmt"
 	"math"
 
 	"atlas/internal/domain/market"
@@ -75,6 +76,15 @@ func DefaultCorrectionLabelParams() CorrectionLabelParams {
 		VolatilityWindow:   20,
 		MinThresholdPct:    0.02,
 	}
+}
+
+// String states the label in one line, for reports that show which event a model was scored on.
+func (p CorrectionLabelParams) String() string {
+	if p.VolatilityMultiple > 0 {
+		return fmt.Sprintf("drop of %.1fx the %d-bar volatility (floor %.1f%%) within %d bars",
+			p.VolatilityMultiple, p.VolatilityWindow, p.MinThresholdPct*100, p.HorizonBars)
+	}
+	return fmt.Sprintf("drop of %.1f%% within %d bars", p.ThresholdPct*100, p.HorizonBars)
 }
 
 // thresholdFraction resolves the drop fraction that counts as a correction at bars[i]. With

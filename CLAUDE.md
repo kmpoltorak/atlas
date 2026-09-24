@@ -138,7 +138,9 @@ A signal measured on one window is a hypothesis, not a finding.
   the model was trained on one event and scored against another. Every export writes a
   `<csv>.params.json` sidecar and `training/train.py` copies it into the model's metadata, so a
   model states the barrier its labels actually came from rather than the one the defaults are
-  supposed to be.
+  supposed to be. `backtesting.evaluateML` then scores the model against that recorded label
+  (`ml.OnnxModel.LabelParams`); a model whose metadata predates `label_params` falls back to the
+  defaults and the result says so (`MLEvaluation.LabelFromModel=false`).
 - `cmd/export-training-data` reuses the exact same Go feature-computation code
   (`ml.BuildFeatureVector`) the live inference path uses — normalisation included, which is why
   it lives there and not in the exporter. Never reimplement indicator math in Python; that's
