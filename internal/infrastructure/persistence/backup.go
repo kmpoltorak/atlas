@@ -263,21 +263,44 @@ func validateBackup(payload []byte) (map[string]json.RawMessage, error) {
 			version, len(expected), len(dump))
 	}
 	for _, table := range expected {
-		raw := bytes.TrimSpace(dump[table])
-		if len(raw) == 0 || raw[0] != '[' {
-			return nil, fmt.Errorf("backup table %s must be an array", table)
-		}
-		var rows []map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &rows); err != nil {
-			return nil, fmt.Errorf("invalid backup table %s: %w", table, err)
-		}
-		for _, row := range rows {
-			if len(row) == 0 {
-				return nil, fmt.Errorf("invalid empty row in %s", table)
-			}
+		if err := validateRows(table, dump[table]); err != nil {
+			return nil, err
 		}
 	}
 	return dump, nil
+}
+
+// validateRows checks that raw is a JSON array of non-empty objects, one row at a time.
+//
+// It used to decode the whole table into []map[string]json.RawMessage just to look at it. For a
+// prices table that is a map per row, and measured on a 51 MiB backup the restore then peaked at
+// roughly 450 MiB of heap — beyond the Kubernetes deployment's memory limit for a backup a
+// fraction of the 200 MiB the upload accepts. Only one row is held here at a time.
+func validateRows(table string, raw json.RawMessage) error {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || raw[0] != '[' {
+		return fmt.Errorf("backup table %s must be an array", table)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	if _, err := decoder.Token(); err != nil {
+		return fmt.Errorf("invalid backup table %s: %w", table, err)
+	}
+	for decoder.More() {
+		var row json.RawMessage
+		if err := decoder.Decode(&row); err != nil {
+			return fmt.Errorf("invalid backup table %s: %w", table, err)
+		}
+		if row[0] != '{' {
+			return fmt.Errorf("invalid row in %s: not an object", table)
+		}
+		if len(bytes.TrimSpace(row[1:len(row)-1])) == 0 {
+			return fmt.Errorf("invalid empty row in %s", table)
+		}
+	}
+	if _, err := decoder.Token(); err != nil {
+		return fmt.Errorf("invalid backup table %s: %w", table, err)
+	}
+	return nil
 }
 
 func (t *TimescaleDB) RestoreAll(payload []byte) error {

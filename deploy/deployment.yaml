@@ -40,13 +40,23 @@ spec:
                 name: atlas-api-config
             - secretRef:
                 name: atlas-api-secrets
+          env:
+            # Lets the Go GC work to the container limit instead of letting garbage double the heap
+            # first. Kept below the limit to leave room for the non-heap part of the process.
+            - name: GOMEMLIMIT
+              value: "1280MiB"
+          # The memory limit is sized for a restore, not for steady state. Restoring a backup holds
+          # the upload plus the rows being inserted; measured on a disposable database with
+          # GOMEMLIMIT set, a 51 MiB backup peaked at 258 MiB of heap and a 199 MiB one (the upload
+          # cap is 200 MiB, maxBackupRestoreBytes) at 996 MiB. The old 256Mi limit would have
+          # OOM-killed the pod on a restore far below the cap. Everyday use stays near the request.
           resources:
             requests:
               cpu: "100m"
               memory: "64Mi"
             limits:
               cpu: "500m"
-              memory: "256Mi"
+              memory: "1536Mi"
           livenessProbe:
             httpGet:
               path: /live
@@ -70,3 +80,15 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+          volumeMounts:
+            # The one writable path. A multipart upload larger than the 1 MiB ParseMultipartForm
+            # keeps in memory is spooled to os.TempDir(); with a read-only root filesystem and no
+            # /tmp, restoring any real backup failed while parsing the form.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            # One upload at the 200 MiB cap plus headroom; the kubelet evicts the pod rather than
+            # letting it fill the node's disk.
+            sizeLimit: 256Mi
