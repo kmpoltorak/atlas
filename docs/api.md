@@ -23,12 +23,12 @@ There is no authentication: every port is bound to `127.0.0.1` ([deployment.md](
 Interactive documentation for every route — request/response schemas, "Try it out" against the
 running instance — is served at `/swagger/index.html` (`swaggo/swag` annotations on each handler,
 see `internal/app/handlers.go`), with the JSON specification at `/swagger/doc.json`. The
-specification is `docs/docs.go`, embedded in the binary. Regenerate it after changing handler
-annotations or response types:
+specification is generated Go code in `internal/swagger/docs.go`, compiled into the binary. Never
+edit it by hand; regenerate it after changing handler annotations or response types:
 
 ```sh
-go run github.com/swaggo/swag/cmd/swag@v1.16.6 init -g cmd/api/main.go --output docs --outputTypes go \
-  --parseDependency --parseInternal
+go run github.com/swaggo/swag/cmd/swag@v1.16.6 init -g cmd/api/main.go --output internal/swagger \
+  --outputTypes go --packageName swagger --parseDependency --parseInternal
 ```
 
 ## Notes on specific routes
