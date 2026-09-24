@@ -288,9 +288,9 @@ A signal measured on one window is a hypothesis, not a finding.
 - `cmd/trainer` is a **second, separate** registry in a separate process (`newTrainerMetrics`,
   port 8091, scraped as the `atlas-trainer` job) — deliberately not `observability.Metrics`,
   which is shaped around atlas-api's counters. It exposes `atlas_trainer_runs_total{outcome}`,
-  `atlas_trainer_run_duration_seconds`, `atlas_trainer_last_run_timestamp_seconds`. Its target
-  reads as permanently down while the `trainer` Compose profile isn't started; that's expected,
-  not a broken scrape.
+  `atlas_trainer_run_duration_seconds`, `atlas_trainer_last_run_timestamp_seconds`. It runs in the
+  default Compose stack; its target reads as down only where there is no trainer (Kubernetes,
+  or a stack started without it), which is expected, not a broken scrape.
 - Two separate alerting concerns, don't conflate them:
   - **Business alerts** (`internal/app/alerts_loop.go`) — BUY/ACCUMULATE/REDUCE/SELL
     recommendation changes, delivered through the alert outbox to Discord/Slack/Telegram. Nothing

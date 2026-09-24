@@ -250,8 +250,8 @@ transferable still reported 0.92 accuracy. It also shows the unseen-symbol score
 freshly-watchlisted ticker actually gets.
 
 Training and deleting old candidates can also both be triggered from the Account page itself, via
-a small internal-only sidecar (`cmd/trainer`, the `atlas-trainer` service — off by default,
-`docker compose --profile trainer up -d`, `TRAINER_URL`). It runs retrain.sh on demand and reports
+a small internal-only sidecar (`cmd/trainer`, the `atlas-trainer` service — part of the default
+Compose stack, reached through `TRAINER_URL`). It runs retrain.sh on demand and reports
 real status/output back to the dashboard, and can delete a model's `.onnx`+`.json` files —
 `atlas-api`'s own model mount is read-only by design, so deletion has to go through the one
 service with write access to `training/models/`. Deleting whichever model is currently active for

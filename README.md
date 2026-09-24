@@ -130,7 +130,7 @@ comes up with zero configuration. Every container it defines:
 | `prometheus` | http://localhost:9090 | `prometheus-data` | Metrics scraping |
 | `alertmanager` | http://localhost:9093 | `alertmanager-data` | Infra alert routing |
 | `grafana` | http://localhost:3000 | `grafana-data` | Dashboards (default login `admin`/`admin`) |
-| `atlas-trainer` | internal only, port 8091 | `trainer-gomod-cache` | ML training sidecar. Same kind of long-lived container as the rest — HTTP service, healthcheck, `restart: unless-stopped` — but behind a Compose profile, so it needs `docker compose --profile trainer up -d` once; after that it stays up like everything else |
+| `atlas-trainer` | internal only, port 8091 | `trainer-gomod-cache` | ML training sidecar. Same kind of long-lived container as the rest — HTTP service, healthcheck, `restart: unless-stopped` — and started by a plain `docker compose up` like everything else |
 
 The trainer is gated that way because it builds a full Python/XGBoost toolchain nothing else
 needs, and most sessions never train anything. It publishes no host port: atlas-api reaches it
@@ -185,7 +185,7 @@ integration is non-fatal when unset — Atlas degrades gracefully instead of ref
 | `RECOVERY_MODEL_PATH` | *(empty → recovery probability stays 0)* | Path to a trained recovery-probability ONNX model, fully independent of `MODEL_PATH` |
 | `ML_MODELS_DIR` | `/models` | Directory the Account page's model picker scans for trained models + metadata sidecars |
 | `LIBONNXRUNTIME_PATH` | Dockerfile default (`/usr/lib/libonnxruntime.so`) | Native ONNX Runtime library location |
-| `TRAINER_URL` | *(empty → training/delete buttons disabled)* | Internal URL of the optional `atlas-trainer` sidecar (`docker compose --profile trainer up -d`), which powers the Account page's "Train new candidate" and model-delete actions |
+| `TRAINER_URL` | Compose: `http://atlas-trainer:8091`; otherwise empty → training/delete buttons disabled | Internal URL of the `atlas-trainer` sidecar, which powers the Account page's "Train new candidate" and model-delete actions. Compose runs the trainer by default and points this at it; Kubernetes (`deploy/`) has no trainer and leaves it empty |
 | `PROMETHEUS_URL`/`ALERTMANAGER_URL`/`GRAFANA_URL` | `http://prometheus:9090`/`http://alertmanager:9093`/`http://grafana:3000` | Checked by `/health` and the `atlas_dependency_up` gauge. Non-empty by default because all three are always in the default Compose stack; set one to an empty string to disable that check |
 | `ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH` | *(empty → no login gate)* | Enables password+TOTP auth for the dashboard/API — generate a hash with `go run ./cmd/generate-admin-credentials`. Login is locked out globally (not per-IP — there's only ever one account) for 15 minutes after 5 failed attempts in a row. |
 | `COOKIE_SECURE` | `false` | Adds the `Secure` flag to the session cookie — set to `true` once Atlas is actually served over HTTPS (e.g. `deploy/ingress.yaml`'s TLS termination); leave `false` for the plain-HTTP local Compose stack. Does not by itself require backend TLS — see `REQUIRE_BACKEND_TLS` |
@@ -329,8 +329,8 @@ recommendations — the same "never auto-promote" stance already applied to walk
 optimization above. The baseline marker exists because that judgement call is only as good as the
 numbers it's shown, and accuracy alone made a model that had learned nothing look excellent. Both training and deleting old candidates can also be
 triggered straight from the Account page's buttons, via an internal-only sidecar container
-(`cmd/trainer`, off by default — see training/README.md's "Triggering training from the
-dashboard") — atlas-api's own model directory stays read-only either way.
+(`cmd/trainer`, part of the default Compose stack — see training/README.md's "Triggering training
+from the dashboard") — atlas-api's own model directory stays read-only either way.
 
 ## Backtesting
 

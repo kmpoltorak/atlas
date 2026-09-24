@@ -122,8 +122,8 @@ func Load() Config {
 		MLModelsDir: envOrDefault("ML_MODELS_DIR", "/models"),
 		// Empty by default: the Account page's "Train new candidate" button then just explains
 		// how to run training/retrain.sh by hand instead, the same non-fatal-optional pattern as
-		// everything else here. Only meaningful if the atlas-trainer service is also running
-		// (docker-compose.yml's "trainer" profile, off by default) — see cmd/trainer.
+		// everything else here. docker-compose.yml runs the atlas-trainer service in the default
+		// stack and sets this to reach it; Kubernetes has no trainer — see cmd/trainer.
 		TrainerURL: envOrDefault("TRAINER_URL", ""),
 		// Both default to "": absent means auth is disabled and Atlas runs with no login gate at
 		// all, exactly as it did before this feature existed — the same non-fatal-optional
@@ -146,9 +146,8 @@ func Load() Config {
 		// deploy/configmap.yaml sets this, since cluster traffic crosses nodes.
 		RequireBackendTLS: envOrDefault("REQUIRE_BACKEND_TLS", "false") == "true",
 		// Unlike TrainerURL, these default to the in-network Compose service names rather than
-		// "" — prometheus/alertmanager/grafana have no `profiles:` restriction in
-		// docker-compose.yml (trainer does: `profiles: ["trainer"]`), so they're always part of
-		// the default `docker compose up` stack, not an opt-in sidecar. /health reports each as
+		// "" — prometheus/alertmanager/grafana are part of every deployment Atlas ships, the
+		// trainer only of the Compose one. /health reports each as
 		// purely informational (see healthHandler) — set to "" to disable a given check
 		// entirely, e.g. in a deployment topology that doesn't run one of these. That is why
 		// these read through envOrUnset: envOrDefault treats "" as unset and would put the

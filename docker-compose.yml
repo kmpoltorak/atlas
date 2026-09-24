@@ -89,12 +89,10 @@ services:
       # front. Set to "true" once Atlas is actually served over HTTPS through a reverse proxy —
       # see .env.example's "Serving over HTTPS" section.
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
-      # Empty by default: the Account page's "Train new candidate" button then just explains how
-      # to run training/retrain.sh by hand instead. Only meaningful together with the
-      # atlas-trainer service below (off by default, profile "trainer") — set this to
-      # http://atlas-trainer:8091 in .env once you've started that profile, e.g.:
-      #   docker compose --profile trainer up -d
-      TRAINER_URL: ${TRAINER_URL:-}
+      # The atlas-trainer service below runs as part of the default stack, so the Account page's
+      # "Train new candidate" and model-delete buttons work out of the box. Set TRAINER_URL= (empty)
+      # in .env to hide them; the page then explains how to run training/retrain.sh by hand.
+      TRAINER_URL: ${TRAINER_URL-http://atlas-trainer:8091}
     volumes:
       # Read-only: lets MODEL_PATH above reference a locally-trained model (training/models/
       # is gitignored — these are locally/CI-generated artifacts, not committed source).

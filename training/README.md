@@ -213,15 +213,11 @@ retrain.sh and reports back its status/output. This lives in its own container
 and a Python virtualenv at runtime, and the production image is explicitly not supposed to depend
 on either (see `CLAUDE.md`).
 
-Off by default — start it explicitly:
-
-```
-docker compose --profile trainer up -d
-```
-
-then set `TRAINER_URL=http://atlas-trainer:8091` in `.env` and restart `atlas-api`. Without
-either step, the Account page's button just explains how to run retrain.sh by hand instead —
-nothing breaks, this is a genuinely optional enhancement over the manual/cron path above.
+It is part of the default stack: `docker compose up -d` starts it, and atlas-api reaches it at
+`TRAINER_URL=http://atlas-trainer:8091` (the Compose default). Set `TRAINER_URL=` to an empty
+value in `.env` to hide the dashboard buttons; the Account page then explains how to run
+retrain.sh by hand, and the manual/cron path above keeps working either way. Kubernetes
+(`deploy/`) has no trainer, so there the buttons stay hidden.
 
 Set `ALERTMANAGER_DISCORD_WEBHOOK_URL` in `.env` (docker-compose.yml passes it through as
 `TRAINING_DISCORD_WEBHOOK_URL`) to be notified when a dashboard-triggered run fails — `cmd/trainer`

@@ -155,7 +155,7 @@ func (r *statusRecorder) Unwrap() http.ResponseWriter {
 // Docker/Kubernetes health probes (see deploy/deployment.yaml), not just a liveness check.
 // Trainer reachability is reported too when TRAINER_URL is configured, but — unlike
 // Database/Redis — never flips the overall status/HTTP code: the trainer is a genuinely
-// optional sidecar (see docker-compose.yml's "trainer" profile) atlas-api already degrades
+// optional sidecar (absent on Kubernetes, see deploy/) atlas-api already degrades
 // gracefully without (the Account page's "Train new candidate" button just explains the manual
 // path instead), so Docker/Kubernetes restarting atlas-api because atlas-trainer is down would
 // be exactly the wrong response.

@@ -13,10 +13,10 @@ scrape_configs:
   - job_name: "atlas-api"
     static_configs:
       - targets: ["atlas-api:8080"]
-  # atlas-trainer is off by default (docker-compose.yml's "trainer" profile) — this target
-  # simply shows as persistently down (up{job="atlas-trainer"} == 0) until you start it with
-  # `docker compose --profile trainer up -d`, same as the Kubernetes-only AtlasPodCrashLooping
-  # rule in alerts.yml staying dormant until its own precondition exists. Exposes
+  # atlas-trainer runs in the default Compose stack. Where it does not run (Kubernetes, or a
+  # stack started without it) this target shows as persistently down (up{job="atlas-trainer"}
+  # == 0), same as the Kubernetes-only AtlasPodCrashLooping rule in alerts.yml staying dormant
+  # until its own precondition exists. Exposes
   # atlas_trainer_runs_total/atlas_trainer_run_duration_seconds/
   # atlas_trainer_last_run_timestamp_seconds (cmd/trainer/main.go).
   - job_name: "atlas-trainer"

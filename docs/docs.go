@@ -1036,7 +1036,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "trainer": {
-                    "description": "Trainer is omitted entirely when TRAINER_URL isn't configured — the trainer sidecar is a\ngenuinely optional component (see docker-compose.yml's \"trainer\" profile), so its absence\nis not reported as an error the way Database/Redis would be.",
+                    "description": "Trainer is omitted entirely when TRAINER_URL isn't configured — the trainer sidecar is a\ngenuinely optional component (Compose runs it, Kubernetes does not), so its absence\nis not reported as an error the way Database/Redis would be.",
                     "type": "string"
                 }
             }

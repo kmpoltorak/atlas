@@ -148,10 +148,10 @@ informational (`pingHTTPStatus`): reported when reachable, `"error"` when not, b
 `status`, since atlas-api doesn't depend on any of them to serve a request — Kubernetes/Docker
 restarting atlas-api because Grafana is down would fix nothing and break something that was
 working. `trainer` is additionally omitted entirely (not even `"error"`) when `TRAINER_URL`
-isn't configured, since it's a genuinely optional sidecar (`profiles: ["trainer"]` in
-`docker-compose.yml`, off by default) — `prometheus`/`alertmanager`/`grafana` default to the
-in-network Compose service names instead (`PROMETHEUS_URL`/`ALERTMANAGER_URL`/`GRAFANA_URL`),
-since those three have no such profile and are always part of the default stack; set any of them
+isn't configured, since it's a genuinely optional sidecar (Compose runs it and sets `TRAINER_URL`; Kubernetes has
+none) — `prometheus`/`alertmanager`/`grafana` default to the in-network Compose service names
+instead (`PROMETHEUS_URL`/`ALERTMANAGER_URL`/`GRAFANA_URL`), since those three are part of every
+deployment; set any of them
 to an empty string to disable that particular check.
 
 Docker healthcheck must verify:
@@ -190,8 +190,7 @@ can't self-report the way the others can (if atlas-api itself is down, no gauge 
 either). Both are visualized together on Grafana's "Atlas Overview" dashboard's "Service Status"
 panel (`grafana/dashboards/overview.json`).
 
-`cmd/trainer` (the optional training sidecar — `docker-compose.yml`'s `trainer` profile, off by
-default) exposes its own separate `/metrics` on port 8091, scraped as a second Prometheus job
+`cmd/trainer` (the training sidecar — part of the default Compose stack, absent on Kubernetes) exposes its own separate `/metrics` on port 8091, scraped as a second Prometheus job
 (`atlas-trainer`, `prometheus/prometheus.yml`) — previously it had no metrics and wasn't scraped
 at all, only `/status` (point-in-time JSON, no history) and a best-effort Discord notification on
 failure:
@@ -206,7 +205,7 @@ panel is built on (`time() - atlas_trainer_last_run_timestamp_seconds`, formatte
 finished, e.g. `0.0003 d`) — a way to notice retraining has gone stale without anyone
 remembering to check.
 `up{job="atlas-trainer"}`
-shows as permanently down while the trainer profile isn't started, same as the
+shows as permanently down wherever the trainer isn't running (Kubernetes), same as the
 `AtlasPodCrashLooping` alert rule staying dormant on a non-Kubernetes deployment — an inactive
 target/rule for an inapplicable environment, not a bug.
 ---
