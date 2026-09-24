@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -301,7 +302,16 @@ func (t *TimescaleDB) RestoreAll(payload []byte) error {
 		if !ok || string(rows) == "null" {
 			continue
 		}
-		query := fmt.Sprintf(`INSERT INTO %s SELECT * FROM json_populate_recordset(null::%s, $1::json)`, table, table)
+		columns, err := restoreColumns(ctx, tx, table, string(rows))
+		if err != nil {
+			return err
+		}
+		if len(columns) == 0 {
+			continue // an empty table in the backup: nothing to insert
+		}
+		list := strings.Join(columns, ", ")
+		query := fmt.Sprintf(`INSERT INTO %s (%s) SELECT %s FROM json_populate_recordset(null::%s, $1::json)`,
+			table, list, list, table)
 		if _, err := tx.ExecContext(ctx, query, string(rows)); err != nil {
 			return fmt.Errorf("restore %s: %w", table, err)
 		}
@@ -310,6 +320,57 @@ func (t *TimescaleDB) RestoreAll(payload []byte) error {
 		return fmt.Errorf("commit restore transaction: %w", err)
 	}
 	return nil
+}
+
+// restoreColumns is how a backup taken on an older schema restores onto this one. It returns the
+// columns of table that the backup's rows actually carry, quoted and in schema order.
+//
+// Inserting every column (SELECT * from json_populate_recordset) turned a key the backup never had
+// into an explicit NULL, and an explicit NULL skips the column's DEFAULT. So every column added
+// since the backup was taken failed the restore if it was NOT NULL: transactions.created_at
+// (migrations/021) broke every backup taken before it with SQLSTATE 23502. Listing only the
+// columns the backup has lets the rest take their defaults, which is what the migration that
+// added them did to the rows that existed at the time.
+//
+// A column this schema requires that has no default cannot be filled in, and that is reported by
+// name rather than as a constraint violation. Keys the schema no longer has are ignored, exactly
+// as json_populate_recordset already ignored them.
+func restoreColumns(ctx context.Context, tx *sqlx.Tx, table, rows string) ([]string, error) {
+	var catalog []struct {
+		Name     string `db:"column_name"`
+		Required bool   `db:"required"`
+		Present  bool   `db:"present"`
+	}
+	if err := tx.SelectContext(ctx, &catalog, `
+		SELECT c.column_name,
+		       (c.is_nullable = 'NO' AND c.column_default IS NULL) AS required,
+		       (k.key IS NOT NULL) AS present
+		FROM information_schema.columns c
+		LEFT JOIN (SELECT DISTINCT json_object_keys(e) AS key FROM json_array_elements($1::json) e) k
+		       ON k.key = c.column_name
+		WHERE c.table_schema = current_schema() AND c.table_name = $2
+		ORDER BY c.ordinal_position`, rows, table); err != nil {
+		return nil, fmt.Errorf("read columns of %s: %w", table, err)
+	}
+	var columns, missing []string
+	anyPresent := false
+	for _, column := range catalog {
+		switch {
+		case column.Present:
+			anyPresent = true
+			columns = append(columns, pgx.Identifier{column.Name}.Sanitize())
+		case column.Required:
+			missing = append(missing, column.Name)
+		}
+	}
+	if !anyPresent {
+		return nil, nil
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("backup of %s lacks required column(s) %s, which have no default to restore from",
+			table, strings.Join(missing, ", "))
+	}
+	return columns, nil
 }
 
 // ErrNoBackupTaken is FlushAll's refusal when no backup has ever been recorded (see
