@@ -3,7 +3,7 @@
 # risk, not just a compatibility warning — see docs/ml.md). This is also the repo's first cgo
 # dependency (github.com/yalue/onnxruntime_go, needed to dlopen libonnxruntime at runtime), so
 # both stages moved off Alpine to a consistent glibc toolchain end to end.
-FROM golang:1.26.8-bookworm AS builder
+FROM golang:1.27.1-bookworm AS builder
 
 WORKDIR /src
 
@@ -17,16 +17,27 @@ COPY docs ./docs
 # ever runs against a brand-new data volume. That means they have to be present at build time.
 COPY migrations ./migrations
 
-RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o /out/atlas-api ./cmd/api
+# No GOARCH: the builder runs on the image's target platform (linux/amd64 or linux/arm64, from
+# `docker build --platform` or the host), and cgo compiles for the architecture it runs on. A
+# hardcoded amd64 made every Apple Silicon or ARM server run the whole image under emulation.
+RUN CGO_ENABLED=1 go build -o /out/atlas-api ./cmd/api
 
 # Fetches the native onnxruntime shared library into its own stage so the final image only
 # copies the handful of files it needs, not the full SDK (headers, static libs, docs) the
 # release tarball ships.
+# Supported architectures are exactly the two below; anything else fails the build here rather
+# than shipping an image whose native library cannot load.
 FROM debian:bookworm-slim AS onnxruntime
 ARG ONNXRUNTIME_VERSION=1.28.0
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+ARG TARGETARCH
+RUN case "${TARGETARCH}" in \
+      amd64) ORT_ARCH=x64 ;; \
+      arm64) ORT_ARCH=aarch64 ;; \
+      *) echo "unsupported architecture: ${TARGETARCH} (amd64 and arm64 are supported)" >&2; exit 1 ;; \
+    esac \
+    && apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
     && curl -fsSL -o /tmp/ort.tgz \
-       "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz" \
+       "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}.tgz" \
     && mkdir -p /onnxruntime \
     && tar -xzf /tmp/ort.tgz -C /onnxruntime --strip-components=1 \
     && rm /tmp/ort.tgz \
@@ -39,8 +50,7 @@ FROM debian:bookworm-slim
 # docker-compose.yml's healthcheck (a plain "exec wget ..." — this image never had wget, which
 # was a real, live bug: `docker inspect` showed this container reporting "unhealthy" nonstop
 # despite /health genuinely returning 200, since every healthcheck exec failed with "wget:
-# executable file not found". Kubernetes' deploy/deployment.yaml is unaffected — it uses
-# httpGet probes, which kubelet performs itself with no binary required inside the container.
+# executable file not found".
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl libstdc++6 libgomp1 \
     && rm -rf /var/lib/apt/lists/* \
@@ -51,11 +61,8 @@ WORKDIR /app
 COPY --from=onnxruntime /onnxruntime/lib/libonnxruntime.so* /usr/lib/
 COPY --from=builder /out/atlas-api /app/atlas-api
 
-# Numeric UID, not the username: Kubernetes' runAsNonRoot pod security check can't resolve
-# /etc/passwd inside the image before starting the container, so it requires the image's own
-# USER to already be numeric — confirmed live on a real cluster (minikube), where "USER appuser"
-# made every pod fail with "cannot verify user is non-root" and never start, a failure mode
-# Docker Compose never surfaces since it doesn't enforce runAsNonRoot at all.
+# Numeric UID, not the username: a runtime that enforces non-root (Kubernetes' runAsNonRoot, for
+# one) checks the image's USER without reading /etc/passwd, and rejects a named user outright.
 USER 10001
 
 EXPOSE 8080

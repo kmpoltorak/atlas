@@ -3,7 +3,7 @@ name: CI
 # Implements the "PR" and "Build" stages of the pipeline documented in docs/deployment.md.
 # There is no push or deploy stage: Atlas is a local tool, run with Docker Compose.
 #
-# go-version is "stable" rather than pinned to go.mod's "go 1.26.8" on purpose: that
+# go-version is "stable" rather than pinned to go.mod's "go 1.27.1" on purpose: that
 # directive is a minimum language version, not a toolchain pin, and Go only backports
 # security fixes to its latest two major releases. Building/scanning with an old, unpatched
 # toolchain would make the vulnerability scan flag stdlib CVEs no one can actually fix here.
