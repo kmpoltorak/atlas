@@ -168,13 +168,14 @@ integration is non-fatal when unset — Atlas degrades gracefully instead of ref
 | `SERVER_PORT` | `8080` | HTTP listen port |
 | `LOG_LEVEL` | `info` | zap log level |
 | `DATABASE_HOST`/`PORT`/`NAME`/`USER`/`PASSWORD` | `timescaledb`/`5432`/`atlas`/`atlas`/`atlas` | TimescaleDB connection |
-| `DATABASE_SSLMODE` | `disable` | libpq SSL mode for the database connection. Rejected at startup when `COOKIE_SECURE=true` — a TLS-fronted deployment must not reach its own database in plaintext. Use `require`, or `verify-full` once the server presents a trusted certificate |
+| `DATABASE_SSLMODE` | `disable` | libpq SSL mode for the database connection. `disable` is rejected at startup when `REQUIRE_BACKEND_TLS=true`. Use `require`, or `verify-full` once the server presents a trusted certificate |
 | `REDIS_HOST`/`PORT` | `redis`/`6379` | Redis connection |
-| `REDIS_PASSWORD` | *(empty → no auth)* | Redis `AUTH` password; the Compose `redis` service picks up the same variable as its `requirepass`, so the two can't drift. Required when `COOKIE_SECURE=true` |
-| `REDIS_TLS` | `false` | Wrap the Redis connection in TLS 1.2+. Required when `COOKIE_SECURE=true` |
+| `REDIS_PASSWORD` | *(empty → no auth)* | Redis `AUTH` password; the Compose `redis` service picks up the same variable as its `requirepass`, so the two can't drift. Required when `REQUIRE_BACKEND_TLS=true` |
+| `REDIS_TLS` | `false` | Wrap the Redis connection in TLS 1.2+. Required when `REQUIRE_BACKEND_TLS=true` |
+| `REQUIRE_BACKEND_TLS` | `false` | Refuse to start unless the database and Redis links are encrypted and Redis is authenticated. Set in `deploy/configmap.yaml`, where traffic crosses nodes. Independent of `COOKIE_SECURE`: a Compose stack behind an HTTPS reverse proxy keeps its backends on a private bridge network and leaves this `false` |
 | `COLLECTOR_WINDOW_DAYS` | `30` | How much history to request per collection call |
 | `ALERT_POLL_INTERVAL_SECONDS` | `300` | Background watchlist-evaluation interval |
-| `DERIVED_RETENTION_DAYS` | `0` *(keep everything)* | Days of recomputable history (indicators, recommendations, predictions) to keep; pruned once a day. The alert loop writes one recommendation per watched symbol per poll — including `HOLD` — so these tables grow without bound on a long-lived instance, and `BackupAll` builds the whole database as one in-memory JSON document |
+| `DERIVED_RETENTION_DAYS` | `0` *(keep everything)* | Days of recomputable history (indicators, recommendations, predictions) to keep; pruned once a day. The alert loop writes one recommendation per watched symbol per poll — including `HOLD` — so these tables grow without bound on a long-lived instance, and every backup and restore carries all of it |
 | `DISCORD_WEBHOOK_URL` | *(empty → disabled)* | Business alerts: BUY/ACCUMULATE/REDUCE/SELL notifications, sent only when a symbol's action *changes* |
 | `SLACK_WEBHOOK_URL` | *(empty → disabled)* | Same business alerts as `DISCORD_WEBHOOK_URL`, delivered to a Slack Incoming Webhook instead/as well |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | *(empty → disabled)* | Same business alerts, delivered via a Telegram bot; both must be set |
@@ -187,7 +188,7 @@ integration is non-fatal when unset — Atlas degrades gracefully instead of ref
 | `TRAINER_URL` | *(empty → training/delete buttons disabled)* | Internal URL of the optional `atlas-trainer` sidecar (`docker compose --profile trainer up -d`), which powers the Account page's "Train new candidate" and model-delete actions |
 | `PROMETHEUS_URL`/`ALERTMANAGER_URL`/`GRAFANA_URL` | `http://prometheus:9090`/`http://alertmanager:9093`/`http://grafana:3000` | Checked by `/health` and the `atlas_dependency_up` gauge. Non-empty by default because all three are always in the default Compose stack; set one to an empty string to disable that check |
 | `ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH` | *(empty → no login gate)* | Enables password+TOTP auth for the dashboard/API — generate a hash with `go run ./cmd/generate-admin-credentials`. Login is locked out globally (not per-IP — there's only ever one account) for 15 minutes after 5 failed attempts in a row. |
-| `COOKIE_SECURE` | `false` | Adds the `Secure` flag to the session cookie — set to `true` once Atlas is actually served over HTTPS (e.g. `deploy/ingress.yaml`'s TLS termination); leave `false` for the plain-HTTP local Compose stack. |
+| `COOKIE_SECURE` | `false` | Adds the `Secure` flag to the session cookie — set to `true` once Atlas is actually served over HTTPS (e.g. `deploy/ingress.yaml`'s TLS termination); leave `false` for the plain-HTTP local Compose stack. Does not by itself require backend TLS — see `REQUIRE_BACKEND_TLS` |
 
 Database migrations are applied by the API itself on every start, under a Postgres advisory lock
 and tracked in `schema_migrations` (`internal/infrastructure/persistence/migrate.go`). The

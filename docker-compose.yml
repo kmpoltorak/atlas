@@ -30,6 +30,13 @@ services:
       # loopback only. Set REDIS_PASSWORD in .env and the redis service below picks up the same
       # value as its requirepass, so the two can't drift.
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # Passed through so a deployment that does run TLS-enabled backends can say so; this stack's
+      # own Postgres and Redis serve plaintext on the private Compose network, which is why the
+      # defaults are off. REQUIRE_BACKEND_TLS is independent of COOKIE_SECURE below — see
+      # .env.example's "Serving over HTTPS" section.
+      DATABASE_SSLMODE: ${DATABASE_SSLMODE:-disable}
+      REDIS_TLS: ${REDIS_TLS:-false}
+      REQUIRE_BACKEND_TLS: ${REQUIRE_BACKEND_TLS:-false}
       # 0 keeps every recommendation/indicator/prediction row forever, which is fine for a
       # laptop run. Set a day count on anything long-lived (see config.DerivedRetentionDays).
       DERIVED_RETENTION_DAYS: ${DERIVED_RETENTION_DAYS:-0}
@@ -79,7 +86,8 @@ services:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-}
       ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
       # False by default, matching this stack running over plain HTTP with no reverse proxy in
-      # front. Set to "true" once Atlas is actually served over HTTPS — see internal/config.
+      # front. Set to "true" once Atlas is actually served over HTTPS through a reverse proxy —
+      # see .env.example's "Serving over HTTPS" section.
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       # Empty by default: the Account page's "Train new candidate" button then just explains how
       # to run training/retrain.sh by hand instead. Only meaningful together with the
@@ -183,9 +191,6 @@ services:
     container_name: atlas-redis
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      # 0 keeps every recommendation/indicator/prediction row forever, which is fine for a
-      # laptop run. Set a day count on anything long-lived (see config.DerivedRetentionDays).
-      DERIVED_RETENTION_DAYS: ${DERIVED_RETENTION_DAYS:-0}
     # Same variable as atlas-api's REDIS_PASSWORD, so requirepass and the client credential can
     # never disagree. Unset means no password at all, rather than an empty one Redis rejects.
     command: ["sh", "-c", 'exec redis-server ${REDIS_PASSWORD:+--requirepass "$$REDIS_PASSWORD"}']

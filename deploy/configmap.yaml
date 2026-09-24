@@ -10,8 +10,10 @@ data:
   DATABASE_PORT: "5432"
   DATABASE_NAME: "atlas"
   DATABASE_USER: "atlas"
-  # Encrypted links to the database and cache are mandatory whenever COOKIE_SECURE is true (see
-  # config.Validate) — a TLS-fronted deployment must not reach its own backends in plaintext.
+  # Cluster traffic crosses nodes, so encrypted, authenticated links to the database and cache are
+  # a startup requirement here (config.Validate refuses to start otherwise). Deliberately its own
+  # flag rather than implied by COOKIE_SECURE — see config.Config.RequireBackendTLS.
+  REQUIRE_BACKEND_TLS: "true"
   # "require" encrypts without verifying the server certificate; use "verify-full" once the
   # database presents a certificate signed by a CA the pod trusts.
   DATABASE_SSLMODE: "require"

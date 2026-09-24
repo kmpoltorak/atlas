@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 // clearEnv unsets every env var Load reads, so a test can assert on Load's actual defaults
 // regardless of what's set in the process running the test suite (a real ADMIN_USERNAME, say,
@@ -14,9 +17,34 @@ func clearEnv(t *testing.T) {
 		"DERIVED_RETENTION_DAYS", "ALERT_POLL_INTERVAL_SECONDS", "ML_ENABLED", "MODEL_PATH", "RECOVERY_MODEL_PATH",
 		"LIBONNXRUNTIME_PATH", "ML_MODELS_DIR", "TRAINER_URL", "ADMIN_USERNAME",
 		"ADMIN_PASSWORD_HASH", "COOKIE_SECURE", "PROMETHEUS_URL", "ALERTMANAGER_URL",
-		"GRAFANA_URL",
+		"GRAFANA_URL", "REQUIRE_BACKEND_TLS",
 	} {
 		t.Setenv(key, "")
+	}
+	// Unset rather than empty: these three distinguish the two (see envOrUnset).
+	for _, key := range []string{"PROMETHEUS_URL", "ALERTMANAGER_URL", "GRAFANA_URL"} {
+		unsetEnv(t, key)
+	}
+}
+
+func unsetEnv(t *testing.T, key string) {
+	t.Helper()
+	t.Setenv(key, "") // registers restoration of the original value
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatalf("unset %s: %v", key, err)
+	}
+}
+
+// Setting one of these to "" is documented as disabling that /health check. envOrDefault put
+// the default back instead, so the documented switch did nothing.
+func TestEmptyMonitoringURLDisablesTheCheck(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("PROMETHEUS_URL", "")
+	t.Setenv("ALERTMANAGER_URL", "")
+	t.Setenv("GRAFANA_URL", "")
+	cfg := Load()
+	if cfg.PrometheusURL != "" || cfg.AlertmanagerURL != "" || cfg.GrafanaURL != "" {
+		t.Fatalf("explicitly empty URLs must stay empty, got %q %q %q", cfg.PrometheusURL, cfg.AlertmanagerURL, cfg.GrafanaURL)
 	}
 }
 
@@ -136,14 +164,14 @@ func TestValidateRejectsUnsafeDeployments(t *testing.T) {
 		"password hash that isn't bcrypt": func(c *Config) {
 			c.AdminUsername, c.AdminPasswordHash = "admin", "REPLACE_ME"
 		},
-		"plaintext database in a TLS deployment": func(c *Config) {
-			c.CookieSecure = true
+		"plaintext database with backend TLS required": func(c *Config) {
+			c.RequireBackendTLS = true
 		},
-		"TLS deployment with no Redis password": func(c *Config) {
-			c.CookieSecure, c.DatabaseSSLMode, c.RedisTLS = true, "require", true
+		"backend TLS required with no Redis password": func(c *Config) {
+			c.RequireBackendTLS, c.DatabaseSSLMode, c.RedisTLS = true, "require", true
 		},
-		"TLS deployment with plaintext Redis": func(c *Config) {
-			c.CookieSecure, c.DatabaseSSLMode, c.RedisPassword = true, "require", "s3cret"
+		"backend TLS required with plaintext Redis": func(c *Config) {
+			c.RequireBackendTLS, c.DatabaseSSLMode, c.RedisPassword = true, "require", "s3cret"
 		},
 		"nonsense collector window": func(c *Config) { c.CollectorWindow = 0 },
 		"nonsense poll interval":    func(c *Config) { c.AlertPollSeconds = -1 },
@@ -169,10 +197,22 @@ func TestValidateAcceptsLocalAndRemoteDoneRight(t *testing.T) {
 	remote.AuthDisabled = false
 	remote.AdminUsername = "admin"
 	remote.AdminPasswordHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
-	remote.CookieSecure = true
+	remote.CookieSecure, remote.RequireBackendTLS = true, true
 	remote.DatabaseSSLMode = "verify-full"
 	remote.RedisPassword, remote.RedisTLS = "s3cret", true
 	if err := remote.Validate(); err != nil {
 		t.Fatalf("properly secured remote stack must validate: %v", err)
+	}
+
+	// The review's finding: following .env.example's advice to set COOKIE_SECURE=true behind a
+	// reverse proxy made the Compose stack refuse to start, because the cookie flag also demanded
+	// backend TLS that Compose cannot provide.
+	proxied := validBase()
+	proxied.AuthDisabled = false
+	proxied.AdminUsername = remote.AdminUsername
+	proxied.AdminPasswordHash = remote.AdminPasswordHash
+	proxied.CookieSecure = true
+	if err := proxied.Validate(); err != nil {
+		t.Fatalf("Compose behind an HTTPS reverse proxy must validate: %v", err)
 	}
 }

@@ -46,9 +46,12 @@ type Config struct {
 	AdminUsername        string
 	AdminPasswordHash    string
 	CookieSecure         bool
-	PrometheusURL        string
-	AlertmanagerURL      string
-	GrafanaURL           string
+	// RequireBackendTLS makes encrypted, authenticated links to Postgres and Redis a startup
+	// requirement — see Validate.
+	RequireBackendTLS bool
+	PrometheusURL     string
+	AlertmanagerURL   string
+	GrafanaURL        string
 }
 
 func Load() Config {
@@ -62,9 +65,8 @@ func Load() Config {
 		DatabaseUser:     envOrDefault("DATABASE_USER", "atlas"),
 		DatabasePassword: envOrDefault("DATABASE_PASSWORD", "atlas"),
 		// "disable" keeps the docker-compose stack (Postgres on a private compose network with
-		// no server certificate) working out of the box. Validate refuses it once COOKIE_SECURE
-		// is true, i.e. in any deployment actually served over TLS — see deploy/configmap.yaml,
-		// which sets "require".
+		// no server certificate) working out of the box. Validate refuses it when
+		// REQUIRE_BACKEND_TLS is true — see deploy/configmap.yaml, which sets both.
 		DatabaseSSLMode: envOrDefault("DATABASE_SSLMODE", "disable"),
 		// 0 defers to persistence.PoolLimits' documented defaults, which is what an unset
 		// environment gets. Set these when a real deployment shows connection contention — the
@@ -137,20 +139,37 @@ func Load() Config {
 		// once Atlas is actually served over HTTPS (e.g. behind deploy/ingress.yaml) — a
 		// Secure cookie is simply never sent by the browser over an unencrypted connection.
 		CookieSecure: envOrDefault("COOKIE_SECURE", "false") == "true",
+		// Separate from COOKIE_SECURE on purpose. Whether the browser reaches Atlas over HTTPS and
+		// whether Atlas reaches its database over TLS are different questions: a Compose stack
+		// behind a reverse proxy serves HTTPS while Postgres and Redis sit on a private bridge on
+		// the same host, and tying the two made COOKIE_SECURE=true refuse to start there.
+		// deploy/configmap.yaml sets this, since cluster traffic crosses nodes.
+		RequireBackendTLS: envOrDefault("REQUIRE_BACKEND_TLS", "false") == "true",
 		// Unlike TrainerURL, these default to the in-network Compose service names rather than
 		// "" — prometheus/alertmanager/grafana have no `profiles:` restriction in
 		// docker-compose.yml (trainer does: `profiles: ["trainer"]`), so they're always part of
 		// the default `docker compose up` stack, not an opt-in sidecar. /health reports each as
 		// purely informational (see healthHandler) — set to "" to disable a given check
-		// entirely, e.g. in a deployment topology that doesn't run one of these.
-		PrometheusURL:   envOrDefault("PROMETHEUS_URL", "http://prometheus:9090"),
-		AlertmanagerURL: envOrDefault("ALERTMANAGER_URL", "http://alertmanager:9093"),
-		GrafanaURL:      envOrDefault("GRAFANA_URL", "http://grafana:3000"),
+		// entirely, e.g. in a deployment topology that doesn't run one of these. That is why
+		// these read through envOrUnset: envOrDefault treats "" as unset and would put the
+		// default straight back.
+		PrometheusURL:   envOrUnset("PROMETHEUS_URL", "http://prometheus:9090"),
+		AlertmanagerURL: envOrUnset("ALERTMANAGER_URL", "http://alertmanager:9093"),
+		GrafanaURL:      envOrUnset("GRAFANA_URL", "http://grafana:3000"),
 	}
 }
 
 func envOrDefault(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
+}
+
+// envOrUnset returns fallback only when key is absent from the environment; an explicitly empty
+// value stays empty.
+func envOrUnset(key, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
 		return value
 	}
 	return fallback
@@ -189,21 +208,16 @@ func (c Config) Validate() error {
 	if c.DerivedRetentionDays < 0 {
 		return errors.New("DERIVED_RETENTION_DAYS must be 0 (keep everything) or positive")
 	}
-	// CookieSecure is the one setting that already distinguishes the two deployment profiles
-	// correctly in both manifests: false in docker-compose.yml (plain HTTP on loopback, a
-	// laptop), true in deploy/configmap.yaml (ingress.yaml terminates TLS). Rather than guessing
-	// from hostnames — "redis" and "timescaledb" name a private compose bridge in one profile
-	// and a cluster Service in the other — the backend links inherit that same answer: a real
-	// TLS-fronted deployment must not reach its database and cache in plaintext.
-	if c.CookieSecure {
+	// Opt-in rather than inferred from COOKIE_SECURE: see RequireBackendTLS in Load.
+	if c.RequireBackendTLS {
 		if c.DatabaseSSLMode == "disable" {
-			return errors.New("DATABASE_SSLMODE=disable is not allowed in a TLS deployment; set it to require or stricter")
+			return errors.New("DATABASE_SSLMODE=disable is not allowed with REQUIRE_BACKEND_TLS=true; set it to require or stricter")
 		}
 		if c.RedisPassword == "" {
-			return errors.New("REDIS_PASSWORD is required in a TLS deployment")
+			return errors.New("REDIS_PASSWORD is required with REQUIRE_BACKEND_TLS=true")
 		}
 		if !c.RedisTLS {
-			return errors.New("REDIS_TLS must be true in a TLS deployment")
+			return errors.New("REDIS_TLS must be true with REQUIRE_BACKEND_TLS=true")
 		}
 	}
 	return nil
