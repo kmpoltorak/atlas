@@ -89,7 +89,7 @@ func (a *Application) portfolioCreateHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		a.renderAccountPage(w, r, "Invalid form submission.", "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	// The request-scoped view, not the shared use case. Creating, renaming and removing a
@@ -107,7 +107,7 @@ func (a *Application) portfolioCreateHandler(w http.ResponseWriter, r *http.Requ
 		a.renderAccountPage(w, r, err.Error(), "")
 		return
 	}
-	a.flashRedirect(w, r, "/dashboard/account", "Portfolio \""+created.Name+"\" created.")
+	a.flashRedirect(w, r, "/dashboard/account", a.tr(r, "msg.portfolio_created", created.Name))
 }
 
 func (a *Application) portfolioRenameHandler(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +116,7 @@ func (a *Application) portfolioRenameHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		a.renderAccountPage(w, r, "Invalid form submission.", "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	scoped, err := a.forPortfolio(r) // see portfolioCreateHandler
@@ -131,7 +131,7 @@ func (a *Application) portfolioRenameHandler(w http.ResponseWriter, r *http.Requ
 		a.renderAccountPage(w, r, err.Error(), "")
 		return
 	}
-	a.flashRedirect(w, r, "/dashboard/account", "Portfolio renamed to \""+name+"\".")
+	a.flashRedirect(w, r, "/dashboard/account", a.tr(r, "msg.portfolio_renamed", name))
 }
 
 // portfolioRemoveHandler deletes a portfolio and everything in it (see
@@ -143,7 +143,7 @@ func (a *Application) portfolioRemoveHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		a.renderAccountPage(w, r, "Invalid form submission.", "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	scoped, err := a.forPortfolio(r) // see portfolioCreateHandler
@@ -161,7 +161,7 @@ func (a *Application) portfolioRemoveHandler(w http.ResponseWriter, r *http.Requ
 	// and just as correct as trying to detect that case — SwitchPortfolio/Reload already fall
 	// back to the first remaining portfolio whenever the cookie is absent or stale.
 	http.SetCookie(w, &http.Cookie{Name: portfolioCookieName, Value: "", Path: "/", MaxAge: -1})
-	a.flashRedirect(w, r, "/dashboard/account", "Portfolio removed.")
+	a.flashRedirect(w, r, "/dashboard/account", a.tr(r, "msg.portfolio_removed"))
 }
 
 // forRequest scopes the storage handle to this request's lifetime, and with it every use case

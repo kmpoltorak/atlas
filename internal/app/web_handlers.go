@@ -101,7 +101,7 @@ func (a *Application) portfolioPageHandler(w http.ResponseWriter, r *http.Reques
 		}
 		a = scoped
 		if err := r.ParseForm(); err != nil {
-			a.renderPortfolioPage(w, r, "Invalid form submission.", "")
+			a.renderPortfolioPage(w, r, a.tr(r, "msg.invalid_form"), "")
 			return
 		}
 		form := web.TransactionForm{
@@ -131,13 +131,13 @@ func (a *Application) portfolioPageHandler(w http.ResponseWriter, r *http.Reques
 		quantity, qErr := strconv.ParseFloat(form.Quantity, 64)
 		price, pErr := strconv.ParseFloat(form.Price, 64)
 		if qErr != nil || pErr != nil {
-			rejected("Quantity and price must both be numbers.")
+			rejected(a.tr(r, "msg.qty_price_numbers"))
 			return
 		}
 		if form.Key == "" {
 			// Every rendered form carries one; its absence means a hand-built request, and
 			// recording without a key is exactly the duplicate risk the key exists to remove.
-			rejected("This form has expired — reload the page and submit again.")
+			rejected(a.tr(r, "msg.form_expired"))
 			return
 		}
 		tx := portfolio.Transaction{
@@ -159,7 +159,7 @@ func (a *Application) portfolioPageHandler(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		go a.refreshRecommendation(tx.Symbol)
-		a.flashRedirect(w, r, "/dashboard/portfolio", "Transaction recorded.")
+		a.flashRedirect(w, r, "/dashboard/portfolio", a.tr(r, "msg.transaction_recorded"))
 	default:
 		methodNotAllowed(w)
 	}
@@ -205,12 +205,12 @@ func (a *Application) portfolioDeleteHandler(w http.ResponseWriter, r *http.Requ
 	}
 	a = scoped
 	if err := r.ParseForm(); err != nil {
-		a.renderPortfolioPage(w, r, "Invalid form submission.", "")
+		a.renderPortfolioPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	symbols := upperAll(formValues(r, "symbols", "symbol"))
 	if len(symbols) == 0 {
-		a.renderPortfolioPage(w, r, "No positions selected.", "")
+		a.renderPortfolioPage(w, r, a.tr(r, "msg.no_positions_selected"), "")
 		return
 	}
 	if err := a.Portfolio.RemovePositions(symbols); err != nil {
@@ -224,9 +224,9 @@ func (a *Application) portfolioDeleteHandler(w http.ResponseWriter, r *http.Requ
 	for _, symbol := range symbols {
 		go a.refreshRecommendation(symbol)
 	}
-	message := fmt.Sprintf("%d position(s) removed.", len(symbols))
+	message := a.tr(r, "msg.positions_hidden_many", len(symbols))
 	if len(symbols) == 1 {
-		message = "Removed " + symbols[0] + " from your positions."
+		message = a.tr(r, "msg.position_hidden_one", symbols[0])
 	}
 	a.renderPortfolioPage(w, r, "", message)
 }
@@ -249,12 +249,12 @@ func (a *Application) portfolioTransactionDeleteHandler(w http.ResponseWriter, r
 	}
 	a = scoped
 	if err := r.ParseForm(); err != nil {
-		a.renderPortfolioPage(w, r, "Invalid form submission.", "")
+		a.renderPortfolioPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	ids := formValues(r, "ids", "id")
 	if len(ids) == 0 {
-		a.renderPortfolioPage(w, r, "No transactions selected.", "")
+		a.renderPortfolioPage(w, r, a.tr(r, "msg.no_transactions_selected"), "")
 		return
 	}
 	// Resolved before the removal, not after — once the transaction is gone there's nothing left
@@ -272,9 +272,9 @@ func (a *Application) portfolioTransactionDeleteHandler(w http.ResponseWriter, r
 	for _, symbol := range symbols {
 		go a.refreshRecommendation(symbol)
 	}
-	message := fmt.Sprintf("%d transaction(s) removed and positions recomputed.", len(ids))
+	message := a.tr(r, "msg.transactions_removed_many", len(ids))
 	if len(ids) == 1 {
-		message = "Transaction removed and position recomputed."
+		message = a.tr(r, "msg.transaction_removed_one")
 	}
 	a.renderPortfolioPage(w, r, "", message)
 }

@@ -14,9 +14,9 @@
 
     <form class="row row-cols-auto g-2 align-items-end mb-4" method="get" action="/dashboard/recommendations">
       <div class="col">
-        <label class="form-label">{{T .Lang "table.symbol"}}</label>
+        <label class="form-label" for="symbolField">{{T .Lang "table.symbol"}}</label>
         {{if .Symbols}}
-        <select class="form-select" name="symbol">
+        <select class="form-select" id="symbolField" name="symbol">
           <option value="">{{T .Lang "common.choose"}}</option>
           {{$current := .Symbol}}
           {{range .Symbols}}
@@ -24,7 +24,7 @@
           {{end}}
         </select>
         {{else}}
-        <input type="text" class="form-control text-uppercase" name="symbol" value="{{.Symbol}}" required>
+        <input type="text" class="form-control text-uppercase" id="symbolField" name="symbol" value="{{.Symbol}}" required>
         <div class="form-text">{{T .Lang "watchlist.dropdown_hint" | safeHTML}}</div>
         {{end}}
       </div>

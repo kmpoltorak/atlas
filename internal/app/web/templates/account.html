@@ -27,7 +27,7 @@
                 <td>
                   <form method="post" action="/dashboard/portfolios/rename" class="d-flex gap-2 align-items-center mb-0">
                     <input type="hidden" name="id" value="{{.ID}}">
-                    <input type="text" name="name" value="{{.Name}}" class="form-control form-control-sm" style="max-width: 220px;">
+                    <input type="text" name="name" value="{{.Name}}" class="form-control form-control-sm" style="max-width: 220px;" aria-label="{{T $.Lang "account.portfolio_new_name"}}">
                     <button type="submit" class="btn btn-sm btn-outline-secondary text-nowrap">{{T $.Lang "account.portfolio_rename_submit"}}</button>
                   </form>
                 </td>
@@ -46,8 +46,8 @@
         {{if lt (len .Portfolios) .MaxPortfolios}}
         <form method="post" action="/dashboard/portfolios/create" class="d-flex gap-2 align-items-end mb-0">
           <div>
-            <label class="form-label small mb-1">{{T .Lang "account.portfolio_new_name"}}</label>
-            <input type="text" name="name" class="form-control form-control-sm" required>
+            <label class="form-label small mb-1" for="newPortfolioName">{{T .Lang "account.portfolio_new_name"}}</label>
+            <input type="text" id="newPortfolioName" name="name" class="form-control form-control-sm" required>
           </div>
           <button type="submit" class="btn btn-sm btn-primary text-nowrap">{{T .Lang "account.portfolio_create_submit"}}</button>
         </form>
@@ -177,8 +177,8 @@
            onclick="setTimeout(function() { location.reload(); }, 800);">{{T .Lang "account.backup_submit"}}</a>
         <form method="post" action="/dashboard/account/restore" enctype="multipart/form-data" class="d-flex flex-wrap gap-2 align-items-end mb-0">
           <div>
-            <label class="form-label small mb-1">{{T .Lang "account.restore_file"}}</label>
-            <input type="file" class="form-control form-control-sm" name="backup" accept="application/json" required>
+            <label class="form-label small mb-1" for="restoreFile">{{T .Lang "account.restore_file"}}</label>
+            <input type="file" class="form-control form-control-sm" id="restoreFile" name="backup" accept="application/json" required>
           </div>
           <button type="submit" class="btn btn-outline-warning btn-sm text-nowrap"
                   onclick="return confirm('{{T .Lang "confirm.restore_backup"}}');">{{T .Lang "account.restore_submit"}}</button>

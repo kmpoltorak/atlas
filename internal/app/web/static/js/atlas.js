@@ -1,3 +1,7 @@
+// The page's translated labels ride on this script's own tag (see partials.html's "scripts"),
+// read once while it is the script being executed.
+const atlasLabels = (document.currentScript && document.currentScript.dataset) || {}
+
 'use strict'
 
 // Mirrors a <select>'s selected <option title="..."> into a sibling element — used by the
@@ -102,12 +106,15 @@ function atlasSetupTableTools(tableId, filterInputId, pageSize, onChange) {
   prevBtn.type = 'button'
   prevBtn.className = 'btn btn-outline-secondary btn-sm'
   prevBtn.textContent = '‹'
+  // A glyph alone has no accessible name; screen readers announced these as unlabelled buttons.
+  prevBtn.setAttribute('aria-label', atlasLabels.prevLabel || 'Previous page')
   const pageLabel = document.createElement('span')
   pageLabel.className = 'text-body-secondary small'
   const nextBtn = document.createElement('button')
   nextBtn.type = 'button'
   nextBtn.className = 'btn btn-outline-secondary btn-sm'
   nextBtn.textContent = '›'
+  nextBtn.setAttribute('aria-label', atlasLabels.nextLabel || 'Next page')
   pager.append(prevBtn, pageLabel, nextBtn)
   table.insertAdjacentElement('afterend', pager)
 

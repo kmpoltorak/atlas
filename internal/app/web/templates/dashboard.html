@@ -15,7 +15,7 @@
 
     <h2 class="h5">{{T .Lang "dashboard.positions"}}</h2>
     {{if .Positions}}
-    <input type="text" class="form-control form-control-sm mb-2" id="dashboardPositionsFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
+    <input type="text" class="form-control form-control-sm mb-2" id="dashboardPositionsFilter" placeholder="{{T .Lang "table.filter_placeholder"}}" aria-label="{{T .Lang "table.filter_placeholder"}}">
     <div class="table-responsive">
       <table class="table table-striped table-hover align-middle" id="dashboardPositionsTable">
         <thead><tr>

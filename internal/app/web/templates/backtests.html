@@ -14,9 +14,9 @@
 
     <form class="row row-cols-auto g-2 align-items-end mb-4" method="get" action="/dashboard/backtests">
       <div class="col">
-        <label class="form-label">{{T .Lang "table.symbol"}}</label>
+        <label class="form-label" for="symbolField">{{T .Lang "table.symbol"}}</label>
         {{if .Symbols}}
-        <select class="form-select" name="symbol">
+        <select class="form-select" id="symbolField" name="symbol">
           <option value="">{{T .Lang "common.choose"}}</option>
           {{$current := .Symbol}}
           {{range .Symbols}}
@@ -24,17 +24,17 @@
           {{end}}
         </select>
         {{else}}
-        <input type="text" class="form-control text-uppercase" name="symbol" value="{{.Symbol}}" required>
+        <input type="text" class="form-control text-uppercase" id="symbolField" name="symbol" value="{{.Symbol}}" required>
         <div class="form-text">{{T .Lang "watchlist.dropdown_hint" | safeHTML}}</div>
         {{end}}
       </div>
       <div class="col">
-        <label class="form-label">{{T .Lang "backtests.window"}}</label>
-        <input type="number" min="1" class="form-control" name="window" value="{{.Window}}">
+        <label class="form-label" for="windowField">{{T .Lang "backtests.window"}}</label>
+        <input type="number" min="1" class="form-control" id="windowField" name="window" value="{{.Window}}">
       </div>
       <div class="col">
-        <label class="form-label">{{T .Lang "backtests.capital"}}</label>
-        <input type="number" min="1" step="any" class="form-control" name="capital" value="{{.Capital}}">
+        <label class="form-label" for="capitalField">{{T .Lang "backtests.capital"}}</label>
+        <input type="number" min="1" step="any" class="form-control" id="capitalField" name="capital" value="{{.Capital}}">
       </div>
       <div class="col"><button type="submit" class="btn btn-primary">{{T .Lang "backtests.submit"}}</button></div>
     </form>
@@ -76,7 +76,7 @@
 
     <h3 class="h6">{{T .Lang "table.trades"}}</h3>
     {{if .Result.Trades}}
-    <input type="text" class="form-control form-control-sm mb-2" id="tradesFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
+    <input type="text" class="form-control form-control-sm mb-2" id="tradesFilter" placeholder="{{T .Lang "table.filter_placeholder"}}" aria-label="{{T .Lang "table.filter_placeholder"}}">
     <div class="table-responsive">
       <table class="table table-striped table-hover align-middle" id="tradesTable">
         <thead><tr><th scope="col" data-sort="date">{{T .Lang "table.timestamp"}}</th><th scope="col" data-sort="text">{{T .Lang "table.action"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.price"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.quantity"}}</th><th scope="col" class="text-end" data-sort="number">{{T .Lang "table.confidence"}}</th></tr></thead>

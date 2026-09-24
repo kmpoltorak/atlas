@@ -101,3 +101,16 @@ func TestLangSetHandlerRejectsNonPost(t *testing.T) {
 		t.Fatalf("expected 405, got %d", rec.Code)
 	}
 }
+
+// Handler messages follow the display language like the rest of the page did already.
+func TestHandlerMessagesFollowTheDisplayLanguage(t *testing.T) {
+	a := &Application{}
+	r := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	r.AddCookie(&http.Cookie{Name: langCookieName, Value: "pl"})
+	if got := a.tr(r, "msg.watchlist_added", "AAPL"); got != "Dodano AAPL do listy obserwowanych." {
+		t.Fatalf("expected the Polish message with the symbol filled in, got %q", got)
+	}
+	if got := a.tr(httptest.NewRequest(http.MethodGet, "/", nil), "msg.portfolio_removed"); got != "Portfolio removed." {
+		t.Fatalf("expected English without a language cookie, got %q", got)
+	}
+}

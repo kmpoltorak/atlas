@@ -135,7 +135,7 @@ func (a *Application) mlEngineToggleHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		a.renderAccountPage(w, r, "Invalid form submission.", "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	enabled := r.FormValue("enabled") == "true"
@@ -150,16 +150,16 @@ func (a *Application) mlEngineToggleHandler(w http.ResponseWriter, r *http.Reque
 	if a.Storage != nil {
 		if err := a.Storage.SetMLEnabled(enabled); err != nil {
 			a.Logger.Error("failed to persist ML-enabled setting", zap.Bool("enabled", enabled), zap.Error(err))
-			a.renderAccountPage(w, r, "Could not save the ML setting: "+err.Error(), "")
+			a.renderAccountPage(w, r, a.tr(r, "msg.ml_setting_failed", err), "")
 			return
 		}
 	}
 	a.Orchestrator.SetMLEnabled(enabled)
 
 	if enabled {
-		a.renderAccountPage(w, r, "", "ML blend enabled — recommendations now factor in ML/portfolio/risk again.")
+		a.renderAccountPage(w, r, "", a.tr(r, "msg.ml_enabled"))
 	} else {
-		a.renderAccountPage(w, r, "", "ML blend disabled — recommendations now score from the technical term alone.")
+		a.renderAccountPage(w, r, "", a.tr(r, "msg.ml_disabled"))
 	}
 }
 
@@ -174,7 +174,7 @@ func (a *Application) mlModelActivateHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		a.renderAccountPage(w, r, "Invalid form submission.", "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	roleValue := r.FormValue("role")
@@ -182,13 +182,13 @@ func (a *Application) mlModelActivateHandler(w http.ResponseWriter, r *http.Requ
 
 	role, ok := parseModelRole(roleValue)
 	if !ok {
-		a.renderAccountPage(w, r, "Unknown model role.", "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.unknown_model_role"), "")
 		return
 	}
 
 	infos, err := mlUC.ListModels(a.Config.MLModelsDir, role)
 	if err != nil {
-		a.renderAccountPage(w, r, "Could not read the models directory: "+err.Error(), "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.models_dir_failed", err), "")
 		return
 	}
 	found := false
@@ -199,14 +199,14 @@ func (a *Application) mlModelActivateHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	if !found {
-		a.renderAccountPage(w, r, "That model is no longer available — refresh and try again.", "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.model_gone"), "")
 		return
 	}
 
 	path := a.Config.MLModelsDir + "/" + filename
 	model, err := mlUC.LoadOnnxModel(path, a.Config.LibOnnxRuntimePath)
 	if err != nil {
-		a.renderAccountPage(w, r, "Failed to load that model: "+err.Error(), "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.model_load_failed", err), "")
 		return
 	}
 
@@ -219,7 +219,7 @@ func (a *Application) mlModelActivateHandler(w http.ResponseWriter, r *http.Requ
 		_ = model.Close()
 		a.Logger.Error("failed to persist ML model selection",
 			zap.String("role", string(role)), zap.Error(err))
-		a.renderAccountPage(w, r, "Could not record that selection, so nothing was changed: "+err.Error(), "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.model_selection_failed", err), "")
 		return
 	}
 
@@ -235,7 +235,7 @@ func (a *Application) mlModelActivateHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	a.renderAccountPage(w, r, "", "Activated model "+model.Version+" for "+roleValue+".")
+	a.renderAccountPage(w, r, "", a.tr(r, "msg.model_activated", model.Version, roleValue))
 }
 
 // parseModelRole validates a form-submitted role value against the two real roles ml.ListModels
@@ -264,11 +264,11 @@ func (a *Application) mlModelDeleteHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if a.Trainer == nil {
-		a.renderAccountPage(w, r, "Deleting models isn't available (TRAINER_URL is unset) — see training/README.md, or remove the file by hand from training/models/.", "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.model_delete_unavailable"), "")
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		a.renderAccountPage(w, r, "Invalid form submission.", "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	roleValue := r.FormValue("role")
@@ -276,7 +276,7 @@ func (a *Application) mlModelDeleteHandler(w http.ResponseWriter, r *http.Reques
 
 	role, ok := parseModelRole(roleValue)
 	if !ok {
-		a.renderAccountPage(w, r, "Unknown model role.", "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.unknown_model_role"), "")
 		return
 	}
 
@@ -291,20 +291,20 @@ func (a *Application) mlModelDeleteHandler(w http.ResponseWriter, r *http.Reques
 		}
 		found = true
 		if info.Active {
-			a.renderAccountPage(w, r, "Can't remove the model currently active for "+roleValue+" — activate a different one first.", "")
+			a.renderAccountPage(w, r, a.tr(r, "msg.model_active_cannot_delete", roleValue), "")
 			return
 		}
 	}
 	if !found {
-		a.renderAccountPage(w, r, "That model is no longer available — refresh and try again.", "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.model_gone"), "")
 		return
 	}
 
 	if err := a.Trainer.Delete(filename); err != nil {
-		a.renderAccountPage(w, r, "Failed to delete that model: "+err.Error(), "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.model_delete_failed", err), "")
 		return
 	}
-	a.renderAccountPage(w, r, "", "Deleted "+filename+".")
+	a.renderAccountPage(w, r, "", a.tr(r, "msg.model_deleted", filename))
 }
 
 // mlTrainHandler triggers a new training run via the atlas-trainer sidecar (see cmd/trainer,
@@ -318,11 +318,11 @@ func (a *Application) mlTrainHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.Trainer == nil {
-		a.renderAccountPage(w, r, "Training trigger isn't configured (TRAINER_URL is unset) — see training/README.md to run it by hand, or start the atlas-trainer service to enable this button.", "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.training_unavailable"), "")
 		return
 	}
 	if err := a.Trainer.Trigger(); err != nil {
-		a.renderAccountPage(w, r, "Failed to start training: "+err.Error(), "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.training_failed", err), "")
 		return
 	}
 	a.flashRedirect(w, r, "/dashboard/account",
@@ -401,37 +401,37 @@ func (a *Application) accountRestoreHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if a.Storage == nil {
-		a.renderAccountPage(w, r, "No database configured.", "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.no_database"), "")
 		return
 	}
 	a.extendWriteDeadline(w, backupOperationTimeout)
 	r.Body = http.MaxBytesReader(w, r.Body, maxBackupRestoreBytes+(1<<20))
 	if err := r.ParseMultipartForm(1 << 20); err != nil {
-		a.renderAccountPage(w, r, "Invalid form submission.", "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	defer r.MultipartForm.RemoveAll()
 	file, _, err := r.FormFile("backup")
 	if err != nil {
-		a.renderAccountPage(w, r, "Choose a backup file to restore.", "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.restore_choose_file"), "")
 		return
 	}
 	defer file.Close()
 	payload, err := io.ReadAll(io.LimitReader(file, maxBackupRestoreBytes+1))
 	if err != nil {
-		a.renderAccountPage(w, r, "Failed to read the uploaded file: "+err.Error(), "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.upload_read_failed", err), "")
 		return
 	}
 	if len(payload) > maxBackupRestoreBytes {
-		a.renderAccountPage(w, r, "Backup file is too large.", "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.backup_too_large"), "")
 		return
 	}
 	if err := a.Storage.RestoreAll(payload); err != nil {
-		a.renderAccountPage(w, r, "Restore failed: "+err.Error(), "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.restore_failed", err), "")
 		return
 	}
 	a.reloadCachedState()
-	a.renderAccountPage(w, r, "", "Data restored from backup.")
+	a.renderAccountPage(w, r, "", a.tr(r, "msg.restored"))
 }
 
 // accountFlushHandler wipes every table Atlas stores data in — positions, transactions,
@@ -445,20 +445,20 @@ func (a *Application) accountFlushHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if a.Storage == nil {
-		a.renderAccountPage(w, r, "No database configured.", "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.no_database"), "")
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		a.renderAccountPage(w, r, "Invalid form submission.", "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.invalid_form"), "")
 		return
 	}
 	a.extendWriteDeadline(w, backupOperationTimeout)
 	if err := a.Storage.FlushAll(); err != nil {
-		a.renderAccountPage(w, r, "Flush failed: "+err.Error(), "")
+		a.renderAccountPage(w, r, a.tr(r, "msg.flush_failed", err), "")
 		return
 	}
 	a.reloadCachedState()
-	a.renderAccountPage(w, r, "", "All data has been wiped. Atlas is back to a freshly installed state.")
+	a.renderAccountPage(w, r, "", a.tr(r, "msg.flushed"))
 }
 
 // reloadCachedState resyncs every in-memory cache that mirrors a database table (see

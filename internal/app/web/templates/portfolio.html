@@ -19,7 +19,7 @@
     {{if .Positions}}
     <form method="post" action="/dashboard/portfolio/delete" id="positionsForm"
           data-confirm-bulk="{{T .Lang "confirm.remove_positions_bulk"}}">
-      <input type="text" class="form-control form-control-sm mb-2" id="positionsFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
+      <input type="text" class="form-control form-control-sm mb-2" id="positionsFilter" placeholder="{{T .Lang "table.filter_placeholder"}}" aria-label="{{T .Lang "table.filter_placeholder"}}">
       <div class="table-responsive">
         <table class="table table-striped table-hover align-middle" id="positionsTable">
           <thead><tr>
@@ -29,7 +29,7 @@
           <tbody>
           {{range .Positions}}
           <tr>
-            <td><input type="checkbox" class="form-check-input position-checkbox" name="symbols" value="{{.Symbol}}"></td>
+            <td><input type="checkbox" class="form-check-input position-checkbox" name="symbols" value="{{.Symbol}}" aria-label="{{.Symbol}}"></td>
             <td><a class="atlas-symbol" href="{{yahooURL .Symbol}}" target="_blank" rel="noopener noreferrer" title="{{T $.Lang "table.open_in_yahoo"}}">{{.Symbol}}</a></td>
             <td class="text-end tabular-nums">{{printf "%.4f" .Quantity}}</td>
             <td class="text-end tabular-nums">{{money .AverageCost $.Rates}}</td>
@@ -41,7 +41,7 @@
             <td class="text-end">
               <button type="submit" name="symbol" value="{{.Symbol}}"
                       class="btn btn-outline-danger btn-sm"
-                      onclick="return confirm('{{printf (T $.Lang "confirm.remove_position") .Symbol}}');">{{T $.Lang "common.remove"}}</button>
+                      onclick="return confirm('{{printf (T $.Lang "confirm.remove_position") .Symbol}}');">{{T $.Lang "portfolio.hide_position"}}</button>
             </td>
           </tr>
           {{end}}
@@ -56,8 +56,9 @@
         </table>
       </div>
       <button type="submit" class="btn btn-outline-danger" id="bulkDeletePositionsBtn" disabled>
-        {{T .Lang "portfolio.delete_selected"}} (<span id="selectedPositionCount">0</span>)
+        {{T .Lang "portfolio.hide_selected"}} (<span id="selectedPositionCount">0</span>)
       </button>
+      <p class="form-text">{{T .Lang "portfolio.hide_hint"}}</p>
     </form>
     {{else}}
     <p class="text-body-secondary">{{T .Lang "portfolio.no_positions"}}</p>
@@ -67,7 +68,7 @@
     {{if .Transactions}}
     <form method="post" action="/dashboard/portfolio/transactions/delete" id="transactionsForm"
           data-confirm-bulk="{{T .Lang "confirm.remove_transactions_bulk"}}">
-      <input type="text" class="form-control form-control-sm mb-2" id="transactionsFilter" placeholder="{{T .Lang "table.filter_placeholder"}}">
+      <input type="text" class="form-control form-control-sm mb-2" id="transactionsFilter" placeholder="{{T .Lang "table.filter_placeholder"}}" aria-label="{{T .Lang "table.filter_placeholder"}}">
       <div class="table-responsive">
         <table class="table table-striped table-hover align-middle" id="transactionsTable">
           <thead><tr>
@@ -77,7 +78,7 @@
           <tbody>
           {{range .Transactions}}
           <tr>
-            <td><input type="checkbox" class="form-check-input transaction-checkbox" name="ids" value="{{.ID}}"></td>
+            <td><input type="checkbox" class="form-check-input transaction-checkbox" name="ids" value="{{.ID}}" aria-label="{{.Symbol}} {{.Type}} {{.Timestamp}}"></td>
             <td><a class="atlas-symbol" href="{{yahooURL .Symbol}}" target="_blank" rel="noopener noreferrer" title="{{T $.Lang "table.open_in_yahoo"}}">{{.Symbol}}</a></td>
             <td class="{{actionClass .Type}}">{{actionLabel $.Lang .Type}}</td>
             <td class="text-end tabular-nums">{{printf "%.4f" .Quantity}}</td>
