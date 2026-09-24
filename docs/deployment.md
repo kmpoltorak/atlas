@@ -1,8 +1,8 @@
 # Deployment
 
 Atlas runs with Docker Compose, on one machine, for one person. This document describes that
-deployment as built; [runbook.md](runbook.md) has the backup, restore and recovery procedures,
-and [README.md](../README.md#configuration) every environment variable.
+deployment as built, including every environment variable; [runbook.md](runbook.md) has the
+backup, restore and recovery procedures.
 
 ## What runs, and which versions
 
@@ -24,7 +24,18 @@ cross-origin protection remains, which stops a web page in the same browser from
 dashboard.
 
 `atlas-api` runs as the numeric user 10001, applies its own database migrations on start (under
-an advisory lock, tracked in `schema_migrations`), and shuts down gracefully on `SIGTERM`.
+an advisory lock, tracked in `schema_migrations`), and shuts down gracefully on `SIGTERM`. The
+`./migrations` mount in `docker-compose.yml` only pre-seeds a brand-new volume.
+
+The trainer publishes no host port: atlas-api calls its `/train`, `/status` and `/delete`
+endpoints through `TRAINER_URL`, which backs the Settings page's "Train now" and model "Remove"
+buttons ([training/README.md](../training/README.md)).
+
+**What persists.** Named volumes (`timescaledb-data`, `redis-data`, `prometheus-data`,
+`alertmanager-data`, `grafana-data`, `trainer-gomod-cache`) survive `docker compose down` and are
+destroyed by `docker compose down -v`. Trained models are a bind mount instead:
+`./training/models`, read-only into atlas-api and read-write into the trainer, which is how a
+model the trainer writes becomes selectable on the Settings page without a rebuild.
 
 ## Install
 
@@ -34,6 +45,37 @@ cp .env.example .env        # optional: webhooks, passwords; every value has a w
 docker compose up -d
 curl -s http://localhost:8080/health
 ```
+
+## Configuration
+
+Every setting is an environment variable (`internal/config/config.go`) with a working default,
+and every optional integration is non-fatal when unset. Put overrides in `.env`
+(`.env.example` has the common ones with comments; `.env` is gitignored).
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SERVER_PORT` | `8080` | HTTP listen port |
+| `LOG_LEVEL` | `info` | zap log level |
+| `DATABASE_HOST`/`PORT`/`NAME`/`USER`/`PASSWORD` | `timescaledb`/`5432`/`atlas`/`atlas`/`atlas` | TimescaleDB connection; `DATABASE_PASSWORD` also sets the `timescaledb` container's password |
+| `DATABASE_SSLMODE` | `disable` | libpq SSL mode — `disable` matches the Compose Postgres; `require` or `verify-full` for one that serves TLS |
+| `REDIS_HOST`/`PORT` | `redis`/`6379` | Redis connection |
+| `REDIS_PASSWORD` | *(empty → no auth)* | Redis `AUTH` password; the Compose `redis` service uses the same variable as its `requirepass` |
+| `REDIS_TLS` | `false` | TLS 1.2+ to a Redis that serves it |
+| `COLLECTOR_WINDOW_DAYS` | `30` | History requested per collection call |
+| `ALERT_POLL_INTERVAL_SECONDS` | `300` | Background watchlist-evaluation interval |
+| `DERIVED_RETENTION_DAYS` | `0` *(keep everything)* | Days of indicators, recommendations and predictions to keep, pruned daily. The poll writes one recommendation per symbol per cycle, so set this on a long-lived instance |
+| `DISCORD_WEBHOOK_URL` | *(empty → off)* | Business alerts (BUY/ACCUMULATE/REDUCE/SELL, on change) |
+| `SLACK_WEBHOOK_URL` | *(empty → off)* | The same alerts to a Slack Incoming Webhook |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | *(empty → off)* | The same alerts via a Telegram bot; both must be set |
+| `ALERTMANAGER_DISCORD_WEBHOOK_URL` | *(empty → off)* | Infra alerts and failed training runs, deliberately a separate channel |
+| `ML_ENABLED` | `true` | Initial state of the ML factor; the Settings page toggle overrides it once used. `false` drops only the ML factor, not portfolio risk |
+| `MODEL_PATH` | *(empty → stub)* | Correction model `.onnx`; a Settings-page selection overrides it |
+| `RECOVERY_MODEL_PATH` | *(empty → 0)* | Recovery model `.onnx`, independent of `MODEL_PATH` |
+| `ML_MODELS_DIR` | `/models` | Where the Settings page looks for trained models |
+| `LIBONNXRUNTIME_PATH` | `/usr/lib/libonnxruntime.so` | Native ONNX Runtime library |
+| `TRAINER_URL` | Compose: `http://atlas-trainer:8091` | The trainer; empty hides the training buttons, and the page explains running `training/retrain.sh` by hand |
+| `PROMETHEUS_URL`/`ALERTMANAGER_URL`/`GRAFANA_URL` | the Compose service URLs | Checked by `/health`; set one empty to disable that check |
+| `GRAFANA_ADMIN_PASSWORD` | `admin` | Read by the `grafana` container only |
 
 ## Update
 
