@@ -29,9 +29,7 @@ func (a *Application) NewHandler() http.Handler {
 	mux.Handle("/metrics", a.Metrics.Handler())
 	mux.Handle("/static/", http.FileServer(http.FS(web.StaticFS)))
 	// /swagger/index.html — interactive API docs (see cmd/api/main.go's @title block and the
-	// @Summary/@Router annotations on each JSON handler below). Not in publicPaths
-	// (auth_middleware.go), so it needs the same session as the rest of the API when auth is
-	// enabled — "Try it out" then reuses that session's cookie automatically.
+	// @Summary/@Router annotations on each JSON handler below).
 	mux.HandleFunc("/swagger/", httpSwagger.WrapHandler)
 	mux.HandleFunc("/health", a.scoped((*Application).healthHandler))
 	mux.HandleFunc("GET /live", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
@@ -50,8 +48,6 @@ func (a *Application) NewHandler() http.Handler {
 	mux.HandleFunc("/backtests/walkforward", a.scoped((*Application).backtestWalkForwardHandler))
 
 	// Server-rendered dashboard (Phase 8 — see implementation-plan.md and internal/app/web).
-	mux.HandleFunc("/login", a.scoped((*Application).loginPageHandler))
-	mux.HandleFunc("/logout", a.scoped((*Application).logoutPageHandler))
 	mux.HandleFunc("/dashboard/lang", a.scoped((*Application).langSetHandler))
 	mux.HandleFunc("/dashboard/portfolio", a.scoped((*Application).portfolioPageHandler))
 	// One route per thing being deleted, not one per selection shape: each handler takes either
@@ -70,10 +66,6 @@ func (a *Application) NewHandler() http.Handler {
 	mux.HandleFunc("/dashboard/watchlist/import", a.scoped((*Application).watchlistImportPageHandler))
 	mux.HandleFunc("/dashboard/watchlist/refresh-info", a.scoped((*Application).watchlistRefreshInfoHandler))
 	mux.HandleFunc("/dashboard/account", a.scoped((*Application).accountPageHandler))
-	mux.HandleFunc("/dashboard/account/totp/setup", a.scoped((*Application).totpSetupHandler))
-	mux.HandleFunc("/dashboard/account/totp/qr.png", a.scoped((*Application).totpQRHandler))
-	mux.HandleFunc("/dashboard/account/totp/confirm", a.scoped((*Application).totpConfirmHandler))
-	mux.HandleFunc("/dashboard/account/totp/disable", a.scoped((*Application).totpDisableHandler))
 	mux.HandleFunc("/dashboard/account/ml/toggle", a.scoped((*Application).mlEngineToggleHandler))
 	mux.HandleFunc("/dashboard/account/ml/activate", a.scoped((*Application).mlModelActivateHandler))
 	mux.HandleFunc("/dashboard/account/ml/delete", a.scoped((*Application).mlModelDeleteHandler))
@@ -100,7 +92,10 @@ func (a *Application) NewHandler() http.Handler {
 	// "/" is the dashboard itself (not a separate "/dashboard" route — a subtree pattern in
 	// net/http.ServeMux, so this is also the catch-all for anything else unmatched above).
 	mux.HandleFunc("/", a.scoped((*Application).dashboardPageHandler))
-	return a.instrument(a.requireAuth(http.NewCrossOriginProtection().Handler(mux)))
+	// No login: Atlas is a local, single-operator tool whose ports are bound to 127.0.0.1 (see
+	// docker-compose.yml). Cross-origin protection stays — it is what stops a web page open in
+	// the same browser from posting to the dashboard, login or not.
+	return a.instrument(http.NewCrossOriginProtection().Handler(mux))
 }
 
 // instrument records request count and latency for every route except /metrics itself,
@@ -152,12 +147,12 @@ func (r *statusRecorder) Unwrap() http.ResponseWriter {
 // healthHandler pings the real database and cache connections, per the response shape
 // documented in docs/deployment.md ({"status":"healthy","database":"ok","redis":"ok"}).
 // Returns 503 when either dependency is unreachable, so this is a meaningful signal for
-// Docker/Kubernetes health probes (see deploy/deployment.yaml), not just a liveness check.
+// the Docker healthcheck (docker-compose.yml), not just a liveness check.
 // Trainer reachability is reported too when TRAINER_URL is configured, but — unlike
 // Database/Redis — never flips the overall status/HTTP code: the trainer is a genuinely
-// optional sidecar (absent on Kubernetes, see deploy/) atlas-api already degrades
+// optional sidecar (TRAINER_URL empty hides it) atlas-api already degrades
 // gracefully without (the Account page's "Train new candidate" button just explains the manual
-// path instead), so Docker/Kubernetes restarting atlas-api because atlas-trainer is down would
+// path instead), so Docker restarting atlas-api because atlas-trainer is down would
 // be exactly the wrong response.
 //
 // @Summary Health check

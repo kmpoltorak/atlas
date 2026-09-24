@@ -7,12 +7,10 @@ require (
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/prometheus/client_golang v1.22.0
 	github.com/redis/go-redis/v9 v9.22.0
-	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/swaggo/http-swagger/v2 v2.0.2
 	github.com/swaggo/swag v1.16.6
 	github.com/yalue/onnxruntime_go v1.32.0
 	go.uber.org/zap v1.28.0
-	golang.org/x/crypto v0.54.0
 )
 
 require (

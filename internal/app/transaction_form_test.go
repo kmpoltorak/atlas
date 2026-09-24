@@ -2,7 +2,9 @@ package app
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,6 +30,15 @@ func (o oneDayRates) ToBaseOn(amount float64, _ currency.Code, date time.Time) (
 		return amount * o.rate, true, nil
 	}
 	return amount * o.today, false, nil
+}
+
+func sendForm(handler http.Handler, method, path string, form url.Values) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(method, path, strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Sec-Fetch-Site", "same-origin")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	return recorder
 }
 
 func formTransactions(t *testing.T, app *Application, symbol string) []portfolio.Transaction {
@@ -74,7 +85,7 @@ func TestTransactionFormRecordsTheTradeDateOnceAcrossResubmits(t *testing.T) {
 		"quantity": {"2"}, "price": {"100"}, "currency": {"USD"}, "date": {"2026-03-10"},
 	}
 	for attempt := 0; attempt < 2; attempt++ {
-		got := sendForm(handler, http.MethodPost, "/dashboard/portfolio", "", form)
+		got := sendForm(handler, http.MethodPost, "/dashboard/portfolio", form)
 		if got.Code != http.StatusSeeOther {
 			t.Fatalf("submission %d: expected a redirect after recording, got %d: %s", attempt+1, got.Code, got.Body)
 		}
@@ -98,7 +109,7 @@ func TestTransactionFormWithoutAKeyIsRefused(t *testing.T) {
 	app.Watchlist = watchlistUC.NewUseCase() // the rejection re-renders the page, which lists it
 	handler := app.NewHandler()
 	t.Cleanup(func() { removeFormTransactions(t, app, "TESTFORMNOKEY") })
-	got := sendForm(handler, http.MethodPost, "/dashboard/portfolio", "", url.Values{
+	got := sendForm(handler, http.MethodPost, "/dashboard/portfolio", url.Values{
 		"symbol": {"TESTFORMNOKEY"}, "type": {"BUY"}, "quantity": {"1"}, "price": {"10"}, "currency": {"PLN"},
 	})
 	if got.Code == http.StatusSeeOther {

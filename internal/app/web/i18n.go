@@ -47,7 +47,6 @@ var translations = map[string]map[Lang]string{
 	"nav.language_de":     {LangEN: "German", LangPL: "Niemiecki", LangDE: "Deutsch", LangFR: "Allemand", LangES: "Alemán"},
 	"nav.language_fr":     {LangEN: "French", LangPL: "Francuski", LangDE: "Französisch", LangFR: "Français", LangES: "Francés"},
 	"nav.language_es":     {LangEN: "Spanish", LangPL: "Hiszpański", LangDE: "Spanisch", LangFR: "Espagnol", LangES: "Español"},
-	"nav.logout":          {LangEN: "Log out", LangPL: "Wyloguj", LangDE: "Abmelden", LangFR: "Déconnexion", LangES: "Cerrar sesión"},
 	"nav.skip_to_content": {LangEN: "Skip to content", LangPL: "Przejdź do treści", LangDE: "Zum Inhalt springen", LangFR: "Passer au contenu", LangES: "Saltar al contenido"},
 
 	// Shared table headers/labels, reused across multiple pages
@@ -131,7 +130,6 @@ var translations = map[string]map[Lang]string{
 	"table.roc_auc":            {LangEN: "ROC AUC", LangPL: "ROC AUC", LangDE: "ROC AUC", LangFR: "ROC AUC", LangES: "ROC AUC"},
 	"table.added":              {LangEN: "Added", LangPL: "Dodano", LangDE: "Hinzugefügt", LangFR: "Ajouté", LangES: "Añadido"},
 	"table.filter_placeholder": {LangEN: "Filter…", LangPL: "Filtruj…", LangDE: "Filtern…", LangFR: "Filtrer…", LangES: "Filtrar…"},
-	"table.username":           {LangEN: "Username", LangPL: "Nazwa użytkownika", LangDE: "Benutzername", LangFR: "Nom d'utilisateur", LangES: "Nombre de usuario"},
 
 	"common.remove":   {LangEN: "Remove", LangPL: "Usuń", LangDE: "Entfernen", LangFR: "Supprimer", LangES: "Eliminar"},
 	"common.choose":   {LangEN: "Choose…", LangPL: "Wybierz…", LangDE: "Auswählen…", LangFR: "Choisir…", LangES: "Elegir…"},
@@ -148,20 +146,6 @@ var translations = map[string]map[Lang]string{
 	// Error page (error.html) — see web.RenderError.
 	"error.title":     {LangEN: "Atlas — Error", LangPL: "Atlas — Błąd", LangDE: "Atlas — Fehler", LangFR: "Atlas — Erreur", LangES: "Atlas — Error"},
 	"error.not_found": {LangEN: "Page not found.", LangPL: "Nie znaleziono strony.", LangDE: "Seite nicht gefunden.", LangFR: "Page introuvable.", LangES: "Página no encontrada."},
-
-	// Login (login.html)
-	"login.title": {LangEN: "Atlas — Log in", LangPL: "Atlas — Logowanie", LangDE: "Atlas — Anmelden", LangFR: "Atlas — Connexion", LangES: "Atlas — Iniciar sesión"},
-	"login.subtitle": {
-		LangEN: "AI portfolio decision support — sign in to continue.",
-		LangPL: "Wsparcie decyzyjne AI dla portfela — zaloguj się, aby kontynuować.",
-		LangDE: "KI-gestützte Portfolio-Entscheidungshilfe — melde dich an, um fortzufahren.",
-		LangFR: "Aide à la décision de portefeuille par IA — connectez-vous pour continuer.",
-		LangES: "Apoyo a la decisión de cartera con IA — inicia sesión para continuar.",
-	},
-	"login.username":  {LangEN: "Username", LangPL: "Nazwa użytkownika", LangDE: "Benutzername", LangFR: "Nom d'utilisateur", LangES: "Nombre de usuario"},
-	"login.password":  {LangEN: "Password", LangPL: "Hasło", LangDE: "Passwort", LangFR: "Mot de passe", LangES: "Contraseña"},
-	"login.totp_code": {LangEN: "2FA code", LangPL: "Kod 2FA", LangDE: "2FA-Code", LangFR: "Code 2FA", LangES: "Código 2FA"},
-	"login.submit":    {LangEN: "Log in", LangPL: "Zaloguj się", LangDE: "Anmelden", LangFR: "Se connecter", LangES: "Iniciar sesión"},
 
 	// Dashboard (dashboard.html)
 	"dashboard.title":     {LangEN: "Atlas — Dashboard", LangPL: "Atlas — Panel główny", LangDE: "Atlas — Übersicht", LangFR: "Atlas — Tableau de bord", LangES: "Atlas — Panel de control"},
@@ -344,22 +328,8 @@ var translations = map[string]map[Lang]string{
 	},
 
 	// Account (account.html)
-	"account.title":            {LangEN: "Atlas — Account", LangPL: "Atlas — Konto", LangDE: "Atlas — Konto", LangFR: "Atlas — Compte", LangES: "Atlas — Cuenta"},
-	"account.heading":          {LangEN: "Account", LangPL: "Konto", LangDE: "Konto", LangFR: "Compte", LangES: "Cuenta"},
-	"account.two_factor":       {LangEN: "Two-factor authentication", LangPL: "Uwierzytelnianie dwuskładnikowe", LangDE: "Zwei-Faktor-Authentifizierung", LangFR: "Authentification à deux facteurs", LangES: "Autenticación de dos factores"},
-	"account.disable_2fa":      {LangEN: "Disable two-factor authentication", LangPL: "Wyłącz uwierzytelnianie dwuskładnikowe", LangDE: "Zwei-Faktor-Authentifizierung deaktivieren", LangFR: "Désactiver l'authentification à deux facteurs", LangES: "Desactivar la autenticación de dos factores"},
-	"account.disable_2fa_hint": {LangEN: "Requires your current password to confirm.", LangPL: "Wymaga potwierdzenia aktualnym hasłem.", LangDE: "Erfordert zur Bestätigung dein aktuelles Passwort.", LangFR: "Nécessite votre mot de passe actuel pour confirmer.", LangES: "Requiere tu contraseña actual para confirmar."},
-	"account.current_password": {LangEN: "Current password", LangPL: "Aktualne hasło", LangDE: "Aktuelles Passwort", LangFR: "Mot de passe actuel", LangES: "Contraseña actual"},
-	"account.disable_submit":   {LangEN: "Disable 2FA", LangPL: "Wyłącz 2FA", LangDE: "2FA deaktivieren", LangFR: "Désactiver la 2FA", LangES: "Desactivar 2FA"},
-	"account.enable_2fa":       {LangEN: "Enable two-factor authentication", LangPL: "Włącz uwierzytelnianie dwuskładnikowe", LangDE: "Zwei-Faktor-Authentifizierung aktivieren", LangFR: "Activer l'authentification à deux facteurs", LangES: "Activar la autenticación de dos factores"},
-	"account.enable_2fa_hint": {
-		LangEN: "Adds a verification code from an authenticator app (Google Authenticator, Authy, etc.) to every login.",
-		LangPL: "Dodaje do każdego logowania kod weryfikacyjny z aplikacji uwierzytelniającej (Google Authenticator, Authy itp.).",
-		LangDE: "Fügt jeder Anmeldung einen Bestätigungscode aus einer Authenticator-App (Google Authenticator, Authy usw.) hinzu.",
-		LangFR: "Ajoute un code de vérification provenant d'une application d'authentification (Google Authenticator, Authy, etc.) à chaque connexion.",
-		LangES: "Añade un código de verificación de una aplicación de autenticación (Google Authenticator, Authy, etc.) a cada inicio de sesión.",
-	},
-	"account.setup_submit": {LangEN: "Set up 2FA", LangPL: "Skonfiguruj 2FA", LangDE: "2FA einrichten", LangFR: "Configurer la 2FA", LangES: "Configurar 2FA"},
+	"account.title":   {LangEN: "Atlas — Account", LangPL: "Atlas — Konto", LangDE: "Atlas — Konto", LangFR: "Atlas — Compte", LangES: "Atlas — Cuenta"},
+	"account.heading": {LangEN: "Account", LangPL: "Konto", LangDE: "Konto", LangFR: "Compte", LangES: "Cuenta"},
 
 	"account.portfolios_heading": {LangEN: "Portfolios", LangPL: "Portfele", LangDE: "Portfolios", LangFR: "Portefeuilles", LangES: "Carteras"},
 	"account.portfolios_hint": {
@@ -453,14 +423,13 @@ var translations = map[string]map[Lang]string{
 		LangFR: "Télécharge tout ce qu'Atlas stocke — positions, transactions, liste de surveillance, historique des prix/indicateurs, recommandations, paramètres — en un seul fichier JSON, restaurable ici ou sur un nouvel environnement.",
 		LangES: "Descarga todo lo que almacena Atlas — posiciones, transacciones, lista de seguimiento, historial de precios/indicadores, recomendaciones, configuración — en un único archivo JSON, restaurable aquí o en un entorno nuevo.",
 	},
-	"account.backup_submit":    {LangEN: "Download backup", LangPL: "Pobierz kopię zapasową", LangDE: "Backup herunterladen", LangFR: "Télécharger la sauvegarde", LangES: "Descargar copia de seguridad"},
-	"account.confirm_password": {LangEN: "Confirm with your password", LangPL: "Potwierdź hasłem", LangDE: "Mit Passwort bestätigen", LangFR: "Confirmez avec votre mot de passe", LangES: "Confirma con tu contraseña"},
-	"account.leader_heading":   {LangEN: "Background polling", LangPL: "Odpytywanie w tle", LangDE: "Hintergrund-Polling", LangFR: "Interrogation en arrière-plan", LangES: "Sondeo en segundo plano"},
-	"account.leader_self":      {LangEN: "This instance is polling.", LangPL: "Ta instancja odpytuje.", LangDE: "Diese Instanz fragt ab.", LangFR: "Cette instance interroge.", LangES: "Esta instancia sondea."},
-	"account.leader_other":     {LangEN: "Another instance is polling:", LangPL: "Odpytuje inna instancja:", LangDE: "Eine andere Instanz fragt ab:", LangFR: "Une autre instance interroge :", LangES: "Otra instancia sondea:"},
-	"account.leader_none":      {LangEN: "No instance currently holds the polling lease.", LangPL: "Żadna instancja nie ma teraz dzierżawy odpytywania.", LangDE: "Keine Instanz hält derzeit die Polling-Lease.", LangFR: "Aucune instance ne détient actuellement le bail d'interrogation.", LangES: "Ninguna instancia tiene actualmente el arrendamiento de sondeo."},
-	"account.restore_file":     {LangEN: "Backup JSON file", LangPL: "Plik JSON kopii zapasowej", LangDE: "Backup-JSON-Datei", LangFR: "Fichier JSON de sauvegarde", LangES: "Archivo JSON de copia de seguridad"},
-	"account.restore_submit":   {LangEN: "Restore from backup", LangPL: "Przywróć z kopii zapasowej", LangDE: "Aus Backup wiederherstellen", LangFR: "Restaurer depuis la sauvegarde", LangES: "Restaurar desde copia de seguridad"},
+	"account.backup_submit":  {LangEN: "Download backup", LangPL: "Pobierz kopię zapasową", LangDE: "Backup herunterladen", LangFR: "Télécharger la sauvegarde", LangES: "Descargar copia de seguridad"},
+	"account.leader_heading": {LangEN: "Background polling", LangPL: "Odpytywanie w tle", LangDE: "Hintergrund-Polling", LangFR: "Interrogation en arrière-plan", LangES: "Sondeo en segundo plano"},
+	"account.leader_self":    {LangEN: "This instance is polling.", LangPL: "Ta instancja odpytuje.", LangDE: "Diese Instanz fragt ab.", LangFR: "Cette instance interroge.", LangES: "Esta instancia sondea."},
+	"account.leader_other":   {LangEN: "Another instance is polling:", LangPL: "Odpytuje inna instancja:", LangDE: "Eine andere Instanz fragt ab:", LangFR: "Une autre instance interroge :", LangES: "Otra instancia sondea:"},
+	"account.leader_none":    {LangEN: "No instance currently holds the polling lease.", LangPL: "Żadna instancja nie ma teraz dzierżawy odpytywania.", LangDE: "Keine Instanz hält derzeit die Polling-Lease.", LangFR: "Aucune instance ne détient actuellement le bail d'interrogation.", LangES: "Ninguna instancia tiene actualmente el arrendamiento de sondeo."},
+	"account.restore_file":   {LangEN: "Backup JSON file", LangPL: "Plik JSON kopii zapasowej", LangDE: "Backup-JSON-Datei", LangFR: "Fichier JSON de sauvegarde", LangES: "Archivo JSON de copia de seguridad"},
+	"account.restore_submit": {LangEN: "Restore from backup", LangPL: "Przywróć z kopii zapasowej", LangDE: "Aus Backup wiederherstellen", LangFR: "Restaurer depuis la sauvegarde", LangES: "Restaurar desde copia de seguridad"},
 	"confirm.restore_backup": {
 		LangEN: "Restoring will replace ALL current data with the contents of this file. Continue?",
 		LangPL: "Przywrócenie zastąpi WSZYSTKIE obecne dane zawartością tego pliku. Kontynuować?",
@@ -471,11 +440,11 @@ var translations = map[string]map[Lang]string{
 
 	"account.danger_heading": {LangEN: "Danger zone", LangPL: "Strefa zagrożenia", LangDE: "Gefahrenzone", LangFR: "Zone dangereuse", LangES: "Zona de peligro"},
 	"account.flush_hint": {
-		LangEN: "Permanently wipes positions, transactions, watchlist, price/indicator history, recommendations, and ML/2FA settings — back to a freshly installed Atlas. Your login isn't affected. There is no undo short of restoring a backup taken beforehand.",
-		LangPL: "Trwale usuwa pozycje, transakcje, listę obserwowanych, historię cen/wskaźników, rekomendacje oraz ustawienia ML/2FA — Atlas wraca do stanu świeżej instalacji. Logowanie pozostaje bez zmian. Nie ma cofnięcia poza przywróceniem wcześniej zrobionej kopii zapasowej.",
-		LangDE: "Löscht dauerhaft Positionen, Transaktionen, Beobachtungsliste, Kurs-/Indikatorenverlauf, Empfehlungen sowie ML-/2FA-Einstellungen — Atlas kehrt in den Zustand einer frischen Installation zurück. Dein Login ist davon nicht betroffen. Es gibt kein Rückgängigmachen außer dem Wiederherstellen eines zuvor erstellten Backups.",
-		LangFR: "Efface définitivement les positions, transactions, la liste de surveillance, l'historique des prix/indicateurs, les recommandations et les paramètres ML/2FA — retour à un Atlas fraîchement installé. Votre connexion n'est pas affectée. Il n'y a aucune annulation possible, hormis la restauration d'une sauvegarde effectuée au préalable.",
-		LangES: "Borra permanentemente posiciones, transacciones, lista de seguimiento, historial de precios/indicadores, recomendaciones y configuración de ML/2FA — vuelve a un Atlas recién instalado. Tu inicio de sesión no se ve afectado. No hay forma de deshacerlo salvo restaurar una copia de seguridad hecha de antemano.",
+		LangEN: "Permanently wipes positions, transactions, watchlist, price/indicator history, recommendations, and ML settings — back to a freshly installed Atlas. Your login isn't affected. There is no undo short of restoring a backup taken beforehand.",
+		LangPL: "Trwale usuwa pozycje, transakcje, listę obserwowanych, historię cen/wskaźników, rekomendacje oraz ustawienia ML — Atlas wraca do stanu świeżej instalacji. Logowanie pozostaje bez zmian. Nie ma cofnięcia poza przywróceniem wcześniej zrobionej kopii zapasowej.",
+		LangDE: "Löscht dauerhaft Positionen, Transaktionen, Beobachtungsliste, Kurs-/Indikatorenverlauf, Empfehlungen sowie ML-Einstellungen — Atlas kehrt in den Zustand einer frischen Installation zurück. Dein Login ist davon nicht betroffen. Es gibt kein Rückgängigmachen außer dem Wiederherstellen eines zuvor erstellten Backups.",
+		LangFR: "Efface définitivement les positions, transactions, la liste de surveillance, l'historique des prix/indicateurs, les recommandations et les paramètres ML — retour à un Atlas fraîchement installé. Votre connexion n'est pas affectée. Il n'y a aucune annulation possible, hormis la restauration d'une sauvegarde effectuée au préalable.",
+		LangES: "Borra permanentemente posiciones, transacciones, lista de seguimiento, historial de precios/indicadores, recomendaciones y configuración de ML — vuelve a un Atlas recién instalado. Tu inicio de sesión no se ve afectado. No hay forma de deshacerlo salvo restaurar una copia de seguridad hecha de antemano.",
 	},
 	"account.flush_submit": {LangEN: "Flush all data", LangPL: "Wyczyść wszystkie dane", LangDE: "Alle Daten löschen", LangFR: "Effacer toutes les données", LangES: "Borrar todos los datos"},
 	"account.last_backup":  {LangEN: "Last backup:", LangPL: "Ostatnia kopia zapasowa:", LangDE: "Letztes Backup:", LangFR: "Dernière sauvegarde :", LangES: "Última copia de seguridad:"},
@@ -494,34 +463,12 @@ var translations = map[string]map[Lang]string{
 		LangES: "Bloqueado — tu última copia de seguridad tiene más de 5 minutos. Descarga una nueva arriba; el botón se desbloquea justo después.",
 	},
 	"confirm.flush_all": {
-		LangEN: "This permanently deletes ALL Atlas data (positions, transactions, watchlist, price history, recommendations, ML/2FA settings) and cannot be undone. Have you downloaded a backup? Continue?",
-		LangPL: "To trwale usuwa WSZYSTKIE dane Atlasa (pozycje, transakcje, listę obserwowanych, historię cen, rekomendacje, ustawienia ML/2FA) i nie da się tego cofnąć. Czy pobrałeś(-aś) kopię zapasową? Kontynuować?",
-		LangDE: "Dies löscht dauerhaft ALLE Atlas-Daten (Positionen, Transaktionen, Beobachtungsliste, Kursverlauf, Empfehlungen, ML-/2FA-Einstellungen) und kann nicht rückgängig gemacht werden. Hast du ein Backup heruntergeladen? Fortfahren?",
-		LangFR: "Ceci supprime définitivement TOUTES les données d'Atlas (positions, transactions, liste de surveillance, historique des prix, recommandations, paramètres ML/2FA) et ne peut pas être annulé. Avez-vous téléchargé une sauvegarde ? Continuer ?",
-		LangES: "Esto elimina permanentemente TODOS los datos de Atlas (posiciones, transacciones, lista de seguimiento, historial de precios, recomendaciones, configuración de ML/2FA) y no se puede deshacer. ¿Has descargado una copia de seguridad? ¿Continuar?",
+		LangEN: "This permanently deletes ALL Atlas data (positions, transactions, watchlist, price history, recommendations, ML settings) and cannot be undone. Have you downloaded a backup? Continue?",
+		LangPL: "To trwale usuwa WSZYSTKIE dane Atlasa (pozycje, transakcje, listę obserwowanych, historię cen, rekomendacje, ustawienia ML) i nie da się tego cofnąć. Czy pobrałeś(-aś) kopię zapasową? Kontynuować?",
+		LangDE: "Dies löscht dauerhaft ALLE Atlas-Daten (Positionen, Transaktionen, Beobachtungsliste, Kursverlauf, Empfehlungen, ML-Einstellungen) und kann nicht rückgängig gemacht werden. Hast du ein Backup heruntergeladen? Fortfahren?",
+		LangFR: "Ceci supprime définitivement TOUTES les données d'Atlas (positions, transactions, liste de surveillance, historique des prix, recommandations, paramètres ML) et ne peut pas être annulé. Avez-vous téléchargé une sauvegarde ? Continuer ?",
+		LangES: "Esto elimina permanentemente TODOS los datos de Atlas (posiciones, transacciones, lista de seguimiento, historial de precios, recomendaciones, configuración de ML) y no se puede deshacer. ¿Has descargado una copia de seguridad? ¿Continuar?",
 	},
-
-	// TOTP enrollment (totp_enroll.html)
-	"totp.title":   {LangEN: "Atlas — Set up 2FA", LangPL: "Atlas — Konfiguracja 2FA", LangDE: "Atlas — 2FA einrichten", LangFR: "Atlas — Configuration de la 2FA", LangES: "Atlas — Configurar 2FA"},
-	"totp.heading": {LangEN: "Set up two-factor authentication", LangPL: "Konfiguracja uwierzytelniania dwuskładnikowego", LangDE: "Zwei-Faktor-Authentifizierung einrichten", LangFR: "Configurer l'authentification à deux facteurs", LangES: "Configurar la autenticación de dos factores"},
-	"totp.scan_hint": {
-		LangEN: "Scan this QR code with an authenticator app (Google Authenticator, Authy, etc.):",
-		LangPL: "Zeskanuj ten kod QR aplikacją uwierzytelniającą (Google Authenticator, Authy itp.):",
-		LangDE: "Scanne diesen QR-Code mit einer Authenticator-App (Google Authenticator, Authy usw.):",
-		LangFR: "Scannez ce code QR avec une application d'authentification (Google Authenticator, Authy, etc.) :",
-		LangES: "Escanea este código QR con una aplicación de autenticación (Google Authenticator, Authy, etc.):",
-	},
-	"totp.manual_hint":     {LangEN: "Can't scan? Enter this key manually:", LangPL: "Nie możesz zeskanować? Wpisz ten klucz ręcznie:", LangDE: "Kannst du nicht scannen? Gib diesen Schlüssel manuell ein:", LangFR: "Impossible de scanner ? Saisissez cette clé manuellement :", LangES: "¿No puedes escanear? Introduce esta clave manualmente:"},
-	"totp.confirm_heading": {LangEN: "Confirm", LangPL: "Potwierdź", LangDE: "Bestätigen", LangFR: "Confirmer", LangES: "Confirmar"},
-	"totp.confirm_hint": {
-		LangEN: "Enter the current 6-digit code from the app to finish enabling 2FA.",
-		LangPL: "Wpisz aktualny 6-cyfrowy kod z aplikacji, aby zakończyć włączanie 2FA.",
-		LangDE: "Gib den aktuellen 6-stelligen Code aus der App ein, um die Aktivierung von 2FA abzuschließen.",
-		LangFR: "Saisissez le code actuel à 6 chiffres de l'application pour terminer l'activation de la 2FA.",
-		LangES: "Introduce el código actual de 6 dígitos de la aplicación para terminar de activar la 2FA.",
-	},
-	"totp.verification_code": {LangEN: "Verification code", LangPL: "Kod weryfikacyjny", LangDE: "Bestätigungscode", LangFR: "Code de vérification", LangES: "Código de verificación"},
-	"totp.submit":            {LangEN: "Confirm and enable", LangPL: "Potwierdź i włącz", LangDE: "Bestätigen und aktivieren", LangFR: "Confirmer et activer", LangES: "Confirmar y activar"},
 
 	// Recommendation/trade action labels — applied via actionLabel wherever a raw BUY/SELL/HOLD/
 	// ACCUMULATE/REDUCE/WAIT value is displayed (recommendations, alerts, backtests trades, the

@@ -1,9 +1,7 @@
 name: CI
 
 # Implements the "PR" and "Build" stages of the pipeline documented in docs/deployment.md.
-# The "Push" and "Deploy" stages are explicitly out of scope for this project — they'd need a
-# real container registry and production cluster credentials. See deploy/README.md's
-# "Not yet done / out of scope" section.
+# There is no push or deploy stage: Atlas is a local tool, run with Docker Compose.
 #
 # go-version is "stable" rather than pinned to go.mod's "go 1.26.8" on purpose: that
 # directive is a minimum language version, not a toolchain pin, and Go only backports

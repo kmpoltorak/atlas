@@ -6,9 +6,8 @@ import (
 	"atlas/internal/app/web"
 )
 
-// langCookieName holds the dashboard's display-language preference (see web.Lang) — separate
-// from sessionCookieName since it's a UI preference, not an auth credential, and (unlike the
-// session) should survive logout and persist for a long time.
+// langCookieName holds the dashboard's display-language preference (see web.Lang), kept for a
+// long time since it is a UI preference.
 const langCookieName = "atlas_lang"
 
 // langCookieMaxAge is a year: a display preference, not a session, so it should stick around.

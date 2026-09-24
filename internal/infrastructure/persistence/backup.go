@@ -27,7 +27,7 @@ import (
 var backupTables = []string{
 	"symbols", "portfolios", "watchlists", "watchlist_items", "positions", "transactions",
 	"prices", "indicators", "recommendations", "predictions", "backtest_runs",
-	"engine_settings", "ml_model_selection", "auth_settings",
+	"engine_settings", "ml_model_selection",
 	// alert_cursor is included because losing it is not neutral: restored without it, the next
 	// poll sees every action as new and re-announces the entire watchlist.
 	"alert_cursor",
@@ -159,10 +159,12 @@ func writeTableRows(ctx context.Context, tx *sqlx.Tx, w io.Writer, table string)
 // other JSON that happens to be an object (see validateBackup).
 const (
 	backupFormat = "atlas-backup"
-	// backupVersion 2 added alert_cursor. Version 1 documents are still restorable — see
-	// validateBackup — because refusing yesterday's backup is a worse failure than restoring one
-	// without a notification cursor, which simply means the next poll re-announces the watchlist.
-	backupVersion = 2
+	// backupVersion 2 added alert_cursor; 3 dropped auth_settings along with login itself
+	// (migrations/023). Older documents are still restorable — see validateBackup — because
+	// refusing yesterday's backup is a worse failure than restoring one without a notification
+	// cursor, which simply means the next poll re-announces the watchlist. Their auth_settings
+	// rows are ignored: there is no table left to put them in.
+	backupVersion = 3
 	// backupMinVersion is the oldest document this build can restore.
 	backupMinVersion = 1
 )
@@ -171,17 +173,18 @@ const (
 // table to a backup is a format change, and pretending otherwise is how a restore starts silently
 // rejecting every file taken before the change.
 func tablesForVersion(version int) []string {
-	if version < 2 {
-		// v1 predates alert_cursor.
-		v1 := make([]string, 0, len(backupTables))
-		for _, table := range backupTables {
-			if table != "alert_cursor" {
-				v1 = append(v1, table)
-			}
-		}
-		return v1
+	if version >= 3 {
+		return backupTables
 	}
-	return backupTables
+	// v1 and v2 still carried auth_settings; v1 also predates alert_cursor.
+	tables := make([]string, 0, len(backupTables)+1)
+	for _, table := range backupTables {
+		if version < 2 && table == "alert_cursor" {
+			continue
+		}
+		tables = append(tables, table)
+	}
+	return append(tables, "auth_settings")
 }
 
 // backupTimeout bounds a whole backup or restore. Deliberately far longer than queryTimeout:
@@ -413,11 +416,8 @@ var ErrBackupTooOld = fmt.Errorf("last backup is more than %s old — download a
 const FlushBackupFreshness = 5 * time.Minute
 
 // FlushAll deletes every row of every table in backupTables — a full factory reset, back to the
-// state a freshly migrated, never-used database would be in. Login itself is unaffected: the
-// admin username/password come from ADMIN_USERNAME/ADMIN_PASSWORD_HASH (see config.Load), not
-// any of these tables — only 2FA enrollment (auth_settings) is reset, matching a real fresh
-// install where 2FA has never been set up. Callers must also reset whatever in-memory state
-// mirrors these tables (see portfolio.UseCase.Reload/watchlist.UseCase.Reload) — this only
+// state a freshly migrated, never-used database would be in. Callers must also reset whatever
+// in-memory state mirrors these tables (see portfolio.UseCase.Reload/watchlist.UseCase.Reload) — this only
 // touches the database.
 //
 // Refuses outright — a server-side gate, not just a disabled button (see migrations/017's

@@ -1023,7 +1023,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "prometheus": {
-                    "description": "Prometheus/Alertmanager/Grafana are purely informational, like Trainer — omitted when\ntheir URL is configured empty, and never affect Status/the HTTP status code the way\nDatabase/Redis do: atlas-api doesn't depend on any of them to function, so Docker/\nKubernetes restarting it because Grafana (say) is down would be exactly the wrong\nresponse to that outage.",
+                    "description": "Prometheus/Alertmanager/Grafana are purely informational, like Trainer — omitted when\ntheir URL is configured empty, and never affect Status/the HTTP status code the way\nDatabase/Redis do: atlas-api doesn't depend on any of them to function, so Docker\nrestarting it because Grafana (say) is down would be exactly the wrong\nresponse to that outage.",
                     "type": "string"
                 },
                 "redis": {
@@ -1036,7 +1036,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "trainer": {
-                    "description": "Trainer is omitted entirely when TRAINER_URL isn't configured — the trainer sidecar is a\ngenuinely optional component (Compose runs it, Kubernetes does not), so its absence\nis not reported as an error the way Database/Redis would be.",
+                    "description": "Trainer is omitted entirely when TRAINER_URL isn't configured — the trainer sidecar is a\ngenuinely optional component (TRAINER_URL empty hides it), so its absence\nis not reported as an error the way Database/Redis would be.",
                     "type": "string"
                 }
             }
@@ -1381,7 +1381,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "Atlas API",
-	Description:      "Decision-support trading-signal API: market data, portfolio, watchlist,\nrecommendations, ML predictions, and backtests. Atlas never executes trades —\nevery recommendation is advisory only.\n\nEvery route except /health, /metrics, /login, and /static/* requires a session\ncookie (see internal/app/auth_middleware.go) whenever ADMIN_USERNAME/\nADMIN_PASSWORD_HASH are set — log in via the dashboard in the same browser first,\nthen \"Try it out\" here reuses that session automatically.",
+	Description:      "Decision-support trading-signal API: market data, portfolio, watchlist,\nrecommendations, ML predictions, and backtests. Atlas never executes trades —\nevery recommendation is advisory only.\n\nThere is no login: Atlas is a local, single-operator tool, reachable on\nloopback only (see docker-compose.yml).",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

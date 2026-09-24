@@ -3,7 +3,6 @@
 /api
 /atlas-api
 /export-training-data
-/generate-admin-credentials
 /trainer
 *.exe
 /bin/
@@ -21,7 +20,7 @@ coverage.out
 # Logs
 *.log
 
-# Local backup dumps (e.g. from rehearsing deploy/RUNBOOK.md's restore procedure)
+# Local backup dumps (e.g. from rehearsing docs/runbook.md's restore procedure)
 *.dump
 
 # IDE and editor leftovers

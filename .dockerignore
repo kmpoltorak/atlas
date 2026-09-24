@@ -15,7 +15,7 @@ __pycache__
 .impeccable
 .claude
 
-# Same reasoning as the venvs: a local pg_dump from rehearsing deploy/RUNBOOK.md's restore
+# Same reasoning as the venvs: a local pg_dump from rehearsing docs/runbook.md's restore
 # procedure is easily gigabytes, and nothing in any image reads one.
 *.dump
 

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	analyzerUC "atlas/internal/application/analyzer"
-	authUC "atlas/internal/application/auth"
 	decisionUC "atlas/internal/application/decision"
 	portfolioUC "atlas/internal/application/portfolio"
 	"atlas/internal/config"
@@ -95,9 +94,6 @@ func newAccountHTTPTestApplication(t *testing.T) (*Application, http.Handler) {
 		Logger:    zap.NewNop(),
 		Storage:   storage,
 		Portfolio: uc,
-		// No credentials configured: auth is off, which is the same state the dashboard runs in
-		// locally and is all this page needs to render.
-		Auth: authUC.NewUseCase("", "", nil, storage),
 		// A real orchestrator: the page reads its ML toggle. ML itself stays nil, which is the
 		// normal "no model configured" state the page has to render anyway.
 		Orchestrator: decisionUC.NewOrchestrator(analyzerUC.NewUseCase(), uc, decisionUC.NewUseCase()),

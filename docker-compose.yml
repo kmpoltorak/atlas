@@ -30,13 +30,6 @@ services:
       # loopback only. Set REDIS_PASSWORD in .env and the redis service below picks up the same
       # value as its requirepass, so the two can't drift.
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      # Passed through so a deployment that does run TLS-enabled backends can say so; this stack's
-      # own Postgres and Redis serve plaintext on the private Compose network, which is why the
-      # defaults are off. REQUIRE_BACKEND_TLS is independent of COOKIE_SECURE below — see
-      # .env.example's "Serving over HTTPS" section.
-      DATABASE_SSLMODE: ${DATABASE_SSLMODE:-disable}
-      REDIS_TLS: ${REDIS_TLS:-false}
-      REQUIRE_BACKEND_TLS: ${REQUIRE_BACKEND_TLS:-false}
       # 0 keeps every recommendation/indicator/prediction row forever, which is fine for a
       # laptop run. Set a day count on anything long-lived (see config.DerivedRetentionDays).
       DERIVED_RETENTION_DAYS: ${DERIVED_RETENTION_DAYS:-0}
@@ -74,21 +67,6 @@ services:
       # a working default (ENV LIBONNXRUNTIME_PATH=/usr/lib/libonnxruntime.so) matching where
       # it bundles the real onnxruntime .so; only override this if you rebuilt the image with
       # a different runtime location.
-      # Both empty by default: no login gate at all (see internal/application/auth's Enabled),
-      # matching every prior curl-based workflow this project already relies on. Set these in
-      # the shell/.env before `docker compose up` to protect the web dashboard/API — use
-      # `go run ./cmd/generate-admin-credentials` to produce a real hash, e.g.:
-      #   ADMIN_USERNAME=admin ADMIN_PASSWORD_HASH='$2a$...' docker compose up -d
-      # 2FA is not configured here at all: enable it from the dashboard after logging in
-      # (Account → Set up 2FA), which walks through a real QR-code enrollment — see
-      # internal/application/auth's doc comment.
-      AUTH_DISABLED: ${AUTH_DISABLED:-true}
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-}
-      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
-      # False by default, matching this stack running over plain HTTP with no reverse proxy in
-      # front. Set to "true" once Atlas is actually served over HTTPS through a reverse proxy —
-      # see .env.example's "Serving over HTTPS" section.
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       # The atlas-trainer service below runs as part of the default stack, so the Account page's
       # "Train new candidate" and model-delete buttons work out of the box. Set TRAINER_URL= (empty)
       # in .env to hide them; the page then explains how to run training/retrain.sh by hand.

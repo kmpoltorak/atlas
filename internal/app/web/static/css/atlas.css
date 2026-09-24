@@ -34,14 +34,14 @@
 /* Every content page follows the same shape: an <h2> section label directly above a table or
    form. A hairline under it reads as a deliberate section break rather than the label just
    floating above whatever comes next — and doubles as a title/content divider inside the
-   "record transaction" / "add symbol" / 2FA cards, since those card titles are <h2> too. */
+   "record transaction" / "add symbol" cards, since those card titles are <h2> too. */
 main h2 {
   padding-bottom: 0.4rem;
   border-bottom: 1px solid var(--bs-border-color-translucent);
 }
 
 /* Reusable max-width steps for the small forms-in-cards pattern (record transaction, add to
-   watchlist, 2FA setup, login) — replaces one-off inline max-width styles with something
+   watchlist) — replaces one-off inline max-width styles with something
    consistent and greppable. */
 .card-sm { max-width: 24rem; }
 .card-md { max-width: 28rem; }
@@ -51,12 +51,6 @@ main h2 {
 .scroll-box {
   max-height: 20rem;
   overflow: auto;
-}
-
-/* iOS Safari's address bar changes the visible viewport height mid-scroll; 100vh causes the
-   login card to jump as it shows/hides. dvh tracks the actual visible viewport instead. */
-.min-vh-dynamic {
-  min-height: 100dvh;
 }
 
 /* Cards: a shadow tinted to the page background instead of Bootstrap's flat 1px-border-only

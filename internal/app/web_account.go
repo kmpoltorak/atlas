@@ -1,30 +1,25 @@
 package app
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 
 	"atlas/internal/app/web"
-	authUC "atlas/internal/application/auth"
 	mlUC "atlas/internal/application/ml"
 	portfolioUC "atlas/internal/application/portfolio"
 	"atlas/internal/infrastructure/persistence"
 
-	qrcode "github.com/skip2/go-qrcode"
 	"go.uber.org/zap"
 )
 
-// Account page: credentials and 2FA, the ML model picker and engine toggle, background-polling
-// status, and the three whole-database operations (backup, restore, flush). Split out of
-// web_handlers.go, which had grown past 1300 lines — this is the part with its own distinct
-// concern, destructive operations that require re-authentication.
+// Account page: portfolios, the ML model picker and engine toggle, background-polling status, and
+// the three whole-database operations (backup, restore, flush). Split out of web_handlers.go,
+// which had grown past 1300 lines. Restore and flush are confirmed in the browser, and flush also
+// refuses server-side without a fresh backup (persistence.FlushAll).
 
-// accountPageHandler shows the current 2FA status and the enable/disable entry points — see
-// docs/deployment.md's Implementation status note: 2FA is managed here, from the dashboard,
-// not a static env-var secret.
+// accountPageHandler renders the Account page.
 func (a *Application) accountPageHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -46,11 +41,6 @@ func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, 
 		a = scoped
 	} else {
 		a.Logger.Warn("could not load the current portfolio list for the account page", zap.Error(err))
-	}
-	enabled, err := a.Auth.TOTPStatus()
-	if err != nil {
-		a.renderError(w, r, http.StatusInternalServerError, err.Error())
-		return
 	}
 	trainerConfigured := a.Trainer != nil
 	var trainerStatus web.TrainerStatus
@@ -89,12 +79,9 @@ func (a *Application) renderAccountPage(w http.ResponseWriter, r *http.Request, 
 	}
 
 	web.Render(w, "account", web.AccountPage{
-		AuthEnabled:           a.Auth.Enabled(),
 		Leader:                leader,
 		LeaderIsSelf:          leader != "" && leader == a.Leader.Identity(),
 		Lang:                  a.resolveLang(r),
-		Username:              a.Auth.Username,
-		TOTPEnabled:           enabled,
 		Error:                 errMsg,
 		Success:               successMsg,
 		CorrectionModels:      a.modelOptions(mlUC.RoleCorrection, a.ML.CurrentModel()),
@@ -424,12 +411,6 @@ func (a *Application) accountRestoreHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	defer r.MultipartForm.RemoveAll()
-	// Same re-authentication as the flush below: a restore replaces every row Atlas has, which
-	// is destructive in exactly the same way even though it is framed as recovery.
-	if err := a.Auth.Reauthenticate(r.FormValue("password")); err != nil {
-		a.renderAccountPage(w, r, "Enter your account password to confirm restoring a backup.", "")
-		return
-	}
 	file, _, err := r.FormFile("backup")
 	if err != nil {
 		a.renderAccountPage(w, r, "Choose a backup file to restore.", "")
@@ -454,10 +435,10 @@ func (a *Application) accountRestoreHandler(w http.ResponseWriter, r *http.Reque
 }
 
 // accountFlushHandler wipes every table Atlas stores data in — positions, transactions,
-// watchlist, price/indicator history, recommendations, ML/2FA settings — back to the state a
-// freshly migrated database would be in (see persistence.TimescaleDB.FlushAll's doc comment for
-// exactly what survives, notably login itself). Confirmed client-side (account.html) since there
-// is no undo short of a prior backup.
+// watchlist, price/indicator history, recommendations, ML settings — back to the state a freshly
+// migrated database would be in (see persistence.TimescaleDB.FlushAll). Confirmed client-side
+// (account.html), and refused server-side without a fresh backup, since there is no undo short of
+// restoring one.
 func (a *Application) accountFlushHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
@@ -469,12 +450,6 @@ func (a *Application) accountFlushHandler(w http.ResponseWriter, r *http.Request
 	}
 	if err := r.ParseForm(); err != nil {
 		a.renderAccountPage(w, r, "Invalid form submission.", "")
-		return
-	}
-	// A session cookie is not enough for this one: it proves somebody logged in at some point,
-	// not that the account holder is the one wiping the database right now.
-	if err := a.Auth.Reauthenticate(r.FormValue("password")); err != nil {
-		a.renderAccountPage(w, r, "Enter your account password to confirm wiping all data.", "")
 		return
 	}
 	a.extendWriteDeadline(w, backupOperationTimeout)
@@ -504,126 +479,4 @@ func (a *Application) reloadCachedState() {
 		a.Logger.Warn("failed to reload watchlist state after bulk data change", zap.Error(err))
 	}
 	a.Orchestrator.SetMLEnabled(resolveMLEnabled(a.Storage, a.Logger, a.Config.MLEnabled))
-}
-
-// totpSetupHandler starts a new enrollment (authUC.UseCase.BeginTOTPEnrollment) and renders the
-// QR-code confirmation page. Requires a valid session (like every /dashboard/* route), read via
-// the same cookie requireAuth already validated.
-func (a *Application) totpSetupHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		methodNotAllowed(w)
-		return
-	}
-	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
-	secret, err := a.Auth.BeginTOTPEnrollment(r.Context(), cookie.Value)
-	if errors.Is(err, authUC.ErrTOTPAlreadyEnabled) {
-		a.renderAccountPage(w, r, err.Error(), "")
-		return
-	}
-	if err != nil {
-		a.renderError(w, r, http.StatusInternalServerError, err.Error())
-		return
-	}
-	web.Render(w, "totp_enroll", web.TOTPEnrollPage{Lang: a.resolveLang(r), Secret: secret})
-}
-
-// totpQRHandler serves the pending enrollment's QR code as a PNG image — rendered via
-// github.com/skip2/go-qrcode (QR encoding is a well-specified but genuinely intricate matrix/
-// error-correction algorithm, unlike TOTP's straightforward HMAC construction, so a maintained
-// library is the right call here rather than hand-rolling it). Looks up the same pending secret
-// PendingTOTPSecret already stashed for this session, so the image matches whatever
-// totpSetupHandler rendered the manual key for.
-func (a *Application) totpQRHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		methodNotAllowed(w)
-		return
-	}
-	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
-	secret, found, err := a.Auth.PendingTOTPSecret(r.Context(), cookie.Value)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if !found {
-		http.Error(w, "no pending 2FA enrollment for this session — start again at /dashboard/account/totp/setup", http.StatusNotFound)
-		return
-	}
-	uri := authUC.TOTPProvisioningURI("Atlas", a.Auth.Username, secret)
-	png, err := qrcode.Encode(uri, qrcode.Medium, 256)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "image/png")
-	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write(png)
-}
-
-// totpConfirmHandler verifies the code the operator typed in against the pending secret and, on
-// success, durably activates 2FA (authUC.UseCase.ConfirmTOTPEnrollment) — this is the step that
-// proves the authenticator app actually has the secret, not just that a QR code was shown once.
-func (a *Application) totpConfirmHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w)
-		return
-	}
-	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
-	if err := r.ParseForm(); err != nil {
-		web.Render(w, "totp_enroll", web.TOTPEnrollPage{Lang: a.resolveLang(r), Error: "Invalid form submission."})
-		return
-	}
-	token, err := a.Auth.ConfirmTOTPEnrollment(r.Context(), cookie.Value, r.FormValue("code"))
-	if errors.Is(err, authUC.ErrTOTPAlreadyEnabled) {
-		a.renderAccountPage(w, r, err.Error(), "")
-		return
-	}
-	if err != nil {
-		secret, _, _ := a.Auth.PendingTOTPSecret(r.Context(), cookie.Value)
-		web.Render(w, "totp_enroll", web.TOTPEnrollPage{Lang: a.resolveLang(r), Secret: secret, Error: "Incorrect code — try again."})
-		return
-	}
-	a.setSessionCookie(w, token)
-	a.flashRedirect(w, r, "/dashboard/account", "Two-factor authentication is now enabled. Every other session has been signed out.")
-}
-
-// totpDisableHandler turns 2FA off after re-verifying the current password (authUC.UseCase.
-// DisableTOTP) — a real re-auth check, not just "there's a valid session cookie", since this
-// weakens the account.
-func (a *Application) totpDisableHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w)
-		return
-	}
-	if err := r.ParseForm(); err != nil {
-		a.renderAccountPage(w, r, "Invalid form submission.", "")
-		return
-	}
-	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
-	token, err := a.Auth.DisableTOTP(r.Context(), cookie.Value, r.FormValue("password"))
-	if errors.Is(err, authUC.ErrInvalidCredentials) {
-		a.renderAccountPage(w, r, "Incorrect password.", "")
-		return
-	}
-	if err != nil {
-		a.renderAccountPage(w, r, err.Error(), "")
-		return
-	}
-	a.setSessionCookie(w, token)
-	a.flashRedirect(w, r, "/dashboard/account", "Two-factor authentication has been disabled. Every other session has been signed out.")
 }

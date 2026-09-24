@@ -13,8 +13,7 @@ import (
 )
 
 // stubExchangeRates is a real, deterministic ExchangeRateSource test double — not a mock of
-// business logic, matching this codebase's convention elsewhere (e.g. auth's in-memory session
-// store).
+// business logic, matching this codebase's convention elsewhere.
 type stubExchangeRates struct {
 	rates map[currency.Code]float64
 	err   error

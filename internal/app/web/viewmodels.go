@@ -11,13 +11,6 @@ import (
 	"atlas/internal/domain/watchlist"
 )
 
-// LoginPage is the view model for templates/login.html.
-type LoginPage struct {
-	Lang         Lang
-	Error        string
-	RequiresTOTP bool
-}
-
 // ErrorPage is the view model for templates/error.html — see RenderError.
 type ErrorPage struct {
 	Lang    Lang
@@ -238,16 +231,10 @@ func (s SymbolInfo) ChangePercent() float64 {
 
 // AccountPage is the view model for templates/account.html.
 type AccountPage struct {
-	Lang        Lang
-	Username    string
-	TOTPEnabled bool
-	Error       string
-	Success     string
+	Lang    Lang
+	Error   string
+	Success string
 
-	// AuthEnabled gates the password re-entry fields on Restore and Flush. With no login gate
-	// configured there is no password to ask for, so the fields would be an unanswerable prompt
-	// rather than a safeguard (see auth.UseCase.Reauthenticate).
-	AuthEnabled bool
 	// Leader/LeaderIsSelf say which replica currently holds the polling lease, so "why is
 	// nothing polling" is answerable from the UI rather than a database session (see app.Leader).
 	Leader       string
@@ -325,11 +312,4 @@ type ModelOption struct {
 	Label       string
 	Description string
 	Active      bool
-}
-
-// TOTPEnrollPage is the view model for templates/totp_enroll.html.
-type TOTPEnrollPage struct {
-	Lang   Lang
-	Secret string
-	Error  string
 }

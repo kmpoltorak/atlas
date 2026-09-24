@@ -6,18 +6,17 @@ import (
 )
 
 // clearEnv unsets every env var Load reads, so a test can assert on Load's actual defaults
-// regardless of what's set in the process running the test suite (a real ADMIN_USERNAME, say,
+// regardless of what's set in the process running the test suite (a real DATABASE_HOST, say,
 // in a developer's shell would otherwise silently change what "no env set" means here).
 func clearEnv(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
-		"AUTH_DISABLED", "SERVER_PORT", "DATABASE_SSLMODE", "REDIS_PASSWORD", "REDIS_TLS", "LOG_LEVEL", "DATABASE_HOST", "DATABASE_PORT", "DATABASE_NAME",
+		"SERVER_PORT", "DATABASE_SSLMODE", "REDIS_PASSWORD", "REDIS_TLS", "LOG_LEVEL", "DATABASE_HOST", "DATABASE_PORT", "DATABASE_NAME",
 		"DATABASE_USER", "DATABASE_PASSWORD", "REDIS_HOST", "REDIS_PORT",
 		"DISCORD_WEBHOOK_URL", "COLLECTOR_WINDOW_DAYS",
 		"DERIVED_RETENTION_DAYS", "ALERT_POLL_INTERVAL_SECONDS", "ML_ENABLED", "MODEL_PATH", "RECOVERY_MODEL_PATH",
-		"LIBONNXRUNTIME_PATH", "ML_MODELS_DIR", "TRAINER_URL", "ADMIN_USERNAME",
-		"ADMIN_PASSWORD_HASH", "COOKIE_SECURE", "PROMETHEUS_URL", "ALERTMANAGER_URL",
-		"GRAFANA_URL", "REQUIRE_BACKEND_TLS",
+		"LIBONNXRUNTIME_PATH", "ML_MODELS_DIR", "TRAINER_URL", "PROMETHEUS_URL", "ALERTMANAGER_URL",
+		"GRAFANA_URL",
 	} {
 		t.Setenv(key, "")
 	}
@@ -72,9 +71,6 @@ func TestLoadDefaults(t *testing.T) {
 		LibOnnxRuntimePath: "",
 		MLModelsDir:        "/models",
 		TrainerURL:         "",
-		AdminUsername:      "",
-		AdminPasswordHash:  "",
-		CookieSecure:       false,
 		PrometheusURL:      "http://prometheus:9090",
 		AlertmanagerURL:    "http://alertmanager:9093",
 		GrafanaURL:         "http://grafana:3000",
@@ -91,8 +87,6 @@ func TestLoadReadsEnvOverrides(t *testing.T) {
 	t.Setenv("COLLECTOR_WINDOW_DAYS", "45")
 	t.Setenv("ALERT_POLL_INTERVAL_SECONDS", "60")
 	t.Setenv("ML_ENABLED", "false")
-	t.Setenv("ADMIN_USERNAME", "admin")
-	t.Setenv("COOKIE_SECURE", "true")
 
 	cfg := Load()
 
@@ -110,12 +104,6 @@ func TestLoadReadsEnvOverrides(t *testing.T) {
 	}
 	if cfg.MLEnabled {
 		t.Errorf("MLEnabled = true, want false")
-	}
-	if cfg.AdminUsername != "admin" {
-		t.Errorf("AdminUsername = %q, want %q", cfg.AdminUsername, "admin")
-	}
-	if !cfg.CookieSecure {
-		t.Errorf("CookieSecure = false, want true")
 	}
 }
 
@@ -147,34 +135,15 @@ func TestBoolFlagOnlyTrueOnExactMatch(t *testing.T) {
 // validBase is a Config that Validate accepts, so each case below can change exactly one field
 // and attribute the resulting error to it.
 func validBase() Config {
-	return Config{
-		AuthDisabled:     true,
-		DatabaseHost:     "timescaledb",
-		DatabaseSSLMode:  "disable",
-		RedisHost:        "redis",
-		CollectorWindow:  30,
-		AlertPollSeconds: 300,
-	}
+	return Config{CollectorWindow: 30, AlertPollSeconds: 300}
 }
 
-func TestValidateRejectsUnsafeDeployments(t *testing.T) {
+func TestValidateRejectsNonsenseSettings(t *testing.T) {
 	cases := map[string]func(*Config){
-		"half-configured credentials":    func(c *Config) { c.AdminUsername = "admin" },
-		"no auth and no explicit optout": func(c *Config) { c.AuthDisabled = false },
-		"password hash that isn't bcrypt": func(c *Config) {
-			c.AdminUsername, c.AdminPasswordHash = "admin", "REPLACE_ME"
-		},
-		"plaintext database with backend TLS required": func(c *Config) {
-			c.RequireBackendTLS = true
-		},
-		"backend TLS required with no Redis password": func(c *Config) {
-			c.RequireBackendTLS, c.DatabaseSSLMode, c.RedisTLS = true, "require", true
-		},
-		"backend TLS required with plaintext Redis": func(c *Config) {
-			c.RequireBackendTLS, c.DatabaseSSLMode, c.RedisPassword = true, "require", "s3cret"
-		},
-		"nonsense collector window": func(c *Config) { c.CollectorWindow = 0 },
-		"nonsense poll interval":    func(c *Config) { c.AlertPollSeconds = -1 },
+		"nonsense collector window":  func(c *Config) { c.CollectorWindow = 0 },
+		"oversized collector window": func(c *Config) { c.CollectorWindow = 731 },
+		"nonsense poll interval":     func(c *Config) { c.AlertPollSeconds = -1 },
+		"negative retention":         func(c *Config) { c.DerivedRetentionDays = -1 },
 	}
 	for name, breakIt := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -187,32 +156,10 @@ func TestValidateRejectsUnsafeDeployments(t *testing.T) {
 	}
 }
 
-func TestValidateAcceptsLocalAndRemoteDoneRight(t *testing.T) {
-	local := validBase()
-	if err := local.Validate(); err != nil {
-		t.Fatalf("local no-auth stack must validate: %v", err)
-	}
-
-	remote := validBase()
-	remote.AuthDisabled = false
-	remote.AdminUsername = "admin"
-	remote.AdminPasswordHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
-	remote.CookieSecure, remote.RequireBackendTLS = true, true
-	remote.DatabaseSSLMode = "verify-full"
-	remote.RedisPassword, remote.RedisTLS = "s3cret", true
-	if err := remote.Validate(); err != nil {
-		t.Fatalf("properly secured remote stack must validate: %v", err)
-	}
-
-	// The review's finding: following .env.example's advice to set COOKIE_SECURE=true behind a
-	// reverse proxy made the Compose stack refuse to start, because the cookie flag also demanded
-	// backend TLS that Compose cannot provide.
-	proxied := validBase()
-	proxied.AuthDisabled = false
-	proxied.AdminUsername = remote.AdminUsername
-	proxied.AdminPasswordHash = remote.AdminPasswordHash
-	proxied.CookieSecure = true
-	if err := proxied.Validate(); err != nil {
-		t.Fatalf("Compose behind an HTTPS reverse proxy must validate: %v", err)
+// No credentials exist to configure: an unset environment is a valid, complete configuration.
+func TestValidateAcceptsTheDefaults(t *testing.T) {
+	clearEnv(t)
+	if err := Load().Validate(); err != nil {
+		t.Fatalf("the default configuration must validate: %v", err)
 	}
 }

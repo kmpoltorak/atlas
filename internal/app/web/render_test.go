@@ -13,18 +13,6 @@ import (
 	"atlas/internal/domain/watchlist"
 )
 
-func TestRenderLoginPage(t *testing.T) {
-	rec := httptest.NewRecorder()
-	Render(rec, "login", LoginPage{RequiresTOTP: true, Error: "invalid credentials"})
-	if rec.Code != 200 {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	body := rec.Body.String()
-	if !strings.Contains(body, "invalid credentials") || !strings.Contains(body, `name="totp"`) {
-		t.Fatalf("expected error message and TOTP field in rendered login page, got %s", body)
-	}
-}
-
 func TestRenderDashboardPage(t *testing.T) {
 	rec := httptest.NewRecorder()
 	Render(rec, "dashboard", DashboardPage{
@@ -263,38 +251,19 @@ func TestRenderWatchlistPage(t *testing.T) {
 	}
 }
 
-func TestRenderAccountPage(t *testing.T) {
+// The account page has no login section and asks for no password: Atlas has no accounts.
+func TestRenderAccountPageHasNoCredentials(t *testing.T) {
 	rec := httptest.NewRecorder()
-	Render(rec, "account", AccountPage{Username: "admin", TOTPEnabled: true})
+	Render(rec, "account", AccountPage{HasBackup: true})
 	if rec.Code != 200 {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "admin") || !strings.Contains(body, "Enabled") || !strings.Contains(body, "Disable 2FA") {
-		t.Fatalf("expected username, enabled status, and disable form in rendered account page, got %s", body)
+	if strings.Contains(body, `type="password"`) || strings.Contains(body, "2FA") || strings.Contains(body, "/logout") {
+		t.Fatalf("expected no credential fields, 2FA or logout on the account page")
 	}
-}
-
-func TestRenderAccountPageWhenTOTPDisabled(t *testing.T) {
-	rec := httptest.NewRecorder()
-	Render(rec, "account", AccountPage{Username: "admin", TOTPEnabled: false})
-	if rec.Code != 200 {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), "Set up 2FA") {
-		t.Fatalf("expected a setup prompt when TOTP is disabled, got %s", rec.Body.String())
-	}
-}
-
-func TestRenderTOTPEnrollPage(t *testing.T) {
-	rec := httptest.NewRecorder()
-	Render(rec, "totp_enroll", TOTPEnrollPage{Secret: "ABCDEFGHIJ"})
-	if rec.Code != 200 {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	body := rec.Body.String()
-	if !strings.Contains(body, "ABCDEFGHIJ") || !strings.Contains(body, "/dashboard/account/totp/qr.png") {
-		t.Fatalf("expected the manual secret and QR image src in rendered enrollment page, got %s", body)
+	if !strings.Contains(body, `action="/dashboard/account/flush"`) || !strings.Contains(body, `action="/dashboard/account/restore"`) {
+		t.Fatal("expected the restore and flush forms")
 	}
 }
 

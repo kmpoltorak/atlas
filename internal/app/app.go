@@ -9,7 +9,6 @@ import (
 
 	alertsUC "atlas/internal/application/alerts"
 	analyzerUC "atlas/internal/application/analyzer"
-	authUC "atlas/internal/application/auth"
 	backtestingUC "atlas/internal/application/backtesting"
 	collectorUC "atlas/internal/application/collector"
 	decisionUC "atlas/internal/application/decision"
@@ -46,10 +45,7 @@ import (
 // blend is actually applied is a separate runtime toggle (Orchestrator.SetMLEnabled), seeded
 // from ML_ENABLED (config.Config.MLEnabled) and overridable live from the Account dashboard
 // page (resolveMLEnabled, migrations/015) — switched off, scoring uses the technical term alone.
-// Auth (see internal/application/auth)
-// is optional, same non-fatal pattern as ML/Discord: unset ADMIN_USERNAME/ADMIN_PASSWORD_HASH
-// means Auth.Enabled() is false and every route is reachable with no login gate, exactly as
-// before this feature existed — see authMiddleware.
+// There is no login: Atlas is a local tool for one operator, reachable on loopback only.
 type Application struct {
 	Config  config.Config
 	Metrics *observability.Metrics
@@ -68,7 +64,6 @@ type Application struct {
 	Backtesting   *backtestingUC.UseCase
 	Watchlist     *watchlistUC.UseCase
 	Alerts        *alertsUC.UseCase
-	Auth          *authUC.UseCase
 	ExchangeRates *exchangerateUC.UseCase
 	// Trainer is nil unless TRAINER_URL is set — the Account page's "Train new candidate"
 	// button then just explains how to run training/retrain.sh by hand instead (see
@@ -229,7 +224,6 @@ func New(ctx context.Context, cfg config.Config, metrics *observability.Metrics,
 		Backtesting:   backtestingUC.NewUseCase(orchestrator),
 		Watchlist:     watchlist,
 		Alerts:        alertsUseCase,
-		Auth:          authUC.NewUseCase(cfg.AdminUsername, cfg.AdminPasswordHash, redisCache, storage),
 		ExchangeRates: exchangeRates,
 		Trainer:       trainerClient,
 		AlertPoll:     &AlertPollStatus{},

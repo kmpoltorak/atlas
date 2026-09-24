@@ -3,7 +3,6 @@ package app
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -12,7 +11,6 @@ import (
 	"time"
 
 	"atlas/internal/app/web"
-	authUC "atlas/internal/application/auth"
 	portfolioUC "atlas/internal/application/portfolio"
 	"atlas/internal/domain/currency"
 	"atlas/internal/domain/portfolio"
@@ -56,66 +54,6 @@ func currencyOptions() []string {
 	}
 	sort.Strings(options)
 	return options
-}
-
-// loginPageHandler renders the login form (GET) and verifies credentials (POST) — see
-// authUC.UseCase.Login. A GET while auth isn't Enabled() redirects straight to the dashboard,
-// since there's nothing to log into. Whether the form should even show a TOTP field is read
-// fresh from TOTPStore on every request (a.Auth.TOTPStatus()), not fixed at startup — 2FA can
-// be enabled/disabled from the dashboard at any time.
-func (a *Application) loginPageHandler(w http.ResponseWriter, r *http.Request) {
-	lang := a.resolveLang(r)
-	switch r.Method {
-	case http.MethodGet:
-		if !a.Auth.Enabled() {
-			http.Redirect(w, r, "/", http.StatusSeeOther)
-			return
-		}
-		requiresTOTP, err := a.Auth.TOTPStatus()
-		if err != nil {
-			a.renderError(w, r, http.StatusInternalServerError, err.Error())
-			return
-		}
-		web.Render(w, "login", web.LoginPage{Lang: lang, RequiresTOTP: requiresTOTP})
-	case http.MethodPost:
-		requiresTOTP, statusErr := a.Auth.TOTPStatus()
-		if err := r.ParseForm(); err != nil {
-			web.Render(w, "login", web.LoginPage{Lang: lang, Error: "Invalid form submission.", RequiresTOTP: requiresTOTP})
-			return
-		}
-		token, err := a.Auth.Login(r.Context(), r.FormValue("username"), r.FormValue("password"), r.FormValue("totp"))
-		if err != nil {
-			if statusErr != nil {
-				a.renderError(w, r, http.StatusInternalServerError, statusErr.Error())
-				return
-			}
-			message := "Invalid username, password, or verification code."
-			if errors.Is(err, authUC.ErrTooManyAttempts) {
-				message = "Too many failed login attempts. Wait a few minutes and try again."
-			}
-			web.Render(w, "login", web.LoginPage{Lang: lang, Error: message, RequiresTOTP: requiresTOTP})
-			return
-		}
-		a.setSessionCookie(w, token)
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-	default:
-		methodNotAllowed(w)
-	}
-}
-
-// logoutPageHandler invalidates the session server-side (not just clearing the cookie
-// client-side) so a leaked/stolen cookie value stops working immediately, not just once it
-// expires on its own.
-func (a *Application) logoutPageHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w)
-		return
-	}
-	if cookie, err := r.Cookie(sessionCookieName); err == nil {
-		_ = a.Auth.DeleteSession(r.Context(), cookie.Value)
-	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", MaxAge: -1})
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
 // dashboardPageHandler also doubles as "/"'s catch-all (see NewHandler's comment on the "/"
