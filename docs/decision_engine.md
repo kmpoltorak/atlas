@@ -1,197 +1,114 @@
 # Decision Engine
 
-**Implementation status**: this document describes the target design. The actual engine
-(internal/application/decision) now blends Technical (0.50) + ML (0.25) + Portfolio (0.15) +
-Risk (0.10) into the overall score (Orchestrator.blendMLAndPortfolio, via NewOrchestratorWithML)
-— matching the "Scoring Model" below's four-term formula, though the weights/heuristics are
-still placeholders pending real tuning. ML itself is now a real trained model (XGBoost
-correction-probability classifier, via ONNX — see docs/ml.md) when one is loaded (`MODEL_PATH`
-set), falling back to the same deterministic RSI-derived stub as before when it isn't. There is
-still no separate Risk Engine *stage* in the pipeline sense (Market Data → ... → Risk Engine →
-Decision Engine, per "Decision Flow" below) — Risk is computed inline within
-Orchestrator.blendMLAndPortfolio (`computeRiskScore`, from `portfolio.UseCase.ComputeRisk`'s
-exposure/drawdown/volatility), not a separate pipeline component, but the score itself is real
-and blended, closing that specific gap. The engine now emits all six action types below
-(BUY/SELL/HOLD plus ACCUMULATE/REDUCE/WAIT — see decision.UseCase.BuildRecommendation's
-threshold bands), gated on real portfolio position state (BUY vs. ACCUMULATE, SELL vs. REDUCE)
-and ML confidence (HOLD vs. WAIT) — see this doc's "Recommendation Types" below for the
-exact rules and thresholds. Those five thresholds are a
-`decision.Thresholds` value (internal/domain/decision/types.go), not hardcoded constants —
-`decision.UseCase.Thresholds` defaults to `DefaultThresholds()` (the same cutoffs as before)
-everywhere in live traffic, but backtesting's walk-forward optimizer (see docs/backtesting.md's
-"Optimization" section) can construct a `UseCase` around different candidate thresholds to
-evaluate against history without ever touching the live instance. Backtesting previously leaked
-live portfolio state into simulated HasPosition — fixed now, see docs/backtesting.md's
-Implementation status note. The real Recommendation object is `{Symbol, Action, Confidence,
-Reason, Score, TechnicalScore, MLScore, PortfolioScore, RiskScore, RiskDataAvailable, Degraded,
-MarketCondition, ModelVersion, MLModelVersion, MLRecoveryModelVersion}` — no separate timestamp
-field yet (the `created_at` column below covers it); Reason does list which of ML/Portfolio/Risk
-meaningfully influenced the result. Every field is persisted, `Degraded` and `RiskDataAvailable`
-included (migrations/022 — rows older than that hold NULL for both, since they were never
-recorded). `ModelVersion` and `MLModelVersion` are two different things, easy to conflate:
-`ModelVersion` is the decision engine's own scoring-logic tag (`Orchestrator.EngineVersion`,
-"atlas-decision-v2" since quote freshness moved to the wall clock and input quality started being
-recorded; bump it whenever scoring or flagging rules change. "atlas-decision-v1" rows span several
-earlier scoring revisions and do not identify a single rule set), while `MLModelVersion` is the real ML model that produced `MLScore` (`ml.Prediction.
-ModelVersion` — a trained model's version, or `ml.StubModelVersion` when none is loaded). Both
-are shown separately on the Recommendations dashboard page ("Engine" vs. "ML model"). Confidence
-was previously a fixed literal per action band (every BUY reported 0.78, every HOLD reported 0.6,
-regardless of how strong the actual score was — meaning most real recommendations, landing in the
-"mixed signal" HOLD band, all reported an identical 60%) — fixed to scale continuously with how
-far the blended score sits from the neutral center (0.5), the same idea `ml.UseCase.Predict`
-already used for the ML sub-model's own confidence. WAIT is the one exception: it still reports
-the real (low) ML confidence as-is, since that's the whole point of that action. RiskScore is
-portfolio-wide (every held
-position's exposure/drawdown/volatility, via `portfolio.UseCase.ComputeRisk`), distinct from
-PortfolioScore (a single symbol's own P&L) — see "Risk Context" below. Every live recommendation
-(GET /recommendations, GET /alerts, and the background alert-poll loop) is now persisted to the
-`recommendations` table below (see internal/infrastructure/persistence/decision.go) as an
-append-only history log — `risk_score` is now a real written value there too, not NULL.
-Backtesting's individual simulated recommendations are still deliberately NOT persisted
-one-by-one (see internal/application/backtesting/usecase.go) since they're hypothetical past
-decisions, not real ones — but each full backtest run's summary now is (see
-docs/backtesting.md), and its simulated RiskScore reflects the backtest's own simulated
-portfolio (`simPortfolio`), not the live one, for the same reason HasPosition does. The ML term in the blend is no longer `1 - P(correction)`. It is now
-`1 - P(correction) * (1 - P(recovery))` — one minus the probability of a drop that does *not*
-recover (application/decision.mlScoreFromPrediction). Recovery probability had been computed,
-persisted and displayed on the dashboard while every recommendation ignored it, even though it is
-the better-validated of the two models. The risk worth pricing is not "will it dip" but "will it
-dip and stay down"; a dip that recovers inside the recovery horizon is not a reason to avoid a
-position. With no recovery model loaded RecoveryProbability is 0 and this degrades exactly to the
-previous behaviour, so the recovery model stays optional here as everywhere else.
+The decision engine (`internal/application/decision`) turns one symbol's closed bars, the ML
+models' output and the whole portfolio into a recommendation: BUY, ACCUMULATE, HOLD, REDUCE, SELL
+or WAIT, with a confidence and the reasons behind it. It never executes anything.
 
-This term was previously averaged in alongside the technical score, which made a low correction
-probability read as mildly bullish — a calm instrument scored well on it with no upside signal
-behind it. It is now a multiplicative risk factor (see "Scoring Model" below), so it can only
-lower a technical signal, never manufacture one.
+## How a recommendation is built
 
-Discord notifications
-(internal/app/alerts_loop.go) are gated to the four actionable calls — BUY/ACCUMULATE/REDUCE/SELL
-(isHighPriorityAction), matching "Notifications" below. GET /alerts itself is unaffected and
-still surfaces every non-HOLD action, WAIT included; only the push notification is restricted.
+`Orchestrator.BuildRecommendationFromBars`, for one symbol:
 
-## Overview
-The Decision Engine is the core intelligence layer of Atlas.
-Its responsibility is to combine:
-- technical analysis,
-- machine learning predictions,
-- portfolio state,
-- market conditions,
-- risk management
-and generate an investment suggestion.
-The Decision Engine does not execute trades.
-It only provides analytical recommendations.
----
-# Objective
-The system should answer:
+1. **Technical score** (`buildTechnicalScore`) — a weighted average of momentum/volume (0.45), RSI
+   (0.20), Bollinger %B (0.20) and OBV (0.15), each on 0–1. This is the only term that measures an
+   *opportunity*. See "The momentum/volume term" and "What the technical score does not do" below.
+2. **ML factor** — from the correction and recovery models, when the ML term is switched on.
+3. **Portfolio factor and risk factor** — from every position in every portfolio.
+4. **Score** — the technical score times the three factors, which can lower it but never raise it.
+5. **Action** (`UseCase.BuildRecommendation`) — the score's band, whether the symbol is held, and
+   the ML model's confidence.
+6. **Market condition** — BULL/BEAR/SIDEWAYS from a deterministic ADX+EMA rule
+   (`ml.ClassifyMarketCondition`), reported alongside; it does not change the score.
+
+Every live recommendation — `GET /recommendations`, `GET /alerts` and the background poll — is
+appended to the `recommendations` table with every field below. Backtests do not write
+individual recommendations ([backtesting.md](backtesting.md)).
+
+## Scoring model
+
 ```
-Should I buy?
-Should I add to my position?
-Should I hold?
-Should I reduce?
-Should I exit?
-```
----
-# Decision Flow
-```
-Market Data
-      |
-Technical Analyzer
-      |
-ML Predictor
-      |
-Portfolio Analyzer
-      |
-Risk Engine
-      |
-Decision Engine
-      |
-Recommendation
-```
----
-# Inputs
-## Market Analysis
-Examples:
-```
-RSI
-EMA trend
-MACD
-Volume
-Volatility
-Support levels
-Resistance levels
-```
----
-## ML Prediction
-A real response, `GET /predictions?symbol=AAPL` on 2026-09-24 with both model files in
-`training/models/` loaded:
-```json
-{"symbol":"AAPL","confidence":0.9344841241836548,"score":0.9672420620918274,
- "correction_probability":0.03275793790817261,"recovery_probability":0.425618052482605,
- "model_version":"v20260810145759","recovery_model_version":"v20260809134009"}
-```
----
-## Portfolio Context
-Example:
-Existing position:
-```
-Ticker:
-VOO
-Quantity:
-20
-Buy price:
-450 USD
-Current price:
-520 USD
-Profit:
-15%
-```
----
-## Risk Context
-Examples:
-```
-Portfolio exposure
-Position size
-Volatility
-Market trend
-Drawdown
+score = technical × mlFactor × portfolioFactor × riskFactor
 ```
 
-**Implementation status**: Exposure, Volatility, and Drawdown are real, honestly-computed numbers
-(`portfolio.UseCase.ComputeRisk`, blended into scoring via `computeRiskScore` — see this doc's
-top status note) — but "Volatility"/"Drawdown" here are cheap single-scan heuristics, not the
-statistically real measures those names usually imply: Drawdown is unrealized-loss/exposure (no
-tracked equity-curve peak), Volatility is the unweighted mean of \|CurrentPrice-AverageCost\|
-across positions (not a return-based standard deviation) — see `portfolio.RiskSnapshot`'s doc
-comment. The dashboard/portfolio pages label them "Unrealized Loss / Exposure" and "Avg.
-Deviation from Cost" for this reason; only backtesting's genuinely statistical Volatility/
-MaxDrawdown (see docs/backtesting.md) keep the "real" names. Position size is implicitly covered
-by Exposure (sum across positions) rather than surfaced per-position here. Market trend is not
-implemented — there's no trend/regime classifier (see docs/ml.md's market condition section).
+Each factor is 1 when its signal has nothing to penalize. Multiplication compounds deliberately:
+a losing position, inside a portfolio drawdown, inside a correction warning is worse than any of
+the three alone.
 
-Since multiple portfolios were added (see docs/database.md's `portfolios` table), Portfolio
-Context and Risk Context are deliberately all-portfolio, not scoped to whichever portfolio the
-dashboard's tabs currently show: `blendMLAndPortfolio` reads `portfolio.UseCase.GetAllPositions`
-(every portfolio's positions combined, quantity-weighted average cost per symbol — see
-`persistence.TimescaleDB.GetAllPositions`), not `GetPositions` (the active tab only). A symbol
-bought in one portfolio reads as ACCUMULATE, not BUY, regardless of which portfolio is on screen.
-The Dashboard/Portfolio pages themselves still show only the active portfolio's own Positions/Risk
-— this aggregation is internal to scoring, not something either page displays directly.
----
-# Recommendation Types
-The engine returns:
-```
-BUY
-ACCUMULATE
-HOLD
-REDUCE
-SELL
-WAIT
-```
----
-# Recommendation Object
-A real response, `GET /recommendations?symbol=VOO` on 2026-09-24 against the two model files in
-`training/models/` (a fresh database, so no portfolio and therefore no measured risk):
+- **ML factor.** `mlScoreFromPrediction` = `1 − P(correction) × (1 − P(recovery))`: one minus the
+  probability of a drop that does *not* recover. The risk worth pricing is not "will it dip" but
+  "will it dip and stay down". With no recovery model loaded P(recovery) is 0 and this reduces to
+  `1 − P(correction)`. With no correction model loaded the deterministic stub answers
+  ([ml.md](ml.md)).
+- **Portfolio factor.** `portfolioRiskSignal` — the symbol's own position P&L, on a 0–0.5 scale
+  where 0.5 means nothing to penalize.
+- **Risk factor.** `computeRiskScore` over `portfolio.UseCase.ComputeRisk`'s portfolio-wide
+  exposure, drawdown and volatility.
+
+The Settings page's ML toggle (initially `ML_ENABLED`) removes only the ML factor: no prediction
+is made and `ml_model_version` stays empty. The portfolio and risk factors still apply, since
+they do not depend on the model.
+
+**Why multiplication.** This replaced a four-term weighted average (0.50 technical / 0.25 ML /
+0.15 portfolio / 0.10 risk). Averaging a risk signal with an opportunity signal makes *absence of
+risk* read as *presence of opportunity*. Measured on the live watchlist on 2026-08-10, all three
+risk terms had collapsed into a near-constant lift of roughly +0.15 on every symbol:
+
+| term | live range | why it was inert |
+|---|---|---|
+| ML | 0.810 – 0.997 | estimates P(correction)/P(recovery) and has no upside model at all, so a calm instrument scored 0.97 with no bullish evidence |
+| Portfolio | 0.500 – 0.500 | `portfolioRiskSignal` tops out at 0.5, so as an averaged term it dragged every score toward the middle even with nothing to say |
+| Risk | 1.000 – 1.000 | `computeRiskScore` returns 1.0 for an empty portfolio — no drawdown and no volatility to measure, which the average read as maximum enthusiasm |
+
+Only `technical` (0.295 – 0.878) was carrying information. That constant lift is why
+`StrongBullish` moved from 0.75 to 0.60 in the same change: the threshold had to follow the score
+whose meaning it depends on. The new value preserves the exact BUY set rather than retuning the
+engine — measured against the live watchlist, the lowest current BUY lands at 0.6084 under the
+new scoring and the highest current non-BUY at 0.5965, so nothing reorders. Calibrating what that
+set *should* be needs outcome history, and is deliberately still open.
+
+## Portfolio and risk context
+
+Both are deliberately all-portfolio: `blendMLAndPortfolio` reads
+`portfolio.UseCase.GetAllPositions` (every portfolio combined, quantity-weighted average cost per
+symbol), not the dashboard's active tab. A symbol bought in one portfolio reads as ACCUMULATE, not
+BUY, whichever portfolio is on screen. The Dashboard and Portfolio pages still show only the
+active portfolio.
+
+The portfolio-wide risk numbers are cheap single-scan heuristics, not the statistical measures
+the names usually imply (`portfolio.RiskSnapshot`): drawdown is unrealized loss over exposure, with
+no equity-curve peak, and volatility is the mean |current price − average cost| across positions,
+not a standard deviation of returns. The dashboard labels them "Unrealized Loss / Exposure" and
+"Avg. Deviation from Cost" for that reason; only backtesting's volatility and max drawdown are the
+real statistics.
+
+Every risk number is computed against each position's current price. A held position with no
+current market quote — none yet, or one more than four days old (`portfolio.QuoteMaxAge`, so a
+Friday quote still counts over a long weekend) — is valued at its last
+trade, which makes its P&L exactly zero and would read as "nothing wrong". The recommendation
+instead reports `risk_data_available: false`, `degraded: true` and a reason naming the symbols.
+Freshness is measured against the market's trade time (`symbols.quoted_at`), not when Atlas
+fetched the quote, since a provider keeps returning a stopped instrument's last price.
+
+## Actions and thresholds
+
+`decision.DefaultThresholds()` (`internal/domain/decision/types.go`):
+
+| score | held | not held |
+|---|---|---|
+| ≥ 0.60 (`StrongBullish`) | ACCUMULATE | BUY |
+| 0.55 – 0.60 (`LeanBullish`) | WAIT or HOLD | WAIT or HOLD |
+| 0.45 – 0.55 | HOLD | HOLD |
+| 0.25 – 0.45 (`LeanBearish`) | REDUCE | WAIT or HOLD |
+| ≤ 0.25 (`StrongBearish`) | SELL | WAIT or HOLD |
+
+"WAIT or HOLD": WAIT when the ML model's own confidence is below 0.30 (`LowMLConfidence`) — a
+lean the model is not sure about — and HOLD otherwise. The walk-forward optimizer can evaluate
+other thresholds against history but never changes these ([backtesting.md](backtesting.md)).
+
+## Recommendation object
+
+A real response, `GET /recommendations?symbol=VOO` on 2026-09-24 against the two model files then
+active (a fresh database, so no portfolio and therefore no measured risk):
+
 ```json
 {
     "symbol": "VOO",
@@ -213,56 +130,98 @@ A real response, `GET /recommendations?symbol=VOO` on 2026-09-24 against the two
     "ml_recovery_model_version": "v20260809134009"
 }
 ```
-Every score is on a 0–1 scale. `confidence` is how far `score` sits from the neutral 0.5, scaled
-to 0–1 (`|score − 0.5| × 2` — here `|0.2999 − 0.5| × 2 = 0.40`); it is not the ML model's own
-confidence, which only decides HOLD versus WAIT. A confident SELL and a confident BUY both have high
-`confidence`. `degraded: true` appears when an expected input was missing.
----
-# Scoring Model
-Final score:
+
+- Every score is on a 0–1 scale.
+- `confidence` is how far `score` sits from the neutral 0.5, scaled to 0–1 (`|score − 0.5| × 2`),
+  so a confident SELL and a confident BUY both have high confidence. WAIT is the exception: it
+  reports the ML model's own (low) confidence, since that is the reason for the WAIT. The ML
+  confidence otherwise only decides WAIT versus HOLD.
+- `degraded: true` appears when an expected input was missing: the ML prediction failed, the
+  portfolio could not be read, or a held position has no current price. The reasons say which.
+  The dashboard and alert embeds show it as "incomplete inputs".
+- `model_version` is the engine's own scoring-rules tag (`Orchestrator.EngineVersion`), bumped
+  whenever scoring or flagging rules change. `atlas-decision-v2` began with quote freshness
+  measured against the market's trade time and recorded input quality; v1 rows span several
+  earlier scoring revisions and do not identify one rule set. `ml_model_version` and
+  `ml_recovery_model_version` name the models that produced `ml_score` (`stub-v0` when the stub
+  answered). The Recommendations page shows them as "Engine" and "ML model".
+- `degraded`, `risk_data_available` and `ml_recovery_model_version` are persisted from
+  migrations/022; older rows hold NULL, since that history never recorded them.
+
+The ML inputs behind it, from `GET /predictions?symbol=AAPL` on the same day with the same models:
+
+```json
+{"symbol":"AAPL","confidence":0.9344841241836548,"score":0.9672420620918274,
+ "correction_probability":0.03275793790817261,"recovery_probability":0.425618052482605,
+ "model_version":"v20260810145759","recovery_model_version":"v20260809134009"}
 ```
-Technical Score
-+
-ML Score
-+
-Portfolio Score
-+
-Risk Score
-=
-Final Decision Score
-```
 
-**Implementation status**: real, but not as a weighted sum. Technical is the only term that
-measures an *opportunity*; the other three measure *risk*, and are applied as multiplicative
-factors that can lower the technical score but never invent one:
+### Worked example
+
+The VOO recommendation above (`Orchestrator.blendMLAndPortfolio`):
 
 ```
-score = technical × mlFactor × portfolioFactor × riskFactor
+score = technical × ML factor × (portfolio / 0.5) × portfolio-wide risk
+      = 0.30506   × 0.98318   × (0.5 / 0.5)       × 1
+      = 0.29993
 ```
 
-Each factor is 1 when its signal has nothing to penalize. Multiplication compounds deliberately:
-a losing position, inside a portfolio drawdown, inside a correction warning is worse than any of
-the three alone.
+0.29993 falls between `StrongBearish` (0.25) and `LeanBearish` (0.45). Nothing is held, so there is
+nothing to reduce; the ML confidence is well above 0.30, so the action is HOLD rather than WAIT.
+`confidence` = |0.29993 − 0.5| × 2 = 0.40.
 
-This replaced a four-term weighted average (0.50 / 0.25 / 0.15 / 0.10). The average was the wrong
-shape, because averaging a risk signal with an opportunity signal makes *absence of risk* read as
-*presence of opportunity*. Measured on the live watchlist on 2026-08-10, all three risk terms had
-collapsed into a near-constant lift of roughly +0.15 on every symbol:
+## The momentum/volume term
 
-| term | live range | why it was inert |
-|---|---|---|
-| ML | 0.810 – 0.997 | estimates P(correction)/P(recovery) and has no upside model at all, so a calm instrument scored 0.97 with no bullish evidence |
-| Portfolio | 0.500 – 0.500 | `portfolioRiskSignal` tops out at 0.5, so as an averaged term it dragged every score toward the middle even with nothing to say |
-| Risk | 1.000 – 1.000 | `computeRiskScore` returns 1.0 for an empty portfolio — no drawdown and no volatility to measure, which the average read as maximum enthusiasm |
+Technical Score is itself a weighted average (0.45 momentum/volume, 0.20 RSI, 0.20 Bollinger %B,
+0.15 OBV). The heaviest of those, `momentumVolumeScore`, is:
 
-Only `technical` (0.295 – 0.878) was carrying information. That constant lift is why
-`StrongBullish` moved from 0.75 to 0.60 in the same change: the threshold had to follow the score
-whose meaning it depends on. The new value preserves the exact BUY set rather than retuning the
-engine — measured against the live watchlist, the lowest current BUY lands at 0.6084 under the
-new scoring and the highest current non-BUY at 0.5965, so nothing reorders.
+```
+momentum      = close_t / close_{t-12} - 1
+normalized    = momentum / (realized_vol_20 * sqrt(12))
+momentumScore = 0.5 + 0.5 * tanh(normalized / 1.5)
+confirmation  = 0.5 + 0.5 * min(1, volume / mean_volume)
+term          = 0.5 + (momentumScore - 0.5) * confirmation
+```
 
-Calibrating what that set *should* be is a separate question that needs outcome history, and is
-deliberately still open.
+Normalizing by the instrument's own realized volatility makes one threshold mean the same thing
+for a liquid US megacap and a thinly traded WSE listing — the same scale-free stance the ML
+feature vector settled on (docs/ml.md). Thin volume damps the reading toward neutral rather than
+reversing it: a move nobody traded is weak evidence, not counter-evidence.
+
+The window (12 bars), volatility window (20, shared with the ML feature vector), and tanh scale
+(1.5) were picked by measuring candidates against the 41807 real closed hourly bars behind the
+live watchlist, not by taste. At scale 1.0 the term saturates (p05 0.040, p95 0.971); at 2.0 it
+compresses so a genuinely strong move never reads as strong (p95 0.853). At 1.5 it spends the
+whole range: p05 0.139, p25 0.330, p50 0.509, p75 0.695, p95 0.880.
+
+### What this replaced, and why it mattered
+
+The term used to be a two-valued step function reading a **single** bar: `momentum > 0.02 && raw
+volume/1000 > 1` returned 0.82, everything else 0.48. Three defects compounded, all measured
+against production rather than argued:
+
+1. It read the newest bar, which Yahoo serves as an **unclosed live quote** — `open == close`,
+   `volume == 0`, timestamped at the moment of the request rather than a candle boundary. On
+   2026-08-10 all 47 watchlist symbols carried exactly such a row as their newest bar. Momentum
+   was therefore identically 0, so the bullish branch **could never fire on live traffic** and
+   the largest term in the whole score sat frozen at 0.48.
+2. Every BUY recorded in the week to 2026-08-10 (44 of them) landed in `0.750–0.754` against the
+   0.75 threshold — grazing the line, never clearing it — and flipped back to HOLD on the next
+   poll. SELL and REDUCE were unreachable entirely: not one was emitted. The engine was
+   effectively a three-action engine reporting six.
+3. Even on correct closed bars the rule fires on only 3.21% of them, so it contributed a
+   near-constant with occasional 0.34-wide jumps. `volume/1000` also hard-codes the share-volume
+   scale of a liquid US equity; that gate passes on 92% of bars, so it barely gated anything.
+   `ComputeVolume` already produced the scale-free measure and was being ignored.
+
+The replacement moves 0.053 per bar at the median (0.012 in the blended score), so the score
+tracks price instead of quantizing it.
+
+The unclosed bar is dropped at the source now — see `providers.dropUnclosedBars`. That fix also
+matters to the ML path independently: `BuildFeatureVector` reads the newest bar's volume, so
+inference always saw `volume = 0` while the model had been trained on real volumes. Acting only
+on closed candles is the ordinary discipline for bar-based signals — anything computed on a
+forming candle repaints until it closes.
 
 ## What the technical score does not do
 
@@ -376,176 +335,42 @@ The rule is not in the codebase. It was written, measured, and deleted; this sec
 remains of it, so the next person to have the idea — including a future session reading its own
 notes — starts from the measurement instead of repeating it.
 
-## The momentum/volume term
+## Notifications
 
-Technical Score is itself a weighted average (0.45 momentum/volume, 0.20 RSI, 0.20 Bollinger %B,
-0.15 OBV). The heaviest of those, `momentumVolumeScore`, is:
+The background poll pushes BUY, ACCUMULATE, REDUCE and SELL (`isHighPriorityAction`) to every
+configured channel — Discord, Slack, Telegram. These are exactly the actions that ask the reader to
+do something. HOLD and WAIT are excluded: neither calls for a decision, and HOLD is the steady
+state for most symbols most of the time, so pushing it would bury the signals that matter.
+`GET /alerts` and the Alerts page still show every non-HOLD action, WAIT included.
 
-```
-momentum      = close_t / close_{t-12} - 1
-normalized    = momentum / (realized_vol_20 * sqrt(12))
-momentumScore = 0.5 + 0.5 * tanh(normalized / 1.5)
-confirmation  = 0.5 + 0.5 * min(1, volume / mean_volume)
-term          = 0.5 + (momentumScore - 0.5) * confirmation
-```
+ACCUMULATE was originally left out while REDUCE was kept in — a partial sell notified, a partial
+buy stayed silent. There was no principle behind the split, and ACCUMULATE is arguably the more
+actionable of the two, since by definition it concerns a position already held.
 
-Normalizing by the instrument's own realized volatility makes one threshold mean the same thing
-for a liquid US megacap and a thinly traded WSE listing — the same scale-free stance the ML
-feature vector settled on (docs/ml.md). Thin volume damps the reading toward neutral rather than
-reversing it: a move nobody traded is weak evidence, not counter-evidence.
-
-The window (12 bars), volatility window (20, shared with the ML feature vector), and tanh scale
-(1.5) were picked by measuring candidates against the 41807 real closed hourly bars behind the
-live watchlist, not by taste. At scale 1.0 the term saturates (p05 0.040, p95 0.971); at 2.0 it
-compresses so a genuinely strong move never reads as strong (p95 0.853). At 1.5 it spends the
-whole range: p05 0.139, p25 0.330, p50 0.509, p75 0.695, p95 0.880.
-
-### What this replaced, and why it mattered
-
-The term used to be a two-valued step function reading a **single** bar: `momentum > 0.02 && raw
-volume/1000 > 1` returned 0.82, everything else 0.48. Three defects compounded, all measured
-against production rather than argued:
-
-1. It read the newest bar, which Yahoo serves as an **unclosed live quote** — `open == close`,
-   `volume == 0`, timestamped at the moment of the request rather than a candle boundary. On
-   2026-08-10 all 47 watchlist symbols carried exactly such a row as their newest bar. Momentum
-   was therefore identically 0, so the bullish branch **could never fire on live traffic** and
-   the largest term in the whole score sat frozen at 0.48.
-2. Every BUY recorded in the week to 2026-08-10 (44 of them) landed in `0.750–0.754` against the
-   0.75 threshold — grazing the line, never clearing it — and flipped back to HOLD on the next
-   poll. SELL and REDUCE were unreachable entirely: not one was emitted. The engine was
-   effectively a three-action engine reporting six.
-3. Even on correct closed bars the rule fires on only 3.21% of them, so it contributed a
-   near-constant with occasional 0.34-wide jumps. `volume/1000` also hard-codes the share-volume
-   scale of a liquid US equity; that gate passes on 92% of bars, so it barely gated anything.
-   `ComputeVolume` already produced the scale-free measure and was being ignored.
-
-The replacement moves 0.053 per bar at the median (0.012 in the blended score), so the score
-tracks price instead of quantizing it.
-
-The unclosed bar is dropped at the source now — see `providers.dropUnclosedBars`. That fix also
-matters to the ML path independently: `BuildFeatureVector` reads the newest bar's volume, so
-inference always saw `volume = 0` while the model had been trained on real volumes. Acting only
-on closed candles is the ordinary discipline for bar-based signals — anything computed on a
-forming candle repaints until it closes.
----
-# Example Calculation
-The VOO recommendation shown under "Recommendation Object" above, worked through. The score is
-the technical score multiplied by risk factors that can only lower it
-(`Orchestrator.blendMLAndPortfolio`):
-```
-score = technical × ML factor × (portfolio / 0.5) × portfolio-wide risk
-      = 0.30506   × 0.98318   × (0.5 / 0.5)       × 1
-      = 0.29993
-```
-0.29993 falls between StrongBearish (0.25) and LeanBearish (0.45); with no position held there is
-nothing to reduce, so the action is HOLD. `confidence` = |0.29993 − 0.5| × 2 = 0.40.
----
-# Explainability
-Every recommendation must explain:
-Why?
-Which signals contributed?
-Which indicators affected the result?
-What is the uncertainty?
-Never output:
-```
-BUY
-```
-without explanation.
----
-# Rules
-The Decision Engine must:
-- be deterministic,
-- be testable,
-- store decisions,
-- store input data,
-- store model version,
-- provide explanation.
----
-# Database
-Table:
-```
-recommendations
-```
-Fields:
-```
-id
-ticker
-action
-score
-confidence
-technical_score
-ml_score
-portfolio_score
-risk_score
-explanation
-created_at
-model_version
-```
----
-# Notifications
-High priority recommendations:
-```
-BUY
-ACCUMULATE
-REDUCE
-SELL
-```
-should trigger Discord notifications.
-
-These are exactly the actions that ask the reader to do something. HOLD and WAIT are excluded:
-neither calls for a decision, and HOLD in particular is the steady state for most symbols most of
-the time, so pushing it would bury the signals that matter.
-
-ACCUMULATE was originally left out of this list while REDUCE was kept in, which made it
-asymmetric — a partial sell notified, a partial buy stayed silent. There was no principle behind
-the split, and ACCUMULATE is arguably the more actionable of the two, since by definition it
-concerns a position already held.
-
-Note also that notifications fire on *change*: the background loop re-evaluates the watchlist
-every ALERT_POLL_INTERVAL_SECONDS (default 300), but only pushes when a symbol's action differs
-from the previous poll. A symbol sitting in BUY for three days produces one notification, not
+Notifications fire on *change*: the loop re-evaluates the watchlist every
+`ALERT_POLL_INTERVAL_SECONDS` (default 300) but only pushes when a symbol's action differs from
+the last one announced. A symbol sitting in BUY for three days produces one notification, not
 hundreds.
 
-That change detection reads a durable cursor, `alert_cursor`, at the start of every poll. Two
-earlier designs failed here and both are worth knowing about. The first kept the map purely in
-memory, which was invisible while actionable signals were rare and obvious the moment they were
-not: four deploys on 2026-08-10 pushed the same seventeen BUY tickers four times over, none of
-which had changed action — ORCL had read BUY continuously since 15:22. The second seeded that map
-at startup from the `recommendations` log, which answers "what did the engine last *say*", not
-"what did we last *announce*" — and since ordinary HTTP browsing writes that table too, a crash
-between recording a recommendation and queuing its alert left history claiming BUY with nothing
-pending, and the restart suppressed the alert as unchanged.
+That comparison reads a durable cursor, `alert_cursor`, at the start of every poll. Two earlier
+designs failed here. The first kept the map purely in memory, which was invisible while
+actionable signals were rare and obvious the moment they were not: four deploys on 2026-08-10
+pushed the same seventeen BUY tickers four times over, none of which had changed action. The
+second seeded that map at startup from the `recommendations` log, which answers "what did the
+engine last *say*", not "what did we last *announce*" — and since ordinary HTTP browsing writes
+that table too, a crash between recording a recommendation and queuing its alert left history
+claiming BUY with nothing pending, and the restart suppressed the alert as unchanged.
 
-`alert_cursor` records only what was actually announced, and it is committed in the same
-transaction as the outbox row that announced it: neither can exist without the other. Reading it
-per poll rather than seeding once also means a replica promoted to leader an hour later inherits
-the real cursor instead of a baseline captured before its promotion.
+`alert_cursor` records only what was actually announced, committed in the same transaction as the
+`alert_outbox` row that announces it: neither can exist without the other. The outbox row is
+written *before* anything sends, so a process that dies mid-send loses nothing, and a retry goes
+only to the channels that still owe the alert. The guarantee is at-least-once per channel; see
+[deployment.md](deployment.md)'s "Delivery guarantee".
 
-Delivery is tracked properly now, in `alert_outbox` — this document previously argued a
-single-user tool did not warrant its own table for that, and that was wrong: the row is written
-*before* anything tries to send, so a process that dies mid-send loses nothing, and a retry goes
-only to the channels that still owe the alert rather than re-notifying ones that already
-succeeded. The guarantee is at-least-once per channel; see `docs/deployment.md`'s "Delivery
-guarantee" for what that does and does not promise.
-
-Each notification is a Discord embed (`buildAlertEmbed`), not a line of text: colour-coded by
-action so an add reads differently from a trim at a glance, titled with the symbol and linked to
-its quote page (`market.QuoteURL`, the same link the dashboard tables use), with
-confidence/score/market condition as an inline field row and the rationale as one bullet per line.
-The flat `[Atlas] ORCL: BUY (confidence 67%) — reason; reason; reason` string it replaced was
-legible on its own and unscannable the moment a poll fired several at once.
-An embed carries the title `<SYMBOL> — <ACTION>` linked to the quote page, a field row with
-Confidence, Score, Market (when classified) and Inputs "Incomplete — see reasons" (when the
-recommendation was degraded), the reasons as a bullet list, and the footer "Atlas · decision
-support only, no trades are executed" (`internal/app/alerts_loop.go`'s `buildAlertEmbed`).
----
-# Future Extensions
-Possible improvements:
-- LLM explanation layer
-- sentiment analysis
-- macroeconomic factors
-- news analysis
-- analyst ratings
-- portfolio optimization
-- automatic strategy discovery
+Each Discord notification is an embed (`buildAlertEmbed`, `internal/app/alerts_loop.go`): titled
+`<SYMBOL> — <ACTION>`, colour-coded by action and linked to the symbol's quote page
+(`market.QuoteURL`, the same link the dashboard tables use); a field row with Confidence, Score,
+Market (when classified) and Inputs "Incomplete — see reasons" (when degraded); the reasons as a
+bullet list; and the footer "Atlas · decision support only, no trades are executed". The flat
+one-line string it replaced was legible on its own and unscannable the moment a poll fired
+several at once.

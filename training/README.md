@@ -211,7 +211,7 @@ can't notify its own failure either way).
 
 ## 7. Triggering training from the dashboard
 
-retrain.sh can also be triggered on demand from the Settings page's "Train new candidate" button
+retrain.sh can also be triggered on demand from the Settings page's "Train now" button
 instead of a shell/cron — it calls a small internal-only service (`cmd/trainer`) that just runs
 retrain.sh and reports back its status/output. This lives in its own container
 (`training/Dockerfile`), never inside `atlas-api`'s own image: retrain.sh needs the Go toolchain

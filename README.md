@@ -70,10 +70,11 @@ small/skewed ML training dataset), the docs say so explicitly instead of hiding 
 Clean Architecture, four layers, one Go binary:
 
 ```
-API (HTTP handlers, request/response shaping)
-  -> Application (use cases: collector, analyzer, ml, portfolio, decision, backtesting, alerts, watchlist, exchangerate, notifications)
-    -> Domain (market, portfolio, ml, decision, backtesting, currency, watchlist, alerts — pure types + business rules)
-      -> Infrastructure (TimescaleDB repositories, Redis cache, Yahoo/NBP provider adapters, Discord webhook, ONNX runtime, Prometheus exporter)
+API (HTTP handlers, dashboard, background loops)
+  -> Application (use cases: collector, analyzer, ml, portfolio, decision, backtesting, ...)
+    -> Domain (pure types + business rules)
+Infrastructure (TimescaleDB, Redis, Yahoo/NBP adapters, Discord/Slack/Telegram) implements
+the application's interfaces
 ```
 
 - Business logic never lives in HTTP handlers.
@@ -100,16 +101,16 @@ scoring formula, and [docs/adr/](docs/adr/) for why the load-bearing decisions w
 | ML inference | Go, via `onnxruntime_go` (cgo, native `libonnxruntime`) |
 | Web dashboard | Server-rendered `html/template`, Bootstrap 5.3 (vendored, no CDN/JS build) |
 | Monitoring | Prometheus + Grafana |
-| Alerting | Alertmanager (infra alerts) + Discord webhooks (business + infra, separate channels) |
+| Alerting | Business alerts to Discord/Slack/Telegram; infra alerts via Alertmanager to a separate Discord channel |
 | Deployment | Docker Compose, on one machine, for one person |
 
 This is the project's only cgo dependency, which is why the container image is Debian
 (`debian:bookworm-slim`), not Alpine — musl-based libc can't safely load the bundled
 `libonnxruntime.so`. The image builds for `linux/amd64` and `linux/arm64` (Apple Silicon, ARM
 servers), each with its own native ONNX Runtime; see the [Dockerfile](Dockerfile)'s comments.
-amd64 is verified end to end, trained models included. arm64 builds and serves correctly, but
-loading ONNX Runtime has only been attempted under emulation, where it crashes for Microsoft's own
-arm64 build as well — model inference on arm64 still needs one run on real ARM hardware.
+amd64 is verified end to end, trained models included. arm64 builds and serves correctly; model
+inference on arm64 is unverified — under emulation ONNX Runtime crashes on load, Microsoft's own
+arm64 build included, and it has not been run on real ARM hardware.
 
 ## Quickstart (Docker Compose)
 
@@ -136,8 +137,8 @@ comes up with zero configuration. Every container it defines:
 | `atlas-trainer` | internal only, port 8091 | `trainer-gomod-cache` | ML training sidecar. Same kind of long-lived container as the rest — HTTP service, healthcheck, `restart: unless-stopped` — and started by a plain `docker compose up` like everything else |
 
 The trainer publishes no host port: atlas-api reaches it in-network via `TRAINER_URL` and calls
-its `/train`, `/status` and `/delete` endpoints, which is what backs the Settings page's "Train new
-candidate" and model-delete buttons — training is triggered on demand *through* a continuously
+its `/train`, `/status` and `/delete` endpoints, which is what backs the Settings page's "Train
+now" and model "Remove" buttons — training is triggered on demand *through* a continuously
 running service, not by starting a one-shot container. Set `TRAINER_URL=` (empty) to hide those
 buttons; they then explain how to run `training/retrain.sh` by hand, and nothing else degrades.
 
@@ -188,9 +189,8 @@ integration is non-fatal when unset — Atlas degrades gracefully instead of ref
 | `RECOVERY_MODEL_PATH` | *(empty → recovery probability stays 0)* | Path to a trained recovery-probability ONNX model, fully independent of `MODEL_PATH` |
 | `ML_MODELS_DIR` | `/models` | Directory the Settings page's model picker scans for trained models + metadata sidecars |
 | `LIBONNXRUNTIME_PATH` | Dockerfile default (`/usr/lib/libonnxruntime.so`) | Native ONNX Runtime library location |
-| `TRAINER_URL` | Compose: `http://atlas-trainer:8091`; otherwise empty → training/delete buttons disabled | Internal URL of the `atlas-trainer` sidecar, which powers the Settings page's "Train new candidate" and model-delete actions. Compose runs the trainer by default and points this at it; set it empty to hide the buttons |
+| `TRAINER_URL` | Compose: `http://atlas-trainer:8091`; otherwise empty → training/delete buttons disabled | Internal URL of the `atlas-trainer` sidecar, which powers the Settings page's "Train now" and model "Remove" buttons. Compose runs the trainer by default and points this at it; set it empty to hide the buttons |
 | `PROMETHEUS_URL`/`ALERTMANAGER_URL`/`GRAFANA_URL` | `http://prometheus:9090`/`http://alertmanager:9093`/`http://grafana:3000` | Checked by `/health` and the `atlas_dependency_up` gauge. Non-empty by default because all three are always in the default Compose stack; set one to an empty string to disable that check |
-
 
 Database migrations are applied by the API itself on every start, under a Postgres advisory lock
 and tracked in `schema_migrations` (`internal/infrastructure/persistence/migrate.go`). The
@@ -299,12 +299,11 @@ uneventful middle. The development history in [docs/ml.md](docs/ml.md) records t
 that shaped the model (for example correction PR AUC 0.264 against a 0.188 baseline on the run
 that first cleared it).
 
-The two model files currently in `training/models/` state their own numbers in their metadata:
-correction `v20260810145759` has PR AUC 0.347 against a 0.346 baseline, recovery `v20260809134009`
-0.758 against 0.528. Both predate the exporter fix that applies the volatility-scaled barrier, and
-neither records the label it was trained on (`label_params`), so their labels are the older fixed
-barrier and a backtest scores them against the default label with a warning. Retrain both before
-reading their metrics as measurements of the target described above.
+The latest run (2026-09-24, 56,255 correction and 7,515 recovery rows across 47 symbols, on the
+label above) produced a correction model that beats its baseline — PR AUC 0.183 against 0.128 —
+and a recovery model that does not: 0.260 against 0.271. The recovery model's earlier lead did not
+survive the larger sample. Neither is activated automatically; see
+[docs/ml.md](docs/ml.md#current-numbers-and-what-they-say).
 
 Neither model is loaded by default — Atlas falls back to a deterministic RSI-derived stub
 prediction (correction) / leaves recovery probability at `0` (recovery), both logged clearly at
@@ -328,12 +327,13 @@ AUC against the per-symbol base-rate baseline, its ROC AUC and row counts — an
 BEAT BASELINE" marker when that applies — then swaps it in immediately (no restart needed) while
 durably recording the choice (`migrations/011`) so it survives one. This is deliberate, not just
 unfinished: a human should look at each new model's metrics before it starts driving real
-recommendations — the same "never auto-promote" stance already applied to walk-forward threshold
-optimization above. The baseline marker exists because that judgement call is only as good as the
-numbers it's shown, and accuracy alone made a model that had learned nothing look excellent. Both training and deleting old candidates can also be
-triggered straight from the Settings page's buttons, via an internal-only sidecar container
-(`cmd/trainer`, part of the default Compose stack — see training/README.md's "Triggering training
-from the dashboard") — atlas-api's own model directory stays read-only either way.
+recommendations — the same "never auto-promote" stance applied to walk-forward threshold
+optimization ([Backtesting](#backtesting)). The baseline marker exists because that judgement
+call is only as good as the numbers it's shown, and accuracy alone made a model that had learned
+nothing look excellent. Both training and deleting old candidates can also be triggered straight
+from the Settings page's buttons, via an internal-only sidecar container (`cmd/trainer`, part of
+the default Compose stack — see training/README.md's "Triggering training from the dashboard") —
+atlas-api's own model directory stays read-only either way.
 
 ## Backtesting
 
@@ -421,8 +421,9 @@ deploy stage: Atlas runs where it is built.
 ## Supported environment and known limitations
 
 **Supported:** one person, on one machine, with Docker Compose; `linux/amd64` (verified) or
-`linux/arm64` (builds and runs; model inference not yet verified on real ARM hardware); the service versions pinned in `docker-compose.yml`. Market data comes from Yahoo
-Finance's unofficial API and exchange rates from NBP.
+`linux/arm64` (builds and runs; model inference unverified); the service versions pinned in
+`docker-compose.yml`. Market data comes from Yahoo Finance's unofficial API and exchange rates
+from NBP.
 
 **Deliberately not part of Atlas**, and not unfinished work: executing trades or any brokerage
 connection, logins or multiple users, exposure beyond `127.0.0.1`, Kubernetes or any multi-host
@@ -433,14 +434,14 @@ frontend.
 
 - The technical score was measured as having no selection value on 720 days of hourly bars
   ([docs/decision_engine.md](docs/decision_engine.md)); Atlas has no measured entry signal.
-- The ML models in `training/models/` predate the current label definition and should be
-  retrained (see [Machine learning](#machine-learning)).
+- The recovery model does not beat its per-symbol baseline on the current dataset (see
+  [Machine learning](#machine-learning)).
 - Backups do not leave the machine and do not run on a schedule: copy them elsewhere
   ([docs/runbook.md](docs/runbook.md)).
 - Messages carried in from a lower-layer error (a provider or database failure) stay in English;
   everything else on the dashboard follows the chosen language.
-- Browser checks so far are server-side renders of every page in every language plus HTTP-level
-  tests; there is no automated browser, phone or keyboard test run.
+- The dashboard has been checked by hand in a browser; there is no automated browser, phone or
+  keyboard test.
 
 ## Documentation map
 

@@ -1,311 +1,68 @@
 # Architecture
 
-**Implementation status** (the up-to-date per-module breakdown): Collector, Analyzer (RSI/EMA/MACD/ATR/Volume/OBV/ADX/Bollinger Bands),
-Decision Engine (technical + ML + portfolio-risk + risk-engine blend, all six actions
-BUY/ACCUMULATE/HOLD/REDUCE/SELL/WAIT real and differentiated — see docs/decision_engine.md), ML
-Engine (real XGBoost→ONNX training pipeline and Go inference, falling back to a deterministic
-stub when no model is loaded — see docs/ml.md), Notification Service, Metrics, REST API, and
-TimescaleDB storage for prices/portfolio/watchlist/recommendations/predictions are real and
-wired end-to-end. OBV and Bollinger Bands are now blended into Decision Engine scoring too —
-`buildTechnicalScore` folds a Bollinger %B position signal and an OBV accumulation/distribution
-signal into `TechnicalScore.Overall` as weighted-average terms (weights 0.45 momentum/volume,
-0.20 RSI, 0.20 %B, 0.15 OBV — first-pass heuristics, not tuned against outcome data) whenever
-there's enough history to compute them. The momentum/volume term is a volatility-normalized
-12-bar return confirmed by relative volume, replacing a step function that read a single bar and
-in practice never fired, since Yahoo's newest "bar" is an unclosed live quote with `open ==
-close` and `volume == 0`; that row is now dropped at the provider, which also stops ML inference
-from always seeing `volume = 0` — see docs/decision_engine.md's "The momentum/volume term".
-`ml.FeatureVector` still draws on only those same five
-indicators (RSI/EMA/MACD/ATR/Volume), though as scale-free ratios rather than raw price-unit
-values since the price levels themselves were letting the model identify the symbol — see
-docs/ml.md. Extending past those five is the leading open lead for the correction model, whose current
-file clears the per-symbol base-rate baseline on PR AUC only by a hair (0.347 vs 0.346) and trails
-it on ROC AUC — see docs/ml.md. ADX is consumed too,
-but only by the deterministic market-condition classifier (ADX+EMA, see docs/ml.md), not blended
-into scoring or the ML feature vector either.
-Recovery probability is trained and loadable like correction probability — the recovery model
-in `training/models/` is the one that beat its own baseline once the features were made
-scale-free (see docs/ml.md); it stays optional, and with no model loaded the probability is left
-at 0 rather than guessed. Market condition is real and live
-(`ml.ClassifyMarketCondition`, a deterministic rule, not a trained model). The Risk Engine is
-real and applied to the score as a multiplicative factor (`computeRiskScore`, which can only
-lower it — the 0.10 weight it used to carry is gone) but still computed inline in the
-Orchestrator rather than as a separate pipeline stage. Indicators are now persisted from every
-live-recommendation path — `GET /recommendations`, `GET /alerts`, and the background alert-poll
-loop — but deliberately not from backtesting, whose bars are historical/simulated rather than
-live readings.
-
-## Core Modules
-
-### Collector
-
-Responsible for collecting market data from external providers.
-
-Responsibilities:
-
-- downloading stock and ETF prices
-- normalizing market data
-- storing historical data
-
-
-### Analyzer
-
-Responsible for market analysis and technical indicators.
-
-Responsibilities:
-
-- calculating indicators
-- detecting trends
-- generating market features
-
-Indicators:
-
-- RSI
-- EMA
-- MACD
-- ATR
-- ADX
-- OBV
-- Bollinger Bands
-- Volume analysis
-
-Implementation status: all of the above are implemented (internal/application/analyzer).
-RSI/EMA/MACD/ATR/Volume/OBV/Bollinger Bands are all blended into Decision Engine scoring
-(`buildTechnicalScore`); ADX feeds market-condition classification instead (ADX+EMA — see
-docs/ml.md); `ml.FeatureVector` draws on those same five, as scale-free ratios (see this file's
-top status note). "detecting trends" beyond what individual indicators already show (e.g. a
-consolidated trend/volatility summary score) isn't implemented.
-
-
-### ML Engine
-
-Responsible for machine learning predictions.
-
-The ML Engine predicts:
-
-- correction probability
-- recovery probability
-- market condition
-- confidence score
-
-The ML Engine is executed in the Go production runtime.
-
-ML models are trained externally using Python.
-
-Implementation status: correction probability and confidence score are real (XGBoost, exported
-to ONNX, loaded via `github.com/yalue/onnxruntime_go` — see docs/ml.md and training/README.md).
-Market condition is real too, but deliberately not ML — a deterministic ADX+EMA rule (see
-docs/ml.md). Recovery probability is a second, independent model of the same shape — trained,
-exported and loadable (`RECOVERY_MODEL_PATH` or the Settings page's picker), and optional in
-exactly the same way: with none loaded the probability stays 0 instead of being invented.
-
-
-### Portfolio Engine
-
-Responsible for user portfolio management.
-
-Responsibilities:
-
-- tracking owned positions
-- calculating profit/loss
-- calculating exposure
-- portfolio risk analysis
-
-
-### Decision Engine
-
-The main business intelligence component.
-
-Responsible for generating investment suggestions.
-
-Combines:
-
-- technical analysis
-- ML predictions
-- portfolio context
-- risk analysis
-
-Produces:
-
-- BUY
-- ACCUMULATE
-- HOLD
-- REDUCE
-- SELL
-- WAIT
-
-
-### Notification Service
-
-Responsible for notifications.
-
-Initial integration:
-
-- Discord Webhooks
-
-
-### Metrics
-
-Responsible for observability.
-
-Technology:
-
-- Prometheus exporter
-
-Metrics include:
-
-- system metrics
-- market metrics
-- ML metrics
-- decision metrics
-
-
-### REST API
-
-Application interface.
-
-Provides:
-
-- market data
-- portfolio information
-- recommendations
-- system status
-
-
-### Storage
-
-Primary database:
-
-- TimescaleDB
-
-Stores:
-
-- historical prices
-- indicators
-- portfolio data
-- predictions
-- recommendations
-
-
-### Cache
-
-Technology:
-
-- Redis
-
-Used for:
-
-- temporary calculations
-- API caching
-- rate limiting
-
-
----
-
-# Machine Learning Architecture
-
-Atlas separates ML model development from production execution.
-
-## Training Layer
-
-Language:
-
-Python
-
-Purpose:
-
-Develop and validate machine learning models.
-
-Responsibilities:
-
-- dataset preparation
-- feature engineering
-- exploratory analysis
-- model training
-- model validation
-- hyperparameter optimization
-- model evaluation
-
-
-Typical tools:
-
-- pandas
-- numpy
-- scikit-learn
-- XGBoost
-
-
-Output:
-
-Versioned ML model artifact.
-
-
----
-
-## Production Inference Layer
-
-Language:
-
-Go
-
-Purpose:
-
-Execute ML predictions inside the production system.
-
-Responsibilities:
-
-- loading trained models
-- generating predictions
-- providing prediction scores
-- integrating results into Decision Engine
-- exposing ML metrics
-
-
-The production system must not depend on Python runtime.
-
-
----
-
-## ML Workflow
-Historical Market Data
-
-    |
-
-    v
-
-Python Training Pipeline
-
-    |
-
-    v
-
-Validated Model Artifact
-
-    |
-
-    v
-
-Go ML Runtime
-
-    |
-
-    v
-
-Decision Engine
-
-    |
-
-    v
-
-Investment Recommendation
-
-
----
-
-## ML Principles
-
-- Models must be versioned.
-- Every model must have evaluation metrics.
-- Training and production inference are separated.
-- ML predictions are supporting signals, not final decisions.
-- The Decision Engine is responsible for final recommendations.
+Atlas is one Go binary (`cmd/api`) plus a training sidecar (`cmd/trainer`), run with Docker
+Compose on one machine ([deployment.md](deployment.md)). This document is the as-built map; the
+scoring rules live in [decision_engine.md](decision_engine.md), the models in [ml.md](ml.md), the
+schema in [database.md](database.md), and the decisions behind the load-bearing parts in
+[adr/](adr/).
+
+## Layers
+
+Clean Architecture, dependencies pointing inward only:
+
+```
+internal/app             HTTP handlers, dashboard, background loops, composition root (app.New)
+  -> internal/application  use cases: collector, analyzer, ml, decision, portfolio, backtesting,
+                           alerts, watchlist, exchangerate, notifications
+    -> internal/domain       pure types and rules: market, portfolio, ml, decision, backtesting,
+                             currency, watchlist, alerts
+internal/infrastructure  adapters behind application interfaces: persistence (TimescaleDB),
+                         cache (Redis), providers (Yahoo), exchangerate (NBP), notifications
+                         (Discord/Slack/Telegram), trainer (client for cmd/trainer)
+```
+
+Business logic never lives in HTTP handlers. Every external dependency — market provider, ML
+model, notification channel, exchange-rate source — sits behind an interface and is optional:
+Atlas starts without it and says what it is missing, rather than refusing to boot.
+
+## Modules
+
+| Module | Package | What it does |
+|---|---|---|
+| Collector | `application/collector` | Fetches hourly OHLCV bars from Yahoo (the provider drops the unclosed live bar and holiday bars with no prices), upserts them into `prices`, caches them in Redis |
+| Analyzer | `application/analyzer` | RSI, EMA, MACD, ATR, ADX, OBV, Bollinger Bands, volume |
+| ML | `application/ml` | Builds the scale-free feature vector, runs the ONNX correction and recovery models, falls back to a deterministic stub; classifies market condition (BULL/BEAR/SIDEWAYS) with an ADX+EMA rule |
+| Decision | `application/decision` | Technical score times ML, portfolio and risk factors, mapped to BUY/ACCUMULATE/HOLD/REDUCE/SELL/WAIT |
+| Portfolio | `application/portfolio` | Transactions, positions rebuilt by replaying the ledger, P&L, portfolio-wide risk, up to 5 named portfolios |
+| Exchange rates | `application/exchangerate` | Converts EUR/USD trades to PLN at the NBP rate for the trade date |
+| Backtesting | `application/backtesting` | Historical simulation, ML evaluation, walk-forward threshold search |
+| Alerts | `application/alerts`, `app/alerts_loop.go` | Background watchlist evaluation and change-only notifications through a durable outbox |
+| Observability | `observability` | Prometheus metrics; logs are structured JSON via zap |
+
+## Runtime
+
+- **Background loop.** `internal/app/alerts_loop.go` evaluates the whole watchlist every
+  `ALERT_POLL_INTERVAL_SECONDS` (default 300): refresh quotes, collect bars, score, persist,
+  and queue notifications for symbols whose action changed. This is also what keeps price
+  history accumulating for training.
+- **One poller.** The loop runs only while this process holds the `leader_election` lease
+  ([ADR 002](adr/002-one-leader-polls-not-every-replica.md)). Compose runs one `atlas-api`, so the
+  lease mainly keeps an overlapping restart from polling twice.
+- **Durable delivery.** Notifications are written to `alert_outbox` before anything sends them
+  ([ADR 003](adr/003-alert-delivery-is-an-outbox.md)).
+- **Database first.** Portfolio state is read from and written to TimescaleDB inside one
+  transaction per change, never held in memory
+  ([ADR 001](adr/001-database-is-authoritative-for-portfolio-state.md)).
+- **Migrations** are embedded and applied at startup under an advisory lock.
+- **Redis** caches price bars and exchange rates only; losing it costs refetches, not data.
+
+## ML: train in Python, infer in Go
+
+Training is offline Python (`training/`, pandas + XGBoost, exported to ONNX); serving is Go
+(`onnxruntime_go`, cgo). The production image carries no Python. The feature vector is computed
+by the same Go code on both sides — `cmd/export-training-data` calls `ml.BuildFeatureVector`, the
+function live inference uses — so training and serving cannot drift apart on feature math.
+
+Models are versioned files with a metadata sidecar holding their holdout metrics and label.
+Training writes candidates; a person activates one from the Settings page. Nothing promotes a
+model automatically. ML output is one input to the decision engine, never the decision itself.

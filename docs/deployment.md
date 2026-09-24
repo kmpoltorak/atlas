@@ -51,7 +51,7 @@ pull; back up before bumping TimescaleDB in particular.
 
 ## Recover
 
-See [runbook.md](runbook.md): restore the database (a dump into a fresh database, or an
+See [runbook.md](runbook.md): restore the database (a dump into a fresh database, or a
 Settings-page backup), then `git checkout` the configuration, then `docker compose up -d`.
 
 ## Health checks
@@ -72,14 +72,14 @@ Settings-page backup), then `git checkout` the configuration, then `docker compo
 Only `database`/`redis` affect `status`/the HTTP status code (503 when either fails) — atlas-api
 genuinely can't function without them. `trainer`/`prometheus`/`alertmanager`/`grafana` are purely
 informational (`pingHTTPStatus`): reported when reachable, `"error"` when not, but never flip
-`status`, since atlas-api doesn't depend on any of them to serve a request — Docker restarting atlas-api because Grafana is down would fix nothing and break something that was
-working. `trainer` is additionally omitted entirely (not even `"error"`) when `TRAINER_URL`
-isn't configured, since it's a genuinely optional sidecar (Compose runs it and sets `TRAINER_URL`) — `prometheus`/`alertmanager`/`grafana` default to the in-network Compose service names
-instead (`PROMETHEUS_URL`/`ALERTMANAGER_URL`/`GRAFANA_URL`), since all three are in the Compose stack; set any of them
-to an empty string to disable that particular check.
+`status`, since atlas-api doesn't depend on any of them to serve a request — Docker restarting
+atlas-api because Grafana is down would fix nothing and break something that was working.
+`trainer` is omitted entirely (not even `"error"`) when `TRAINER_URL` is empty. The other three
+default to the in-network Compose service names (`PROMETHEUS_URL`/`ALERTMANAGER_URL`/
+`GRAFANA_URL`); set any of them to an empty string to disable that check.
 
-`atlas-api`'s own compose healthcheck (`docker-compose.yml`) is `curl -fsS http://localhost:8080/
-health`, not `wget` — its runtime base (`debian:bookworm-slim`) doesn't ship `wget`, a real bug
+`atlas-api`'s own compose healthcheck (`docker-compose.yml`) is
+`curl -fsS http://localhost:8080/health`, not `wget` — its runtime base (`debian:bookworm-slim`) doesn't ship `wget`, a real bug
 once (`docker inspect` showed a nonstop "unhealthy" status despite `/health` genuinely returning
 200) fixed by adding `curl` to the Dockerfile. `atlas-trainer` still uses `wget`, which is fine
 there: its image is the full `golang:1.27.1-bookworm`, which does ship it.
@@ -105,10 +105,8 @@ can't self-report the way the others can (if atlas-api itself is down, no gauge 
 either). Both are visualized together on Grafana's "Atlas Overview" dashboard's "Service Status"
 panel (`grafana/dashboards/overview.json`).
 
-`cmd/trainer` (the training sidecar, part of the default Compose stack) exposes its own separate `/metrics` on port 8091, scraped as a second Prometheus job
-(`atlas-trainer`, `prometheus/prometheus.yml`) — previously it had no metrics and wasn't scraped
-at all, only `/status` (point-in-time JSON, no history) and a best-effort Discord notification on
-failure:
+`cmd/trainer` (the training sidecar) exposes its own `/metrics` on port 8091, scraped as a second
+Prometheus job (`atlas-trainer`, `prometheus/prometheus.yml`):
 ```
 atlas_trainer_runs_total{outcome="success|failure"}
 atlas_trainer_run_duration_seconds
@@ -129,21 +127,18 @@ formatted strings.
 ## One `atlas-api` at a time
 
 Atlas is supported with exactly one `atlas-api` process per database, which is what Compose runs.
-Everything a second concurrent process would need is built and individually tested — the list
-below — but no test runs two live processes against one database through a lease handover, so
-running two is not a supported configuration.
-
-## What is done
+An overlapping restart can still briefly run two, and the state that matters is built not to
+depend on there being one:
 
 | Was process-local | Now |
 |---|---|
 | Portfolio positions/transactions held in memory and written back wholesale | The database is authoritative. Writes go through `persistence.MutatePortfolio` — read, modify and commit in one SQL transaction under `SELECT … FOR UPDATE` — and each request re-reads state via `portfolio.UseCase.ForPortfolio`. A stale snapshot cannot overwrite a newer one. |
 | Watchlist held in memory | `watchlist.UseCase.List` reads through to the database, and `add` always attempts the idempotent insert before trusting its local duplicate check. |
-| Every process polling and sending its own notifications | A database lease (`app.Leader`, `migrations/018`) means one replica polls at a time. Notification delivery is a durable outbox (`alert_outbox`), so a replica dying mid-send loses nothing. |
+| Every process polling and sending its own notifications | A database lease (`app.Leader`, `migrations/018`) means one process polls at a time. Notification delivery is a durable outbox (`alert_outbox`), so a process dying mid-send loses nothing. |
 
-## The three multi-process gaps, now closed
+Three gaps a second process would expose were closed on top of that:
 
-1. ~~**Losing the lease does not stop work already running.**~~ Every batch now runs under
+1. **Losing the lease stops work already running.** Every batch now runs under
    `Leader.Term()`, a context cancelled the moment leadership is lost or shutdown begins, and it
    is checked between symbols rather than once at the start. Shutdown cancels the term, joins the
    renewal goroutine, and only then releases the lease. Writes are additionally fenced on
@@ -162,26 +157,22 @@ running two is not a supported configuration.
    flag the renewal loop flips: the lease carries an expiry, `Leader.IsLeader` refuses a lease
    whose deadline has passed, and a watchdog stands the process down if a renewal never lands —
    so a stalled renewal loop cannot leave singleton work running under an expired term.
-2. ~~**The notification cursor is not a notification cursor.**~~ `alert_cursor` (migrations/019)
+2. **The notification cursor records what was announced.** `alert_cursor` (migrations/019)
    records what was actually announced, and is written in the same transaction as the outbox
    entry that announced it — neither can exist without the other. It is read fresh at the start
    of every poll rather than seeded once at startup, so a promoted follower inherits the real
    cursor instead of a baseline from before its promotion. The `recommendations` table, which
    ordinary HTTP browsing also writes, no longer influences notification decisions at all.
-3. ~~**Active model selection does not propagate.**~~ `refreshRuntimeSettings` now also
-   reconciles the active model for both roles against the durable selection
-   (`reconcileModelSelection`), so every replica converges on the Settings page's choice within
-   the refresh interval rather than only the one that served the click. Activation persists the
+3. **Active model selection propagates.** `refreshRuntimeSettings` also reconciles the active
+   model for both roles against the durable selection (`reconcileModelSelection`), so every
+   process converges on the Settings page's choice within the refresh interval rather than only
+   the one that served the click. Activation persists the
    selection *before* swapping, so a failed write changes nothing anywhere and is reported.
 
-**What still keeps this at one process:** the mechanisms above are implemented, and the cases the
-follow-up review named are now covered individually — a stale claim's acknowledgement being
-refused after a successor completed the same row, shutdown during a send blocked on an
-unresponsive channel, and lease loss followed by reacquisition producing a new term and a new
-epoch. What still does not exist is a test that runs **two live processes** against one database
-through a handover, rather than two workers inside one test binary. Until that exists and passes,
-one process is the supported configuration, and this document does
-not claim otherwise.
+Each of these is tested individually — a stale claim's acknowledgement refused after a successor
+completed the same row, shutdown during a send blocked on an unresponsive channel, lease loss
+followed by reacquisition producing a new term and epoch. No test runs **two live processes**
+against one database through a handover, so running two on purpose is not supported.
 
 ## Delivery guarantee
 

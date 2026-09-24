@@ -125,7 +125,7 @@ services:
       # regardless of whether the candidate was any good, which made it noise rather than signal.
       # Deliberately reuses the *same* .env value as alertmanager's ALERTMANAGER_DISCORD_WEBHOOK_URL
       # below, not DISCORD_WEBHOOK_URL above (atlas-api's business-alert channel) — training
-      # outcomes are an "is Atlas itself working" signal, same category as pod-down/error-rate
+      # outcomes are an "is Atlas itself working" signal, same category as API-down/error-rate
       # infra alerts, not an investment recommendation. One webhook URL in .env covers both.
       TRAINING_DISCORD_WEBHOOK_URL: ${ALERTMANAGER_DISCORD_WEBHOOK_URL:-}
     depends_on:

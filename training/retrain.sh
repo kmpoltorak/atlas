@@ -31,6 +31,11 @@ export DATABASE_PASSWORD="${DATABASE_PASSWORD:-atlas}"
 # with "training/.venv/bin/python3: No such file or directory").
 VENV_DIR="${TRAINING_VENV_DIR:-training/.venv}"
 
+# train.py prints metrics to stdout and its "does NOT beat the baseline" warning to stderr. Piped
+# into a log, stdout is block-buffered and stderr is not, so the warning landed above the metrics
+# of the model it was about, reading as a verdict on the previous one.
+export PYTHONUNBUFFERED=1
+
 echo "==> Exporting fresh training data"
 go run ./cmd/export-training-data -label-type=correction --output training/data/features.csv
 go run ./cmd/export-training-data -label-type=recovery --output training/data/recovery.csv
