@@ -1,7 +1,7 @@
-# Atlas Recovery Runbook
+# Runbook
 
-Concrete procedures behind [deployment.md](deployment.md)'s backup and disaster-recovery
-sections, for the Docker Compose stack — the one deployment Atlas ships.
+Backup, restore and recovery procedures for the Docker Compose stack described in
+[deployment.md](deployment.md).
 
 There are two independent backup paths, and they answer different questions:
 
@@ -19,7 +19,7 @@ the machine it protects does not survive losing that machine: copy dumps somewhe
 
 | Target | Where it lives | How it recovers |
 |---|---|---|
-| TimescaleDB (prices, portfolios, transactions, watchlist, recommendations) | `timescaledb-data` volume | A dump or an Settings-page backup — the only thing here with no other copy |
+| TimescaleDB (prices, portfolios, transactions, watchlist, recommendations) | `timescaledb-data` volume | A dump or a Settings-page backup — the only thing here with no other copy |
 | Configuration | This Git repository (`.env` is gitignored by design) | `git checkout` |
 | Grafana dashboards, Prometheus/Alertmanager config | In Git (`grafana/`, `prometheus/`, `alertmanager/`), provisioned automatically | `git checkout` |
 | ML models | `training/models/` (gitignored) | Re-run training from TimescaleDB's own price history — reproducible, not instant. Atlas runs without a model (RSI stub) meanwhile |
@@ -97,7 +97,7 @@ exists yet, so this was safe to run directly rather than against a throwaway cop
    `UNIQUE (symbol_id, ts)`, verified first that no duplicate/orphaned rows existed to block
    re-adding them) and restarting `atlas-api` to drop its stale connections. This is the clearest
    argument in this whole drill for never running `pg_restore -c` against a hypertable-containing
-   database again — restoring into a fresh database (below) doesn't have this failure mode at all.
+   database again — restoring into a fresh database (step 4) doesn't have this failure mode at all.
 4. Restored into a freshly created `atlas_restored` database instead (the corrected procedure
    above) — succeeded with only 2 ignorable errors (a redundant FK constraint attempt against an
    internal chunk table, harmless since TimescaleDB enforces that FK at the hypertable level
@@ -125,6 +125,7 @@ changes, `prometheus/alerts.yml` defines Prometheus alerting rules for Atlas's o
 | `AtlasAPIDown` | `/metrics` hasn't been scrapeable for 2 minutes |
 | `AtlasAPIFlapping` | atlas-api's up/down state changed more than 4 times in 15 minutes (crash-loop proxy that needs no extra scrape config) |
 | `AtlasHighErrorRate` | more than 5% of requests returned a 5xx status over 5 minutes |
+| `AtlasAlertPollErrors` | a whole background alert-poll cycle failed at least once in 15 minutes (e.g. the market data provider is unreachable) |
 
 Docker Compose wires this end to end: `prometheus` loads `alerts.yml` and forwards firing alerts
 to the `alertmanager` service (`:9093`), which routes them to a Discord channel — deliberately a

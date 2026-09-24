@@ -17,7 +17,7 @@ groups:
       - alert: AtlasAPIFlapping
         # A proxy for crash-looping that works with only the atlas-api scrape target already
         # configured below — no extra scrape config needed. `changes()` counts up/down
-        # transitions, so a pod repeatedly dying and restarting shows up here even though each
+        # transitions, so a container repeatedly dying and restarting shows up here even though each
         # individual outage might be too short for AtlasAPIDown's 2m `for` to fire.
         expr: changes(up{job="atlas-api"}[15m]) > 4
         for: 0m

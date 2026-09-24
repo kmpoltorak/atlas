@@ -99,8 +99,8 @@ Go to **Recommendations**, pick a symbol, and you'll get one of:
 | **SELL** | Consider exiting a position entirely |
 
 Every recommendation comes with a **confidence** percentage (how clear-cut the signal is, not
-how likely a gain is) and a short list of *why* — which
-signals (price momentum, market mood, your own portfolio's risk level, etc.) drove that call. If
+how likely a gain is) and a short list of *why* — which signals (price momentum, market mood,
+your own portfolio's risk level, etc.) drove that call. If
 you disagree or don't understand a reason, that's worth reading closely before acting on it —
 Atlas explains itself on purpose so you never have to just take its word for it. An **incomplete
 inputs** badge means some information was missing when it was calculated (for example no current
@@ -123,7 +123,7 @@ Scroll to the bottom of the **Settings** page for three advanced tools:
   one file on your computer. Do this occasionally, and always right before using the next tool.
   Keep a copy somewhere other than this computer too: a backup on the same disk doesn't survive
   losing that disk.
-- **Restore** — loads a backup file back in, replacing everything currently in Atlas. Backups
+- **Restore from backup** — loads a backup file back in, replacing everything currently in Atlas. Backups
   from older versions of Atlas restore too.
 - **Flush all data** — permanently erases everything and returns Atlas to a completely blank
   slate. This button stays **locked** and greyed out unless you've downloaded a backup within the
@@ -135,12 +135,12 @@ Only use Flush if you genuinely want to start over from zero.
 ## Light/dark mode and language
 
 The top-right corner of every page has a **Theme** menu (Light / Dark / follow your device's
-setting) and a **Language** menu (English, Polish, German, French, Spanish). Both take effect immediately and are
-remembered next time you visit.
+setting) and a **Language** menu (English, Polish, German, French, Spanish). Both take effect
+immediately and are remembered next time you visit.
 
 ## If something looks wrong
 
 Every number Atlas shows is computed from real data — nothing is made up or simulated. If a price
 or recommendation looks stale, it will usually catch up within a few minutes on its own (Atlas
-refreshes in the background). If something still looks genuinely wrong, don't assume it's expected: the
-application log (`docker compose logs atlas-api`) usually says why.
+refreshes in the background). If something still looks genuinely wrong, don't assume it's
+expected: the application log (`docker compose logs atlas-api`) usually says why.

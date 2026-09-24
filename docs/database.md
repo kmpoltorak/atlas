@@ -1,15 +1,15 @@
 # Database
 
 Tables (see `migrations/*.sql` for the authoritative schema — this list is current as of
-migrations/001-020):
+migrations/001-023):
 
 - `symbols` — ticker registry, upserted on demand by every write path that needs a symbol_id.
   `name`/`exchange`/`asset_class` (migrations/016) hold what the symbol actually is (fetched once,
   rarely); `last_price`/`previous_close` (migrations/016) hold a live quote refreshed every
   alert-poll cycle, with two clocks: `quote_updated_at` is when Atlas fetched it, `quoted_at`
-  (migrations/022) when the market last traded at that price — valuation and freshness read the
-  latter, since a provider keeps returning a stopped instrument's last price — see the Watchlist/Alerts pages' "Today" column and the
-  Dashboard/Portfolio pages' live P&L overlay.
+  (migrations/022) when the market last traded at that price. Valuation and freshness read the
+  latter, since a provider keeps returning a stopped instrument's last price. These feed the
+  Watchlist/Alerts pages' "Today" column and the Dashboard/Portfolio pages' live P&L.
 - `prices` — OHLCV bars, a real TimescaleDB hypertable (`create_hypertable`, migrations/001).
 - `indicators` — one row per computed indicator value.
 - `predictions` — ML output: `score`/`confidence`/`model_version` always populated;
@@ -43,11 +43,11 @@ migrations/001-020):
   (correction/recovery), set from the Settings page — see docs/ml.md.
 - `schema_migrations` (migrations/013) — which migration versions have actually been applied to
   this database; see the "Migrations" note below.
-- `engine_settings` (migrations/015) — a single-row durable override for whether the ML+Portfolio+
-  Risk blend is active, set from the Settings page; no row means it's never been toggled
-  there, and the composition root falls back to the `ML_ENABLED` env var.
+- `engine_settings` (migrations/015) — a single-row durable override for whether the ML factor
+  takes part in scoring, set from the Settings page; no row means it's never been toggled there,
+  and the composition root falls back to the `ML_ENABLED` env var.
 - `backup_log` (migrations/017) — a single row recording when a full-database backup
-  (`persistence.TimescaleDB.BackupAll`, the Settings page's "Backup" button) was last taken. Purely
+  (`persistence.TimescaleDB.BackupAll`, the Settings page's "Download backup" button) was last taken. Purely
   a safety gate for the "Flush all data" button, not user data: `FlushAll` refuses outright unless
   this row exists and is less than five minutes old, so it's deliberately excluded from the
   backup/restore/flush cycle itself (see `internal/infrastructure/persistence/backup.go`) — a
@@ -90,9 +90,8 @@ deliberately doesn't write indicator snapshots, since its bars are historical/si
 readings (see docs/backtesting.md).
 
 Only `prices` is an actual TimescaleDB hypertable — every other table above is a plain relational
-table, despite this doc's original proposal sketching more of them as hypertables. No TimescaleDB
-compression or retention *policy* is configured; the "10 years" figure below was a target, never
-implemented. Retention that does exist is application-level and covers derived data only:
+table. No TimescaleDB compression or retention *policy* is configured. Retention that does exist
+is application-level and covers derived data only:
 `PruneDerivedData` drops indicator, recommendation and prediction rows past
 `DERIVED_RETENTION_DAYS`, once a day, alongside delivered `alert_outbox` rows. It is **off by
 default** — the env var defaults to `0`, meaning keep everything; set it (e.g. 365) on a long-lived
@@ -107,7 +106,7 @@ Migrations are hand-written, numbered SQL files, embedded with `go:embed` and ap
 application itself at startup under a `pg_advisory_lock` — so a fresh volume and an existing one
 converge on the same schema without anyone running `psql` by hand. Which versions actually landed
 is recorded in `schema_migrations` (migrations/013); every migration from 013 onward inserts its
-own row. Every migration must be safe to run twice: Postgres has no `ADD CONSTRAINT IF NOT EXISTS`, so a
-constraint migration checks `pg_constraint` inside a `DO $$` block, and a migration that only works
+own row. Every migration must be safe to run twice: Postgres has no
+`ADD CONSTRAINT IF NOT EXISTS`, so a constraint migration checks `pg_constraint` inside a `DO $$` block, and a migration that only works
 once is broken. Restoring a `pg_dump` with `pg_restore -c` silently drops `prices`' constraints on
 this schema — restore into a fresh database instead ([runbook.md](runbook.md)).

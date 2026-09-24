@@ -1,6 +1,6 @@
 # Infrastructure alerts route to a Discord channel deliberately separate from
 # DISCORD_WEBHOOK_URL (internal/app/alerts_loop.go's business alerts — recommendation changes),
-# so infra noise (pod restarts, error rates) never mixes with investment notifications.
+# so infra noise (API restarts, error rates) never mixes with investment notifications.
 #
 # The webhook URL itself is never written here or committed anywhere: `webhook_url_file` points
 # at a file docker-compose.yml's alertmanager service writes at container start from the

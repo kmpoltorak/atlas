@@ -1,4 +1,4 @@
-# ML Architecture
+# Machine Learning
 
 **Implementation status**: the Python training pipeline described below is real and
 implemented (see training/README.md for the runbook) — XGBoost binary classifier predicting
@@ -7,8 +7,8 @@ trailing 20-bar realised volatility, floored at 2% — see `application/ml.Corre
 and "Why the label is volatility-scaled" below; the fixed 5% this replaced is kept only as the
 comparison it is measured against), trained on real collected OHLCV history, exported to ONNX. No
 shipped model is trained on synthetic data — `training/make_synthetic_features.py` exists only so
-CI can run a full training pass without a database. Go production inference (`internal/application/ml`, `OnnxModel`) loads
-that ONNX model via `github.com/yalue/onnxruntime_go` and runs real inference when `MODEL_PATH`
+CI can run a full training pass without a database. Go production inference
+(`internal/application/ml`, `OnnxModel`) loads that ONNX model via `github.com/yalue/onnxruntime_go` and runs real inference when `MODEL_PATH`
 is set and loads successfully — verified live end-to-end (train → export → load → real HTTP
 `/predictions` response → persisted `correction_probability` row, not NULL). When no model is
 loaded (the default), Predict falls back to the same deterministic RSI-derived stub as before
@@ -71,27 +71,47 @@ Two structural problems were fixed alongside it:
 
 ## Current numbers, and what they say
 
-Measured on the current real dataset (10,002 correction rows / 1,036 recovery rows across 47
-symbols, real Yahoo 1h bars out of TimescaleDB), with scale-free features, the volatility
-features and the embargo in place:
+The latest run, 2026-09-24 (`training/retrain.sh` over everything in the database: 56,255
+correction rows and 7,515 recovery rows across 47 symbols, real Yahoo 1h bars, volatility-scaled
+label, scale-free features, embargo in place). The holdout is the most recent stretch of history
+— from 2026-06-30 for correction, 2026-07-31 for recovery:
+
+| | PR AUC | base-rate baseline | no-skill | ROC AUC | unseen symbols | Brier |
+|---|---|---|---|---|---|---|
+| Correction `v20260924182530` | **0.183** | 0.128 | 0.126 | 0.628 | 0.656 | 0.108 |
+| Recovery `v20260924182533` | 0.260 | 0.271 | 0.271 | 0.491 | 0.633 | 0.220 |
+
+**The correction model beats the symbol-base-rate baseline on PR AUC** (1.4x), the metric this
+project judges promotion on. **The recovery model does not**: its PR AUC sits below the baseline
+and the no-skill floor, and its ROC AUC below 0.5. On this holdout it has no measured skill, and
+`train.py` marks it `beats_symbol_base_rate: false`.
+
+Both are well below the development-time figures below, which were measured on a sample a
+fifth to a seventh the size and a different holdout period, so the two runs are not directly
+comparable. The recovery model's earlier 0.758 against 0.528 came from 253 holdout rows and did
+not survive a sample five times larger — the same pattern
+[decision_engine.md](decision_engine.md) records for three technical signals: a result measured on
+one window is a hypothesis.
+
+### Development measurements
+
+Measured during development on the dataset of the time (10,002 correction rows / 1,036 recovery
+rows across 47 symbols), with the same features and embargo:
 
 | | PR AUC | base-rate baseline | no-skill | ROC AUC | unseen symbols | Brier |
 |---|---|---|---|---|---|---|
 | Correction | **0.297** | 0.226 | 0.070 | 0.785 | 0.766 | 0.059 |
 | Recovery | **0.758** | 0.528 | 0.427 | 0.782 | 0.566 | 0.183 |
 
-These are measured on the volatility-scaled label (see below); the fixed-5% label the project
-started with gave correction PR AUC 0.264 against a 0.188 baseline and ROC AUC 0.710.
+The fixed-5% label the project started with gave correction PR AUC 0.264 against a 0.188
+baseline and ROC AUC 0.710. That run is why promotion is judged on PR AUC: the two metrics
+disagreed — the model trailed the baseline on ROC AUC (0.710 vs 0.748) while beating it on PR AUC
+(0.264 vs 0.188). ROC AUC is dominated by how well the vast, uneventful middle of the distribution
+is ordered, and Atlas never alerts on the middle. It alerts on the top of the ranking, which is
+exactly what PR AUC measures.
 
-**Both models now beat the symbol-base-rate baseline on PR AUC**, which is the metric this
-project judges promotion on. That choice is deliberate and the two metrics genuinely disagree
-for the correction model: it trails the baseline on ROC AUC (0.710 vs 0.748) while beating it on
-PR AUC (0.264 vs 0.188). ROC AUC is dominated by how well the vast, uneventful middle of the
-distribution is ordered — and Atlas never alerts on the middle. It alerts on the top of the
-ranking, which is exactly what PR AUC measures.
-
-What that looks like in the terms the product is actually built for. Restricting alerts to the
-highest-scoring bars in the holdout:
+What that looked like in the terms the product is built for, restricting alerts to that model's
+highest-scoring holdout bars:
 
 | alerts fired | correct | precision | lift vs 6.5% base rate | baseline at same budget |
 |---|---|---|---|---|
@@ -122,7 +142,7 @@ old model was reaching for when it memorised symbol identity. Giving it a real, 
 volatility feature replaced the shortcut with the genuine article — which is why the model now
 generalises to symbols it has never seen, something memorisation can never do.
 
-Longer volatility windows were tried and rejected on evidence: most symbols hold only ~125 bars,
+Longer volatility windows were tried and rejected on evidence: most symbols then held only ~125 bars,
 so a 100-bar rolling window discarded a third of the dataset and made every metric worse.
 
 ### The label itself was the deeper problem
@@ -153,8 +173,8 @@ ThresholdPct: 0.05}` — no longer has a named constructor in `labels.go`. Nothi
 built one, so it now lives only in `labels_test.go`, where it is what the volatility-scaled
 default gets contrasted against; models trained against it stay describable from that literal.
 
-Accuracy is reported but never used as a verdict. On a 6.5%-positive target it is close to
-meaningless, and it was the number that made the broken model look strong. Training also runs
+Accuracy is reported but never used as a verdict. On a target this rare (6.5% positive then,
+12.6% on the latest run) it is close to meaningless, and it was the number that made the broken model look strong. Training also runs
 without `scale_pos_weight` despite the imbalance: measured, rebalancing bought ~0.01 ROC AUC
 (inside the noise) while tripling the Brier score, 0.211 vs 0.067, and pushing mean predicted
 probability to 0.43 against a true 0.065. Atlas consumes this output *as a probability* — the
@@ -164,8 +184,7 @@ calibration is worth more here than a hundredth of AUC.
 **Market condition**: real and usable today, but *not* a trained model —
 `ml.ClassifyMarketCondition` is a deterministic ADX+EMA technical-analysis rule (ADX below 20 =
 SIDEWAYS regardless of direction; otherwise BULL/BEAR from EMA's latest direction), which is
-well-established technical analysis that doesn't need labeled historical outcomes to define, so
-it doesn't share recovery-probability's data-volume blocker. Wired into
+well-established technical analysis that doesn't need labeled historical outcomes to define. Wired into
 `Recommendation.MarketCondition` (`GET /recommendations`, persisted in the `recommendations`
 table — migrations/007) — see docs/decision_engine.md.
 
@@ -199,12 +218,13 @@ indicators table, so it is deliberately left as a documented gap rather than a s
    ingestion path.
 2. Generate features — `cmd/export-training-data` (Go, reuses live feature code).
 3. Train model — `training/train.py` (XGBoost, time-ordered holdout).
-4. Validate model — holdout ROC AUC against the symbol-base-rate baseline, PR AUC, Brier score,
-   accuracy, and label-balance checks, printed and written to the
-   model's metadata sidecar (`training/models/atlas-ml-<version>.json`).
+4. Validate model — holdout PR AUC against the symbol-base-rate baseline (the verdict), ROC AUC,
+   Brier score, accuracy and label-balance checks, printed and written to the model's metadata
+   sidecar (`training/models/atlas-ml-<version>.json`).
 5. Export model — ONNX (`onnxmltools.convert_xgboost`).
-6. Deploy model — copy/mount the `.onnx` file (+ its `.json` metadata sidecar, required — see
-   below) and point `MODEL_PATH` at it; not automated/CI-driven yet (see training/README.md).
+6. Activate model — pick it on the Settings page, or point `MODEL_PATH`/`RECOVERY_MODEL_PATH` at
+   the `.onnx` file (its `.json` sidecar must sit next to it — see below). Always a person's
+   decision, never automated.
 
 Every exported model is versioned via its filename (`atlas-ml-<version>.onnx`) and a metadata
 JSON sidecar recording feature order, training row count, holdout metrics, and the label
@@ -269,12 +289,12 @@ a custom horizon or barrier is measured against the event it learned. A model wh
 no `label_params` is scored against `DefaultCorrectionLabelParams()`, and the result says so
 (`MLEvaluation.LabelFromModel=false`, a "default label" badge on the Backtests page).
 
-The two models currently in `training/models/` — correction `v20260810145759` (holdout PR AUC
-0.347 vs a 0.346 baseline, ROC AUC 0.813 vs 0.823) and recovery `v20260809134009` (PR AUC 0.758 vs
-0.528) — are in that second group: they predate `label_params` and were exported before the
-exporter applied the volatility-scaled barrier, so they learned the older fixed barrier. Their
-numbers are real, but they measure a different event from the one the decision engine now
-describes. Retrain both before comparing them with anything else here.
+Models trained from 2026-09-24 on (`v20260924182530`, `v20260924182533`) record `label_params`.
+The two older files — correction `v20260810145759` (holdout PR AUC 0.347 vs a 0.346 baseline) and
+recovery `v20260809134009` (PR AUC 0.758 vs 0.528) — are in the second group: they predate
+`label_params` and were exported before the exporter applied the volatility-scaled barrier, so
+they learned the older fixed barrier. Their numbers are real, but they measure a different event
+from the one the decision engine now describes, and cannot be compared with the table above.
 
 ## Production Inference
 The production system is written in Go (`internal/application/ml`, `OnnxModel`).
@@ -286,8 +306,7 @@ entirely, changes nothing else in the calling code.
 This is the repo's first cgo dependency (`onnxruntime_go` dlopens the native
 `libonnxruntime.so`/`.dylib` at runtime) — the Dockerfile moved off Alpine to a glibc base
 (`debian:bookworm-slim`) to safely bundle it, and downloads ONNX Runtime 1.28.0 for the image's
-own architecture (`x64` for amd64, `aarch64` for arm64). The arm64 library's load is verified only
-as far as an x86 host allows: under QEMU emulation both the image and Microsoft's own 1.28.0
-arm64 Python wheel crash inside the library while 1.20.1 loads, so arm64 inference needs one run
-on real ARM hardware before it is called verified; see the Dockerfile's comments for why Alpine/musl
-isn't viable here.
+own architecture (`x64` for amd64, `aarch64` for arm64). arm64 inference is unverified: under
+QEMU emulation both the image and Microsoft's own 1.28.0 arm64 Python wheel crash inside the
+library while 1.20.1 loads, and it has not been run on real ARM hardware. See the Dockerfile's
+comments for why Alpine/musl isn't viable here.

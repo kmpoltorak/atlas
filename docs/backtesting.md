@@ -1,378 +1,77 @@
-# Backtesting Engine
+# Backtesting
 
-**Implementation status**: internal/application/backtesting implements a real simulation (no
-future *bar* data leakage, verified by regression test) of exactly one fixed all-in/all-out
-strategy driven by the live Decision Engine — not the pluggable Strategy interface described
-below, and no other example strategies exist. It computes Returns, Max Drawdown, Volatility,
-Sharpe Ratio, and Win Rate. ML Evaluation (Accuracy/Precision/Recall/F1/ROC AUC — see
-`UseCase.evaluateML`), persistence (`backtest_runs`, see below), and now walk-forward
-train/validate/test splitting with threshold optimization (`GET /backtests/walkforward`, see
-"Walk Forward Testing"/"Optimization" below) are all real.
+`internal/application/backtesting` replays history through the live decision engine and reports
+what following it would have done. It is a check on the engine, not a strategy library: there is
+exactly one strategy, and nothing here ever changes live behaviour.
 
-**Execution model — read this before reading any number below.** The simulation observes,
-signals and executes at three distinct times, which it did not always do:
+## What a run simulates
 
-- **Observation**: the decision at bar `i` sees `bars[:i]` — bars that have *closed*. It used to
-  see `bars[:i+1]`, i.e. bar `i`'s own final close and volume, which are not known until that bar
-  is over.
-- **Execution**: at bar `i`'s **open**, the first price actually reachable after the signal. The
-  earlier version bought and sold at the same close the signal was computed from — a fill that
-  requires knowing the closing price before placing the order.
-- **Cost**: `tradeCostRate` (0.1% per side, commission) plus `slippageRate` (0.05% per side,
-  adverse fill), charged in both directions, so a round trip pays four times. Both are
-  placeholders for a liquid instrument, not measurements — calibrate them against real fills
-  before reading a result as money, especially on an illiquid GPW small cap.
+One all-in/all-out strategy driven by the Decision Engine: BUY deploys all cash, SELL liquidates.
+ACCUMULATE and REDUCE are ignored, so a backtest cannot evaluate the graded part of the engine's
+output. Simulating them needs a sizing policy — what fraction, on what basis, with what minimum
+trade size — which is a product decision nobody has made, and inventing one would make the
+reported returns a function of that invention rather than of the signal.
 
-**Position sizing is all-in/all-out, and partial orders are deliberately not simulated.**
-The Decision Engine emits ACCUMULATE and REDUCE as well as BUY and SELL, but the simulation
-executes only BUY (deploy all cash) and SELL (liquidate); ACCUMULATE and REDUCE are ignored.
-This is a stated limitation, not an oversight, and it has a consequence worth being explicit
-about: a backtest cannot evaluate the graded part of the engine's output at all. Whatever the
-scoring does with position sizing is untested here. Implementing it needs a sizing policy — what
-fraction, on what basis, with what minimum trade size — which is a product decision nobody has
-made yet, and inventing one would make the reported returns a function of that invention rather
-than of the signal.
+**Execution model — read this before reading any number below.**
 
-**Annualization follows the curve's own calendar.** Volatility and Sharpe are computed from a
-daily equity curve (last observation per UTC date, see `dailyEquity`) and scaled by the
-observations-per-year that curve actually contains (`observationsPerYear`), not a hardcoded
-`sqrt(252)`. The old constant treated an hourly curve as if each bar were a trading day,
-inflating the annualized figures by roughly `sqrt(24)`, and assumed every exchange runs the same
-number of sessions.
+- **Observation**: the decision at bar `i` sees `bars[:i]`, bars that have *closed*. It used to
+  see bar `i`'s own close and volume, which are not known until that bar is over.
+- **Execution**: at bar `i`'s **open**, the first price reachable after the signal. The earlier
+  version filled at the same close the signal was computed from.
+- **Quote freshness** is measured against the last bar, not the wall clock
+  (`Orchestrator.HistoricalClock`), so a historical run is not flagged stale for being historical.
+- **Costs**: `tradeCostRate` (0.1% commission per side) plus `slippageRate` (0.05% adverse fill
+  per side), so a round trip costs about 0.3%. The entry fee comes out of the cash that buys the
+  shares, the cost basis carried into the decision engine is the price actually paid, and a round
+  trip that gained less than its costs counts as a loss. Both rates are placeholders for a liquid
+  instrument, not measurements — set them to real fills before reading a result as money,
+  especially on an illiquid WSE small cap. Before costs existed every simulation traded for free,
+  which flatters exactly the strategies that trade often for a small edge.
 
-**Portfolio-state leakage — fixed**: backtesting previously reused the exact same Orchestrator
-instance as live recommendations (see internal/app/app.go), so every simulated
-recommendation's `decision.RecommendationInput.HasPosition` (see docs/decision_engine.md's
-ACCUMULATE/REDUCE/WAIT differentiation) reflected the **live, real, present-day** portfolio, not
-the backtest's own simulated position built up bar-by-bar. `UseCase.Run` now constructs its own
-`portfolio.UseCase` (`simPortfolio`, no Repository — never touches TimescaleDB) and its own
-Orchestrator around it (`simOrchestrator`, reusing the live Analyzer/Decision/ML, which are
-stateless with respect to any specific portfolio), syncing `simPortfolio.Positions` to the
-simulation's own quantity/entry price before every bar's recommendation. A backtest's action
-sequence (BUY vs. ACCUMULATE, SELL vs. REDUCE) is now independent of whatever the live portfolio
-holds — see `TestRunDoesNotLeakLivePortfolioState`.
+**No live portfolio leaks in.** Each run builds its own `portfolio.UseCase` (`simPortfolio`, no
+repository) and its own Orchestrator around it, synced to the simulated position before every
+bar. BUY vs ACCUMULATE and SELL vs REDUCE, and the risk factor, follow the simulated position,
+never what the live portfolio holds (`TestRunDoesNotLeakLivePortfolioState`). Indicator snapshots
+are not written from backtests.
 
-**ML Evaluation**: when a real trained model is loaded (`MLModel != nil` — see docs/ml.md), every
-backtest run also scores that model's correction-probability predictions against what actually
-happened afterward (`ml.ComputeCorrectionLabel`, the same label definition used in training),
-reporting Accuracy/Precision/Recall/F1/ROC AUC (ROC AUC via the rank-sum/Mann-Whitney method) in
-the response's `ml_evaluation` field. This is `nil`, not a fabricated struct, when no real model
-is loaded — evaluating the deterministic RSI-derived stub's made-up "correction probability"
-against reality would be a meaningless number, not a real one.
+## What a run reports
 
-**Persistence**: every `/backtests` call is now also written to `backtest_runs`
-(migrations/005), append-only like recommendations/predictions, and `GET /backtests/history`
-lists a symbol's past runs. Unlike the five-table target design below (backtests,
-backtest_runs, trades, performance_metrics, strategy_versions), this collapses trades and
-performance metrics into a single JSONB `result_summary` column rather than normalizing them
-into their own tables — a deliberate simplification, not a partial implementation of all five;
-see migrations/005's comment for the reasoning. `strategy_versions` isn't a real versioning
-concept either, just a caller-supplied tag string per run.
+`StrategyResult`: total and annualized return, Sharpe ratio, volatility, max drawdown, trade
+count, winning and losing trades, win rate, and the trade list.
 
-## Overview
-The Backtesting Engine is responsible for evaluating investment strategies using historical market data.
-The purpose of backtesting is to verify whether Atlas recommendations would have produced acceptable results in historical market conditions.
-Backtesting is mandatory before introducing any new strategy, indicator combination or ML model into production.
----
-# Goals
-The Backtesting Engine must:
-- simulate historical decisions,
-- evaluate strategy performance,
-- compare different approaches,
-- measure risk,
-- prevent overfitting,
-- validate ML predictions.
----
-# Core Principles
-## No Future Data Leakage
-The engine must never use information that was not available at the decision timestamp.
-Example:
-Incorrect:
-```
-Use today's closing price to decide yesterday's action
-```
-Correct:
-```
-At timestamp T:
-Use only data available before T
-```
----
-# Supported Actions
-The engine must simulate:
-```
-BUY
-SELL
-HOLD
-REDUCE POSITION
-```
-Each action must include:
-- timestamp
-- price
-- quantity
-- reason
-- confidence
-- model version
----
-# Input Data
-Historical data:
-Prices:
-- Open
-- High
-- Low
-- Close
-- Volume
-Indicators:
-- RSI
-- EMA
-- MACD
-- ATR
-- ADX
-- Bollinger Bands
-ML:
-- prediction probability
-- confidence
-- model version
-Portfolio:
-- initial capital
-- position size
-- transaction fees
-- currency
----
-# Strategy Interface
-Every strategy must implement:
-```
-Strategy
-Evaluate()
-GenerateSignal()
-CalculateRisk()
-```
-Example:
-```
-RSI Strategy
-ML Strategy
-Trend Following Strategy
-Correction Recovery Strategy
-```
----
-# Portfolio Simulation
-The engine must simulate:
-Initial capital:
-```
-10000 USD
-```
-Example:
-BUY:
-```
-VOO
-Price:
-500 USD
-Quantity:
-10
-```
-Portfolio:
-```
-Cash
-Positions
-Profit/Loss
-Drawdown
-```
+Volatility and Sharpe come from a daily equity curve (last observation per UTC date,
+`dailyEquity`) scaled by the observations per year that curve actually contains
+(`observationsPerYear`), not a hardcoded `sqrt(252)`. The old constant treated an hourly curve as
+if each bar were a trading day, inflating the annualized figures by roughly `sqrt(24)`.
 
-## Trading costs
+Every `/backtests` call is stored in `backtest_runs` (migrations/005) and listed by
+`GET /backtests/history`. Trades and metrics live in one JSONB `result_summary` column rather
+than separate tables; `strategy_version` is a caller-supplied tag, not a versioning system.
 
-Every simulated trade is charged `tradeCostRate` (0.1%) on each side, so a round trip costs 0.2%.
-The entry fee comes out of the same cash that buys the shares, so a position is smaller than a
-free trade would have bought, and the cost basis it carries into the decision engine
-(`simPortfolio.AverageCost`) is the price actually paid. A round trip that gained less than the
-fee counts as a losing trade, not a winning one.
+## ML evaluation
 
-Before this existed, every simulation traded for free. That flatters exactly the strategies a
-backtest is most likely to be run on — the ones that trade often for a small edge each time — and
-0.1% per side is the difference between a real result and an unreachable one for any of them. The
-rate is a conservative retail default covering commission and spread; set it to the real brokerage
-fee before reading a result as money.
+When a trained model is loaded, every run also scores its correction probabilities against what
+actually happened (`UseCase.evaluateML`): accuracy, precision, recall, F1 and ROC AUC (rank-sum
+method), in `ml_evaluation`. It is absent, not zero, when only the deterministic stub is loaded —
+scoring the stub against reality would be a meaningless number.
 
----
-# Performance Metrics
-Every backtest must calculate:
-## Returns
-```
-Total Return %
-Annual Return %
-```
----
-## Risk
-```
-Maximum Drawdown
-Volatility
-Sharpe Ratio
-Sortino Ratio
-```
----
-## Trading Metrics
-```
-Number of Trades
-Winning Trades
-Losing Trades
-Win Rate
-Average Gain
-Average Loss
-```
----
-# ML Evaluation
-The ML model must be evaluated independently.
+The event it is scored against is the label the model was trained on, read from its metadata's
+`label_params` (`ml.OnnxModel.LabelParams`) and reported as `MLEvaluation.Label`. A model whose
+metadata predates `label_params` is scored against `DefaultCorrectionLabelParams()` with
+`LabelFromModel=false`, shown on the Backtests page as "default label" — those numbers may
+compare the model with an event it never learned.
 
-Which correction event it is scored against matters as much as the metric: `evaluateML` uses the
-label the model was trained on, read from its metadata's `label_params`
-(`ml.OnnxModel.LabelParams`), and reports it as `MLEvaluation.Label`. A model whose metadata
-predates `label_params` is scored against `DefaultCorrectionLabelParams()` with
-`LabelFromModel=false`, shown on the Backtests page as "default label" — those numbers may compare
-the model with an event it never learned.
-Metrics:
-```
-Accuracy
-Precision
-Recall
-F1 Score
-ROC AUC
-```
-Additionally:
-```
-Prediction vs Reality
-```
-Example:
-Prediction:
-```
-80% probability of correction
-```
-Reality:
-```
-Correction happened
-```
----
-# Walk Forward Testing
-The engine must support walk-forward validation.
-Example:
-```
-Train:
-2015-2022
-Validate:
-2023
-Test:
-2024
-```
-Never randomly shuffle financial time series.
+## ML contribution — does the model make money?
 
-**Implementation status**: real, via `GET /backtests/walkforward`
-(`backtesting.UseCase.RunWalkForward`, internal/application/backtesting/walkforward.go) — a
-deliberate simplification of the target design above, scoped with the Author first: the split is a
-fixed 60/20/20 proportion of whatever bar window is requested (`splitWalkForward`), not
-caller-supplied explicit date ranges like the 2015-2022/2023/2024 example. Each split is a
-strictly chronological, non-overlapping slice (never shuffled), and each gets its own
-independent simulation — its own fresh indicator warm-up and simulated portfolio, exactly like a
-standalone `Run` — so no split ever sees another's data, in either direction.
----
-# Data Splitting
-Allowed:
-```
-Training
-Validation
-Testing
-```
-Forbidden:
-```
-Random train/test split
-```
-because it creates unrealistic results.
+`StrategyResult.MLContribution` (`measureMLContribution`) runs the identical simulation twice
+over the same bars — once with the ML term in the decision, once without — and reports the
+difference in return, Sharpe and max drawdown. Absent when only the stub is loaded.
 
-**Implementation status**: real — see "Walk Forward Testing" above. `splitWalkForward` slices
-chronologically only; there is no shuffling anywhere in this codebase's backtesting path.
----
-# Optimization
-The engine should support:
-Parameter optimization:
-Example:
-```
-RSI threshold:
-20
-25
-30
-35
-```
-Compare results:
-```
-Return
-Risk
-Drawdown
-```
+This closes a real gap: ROC AUC, precision and recall do not say whether *acting* on the model
+beats ignoring it. A model can rank well and still lose money, or score modestly and still help.
 
-**Implementation status**: real, but scoped narrower than the literal RSI-threshold example
-above (Atlas's engine blends technical/ML/portfolio into one score rather than trading on RSI
-alone, so RSI in isolation isn't a real tunable parameter here). What's actually optimized is
-`decision.Thresholds` — the five score-band cutoffs (StrongBullish/LeanBullish/LeanBearish/
-StrongBearish/LowMLConfidence) that decide BUY/ACCUMULATE/HOLD/REDUCE/SELL/WAIT (see
-docs/decision_engine.md and internal/domain/decision/types.go). `optimizeThresholds`
-(internal/application/backtesting/walkforward.go) runs a small, fixed grid search around
-`decision.DefaultThresholds()` (±0.05 for the four score bands, ±0.10 for LowMLConfidence — not
-user-configurable), evaluated only against the train split, ranked by Sharpe Ratio specifically
-so the search doesn't reward high-variance blowups (a single risk-adjusted number standing in
-for comparing "Return/Risk/Drawdown" together, as this section asks). **Crucially: this never
-touches the live decision engine.** The winning thresholds are reported back
-(`WalkForwardResult.BestThresholds`) for a human to review — promoting them to
-`decision.DefaultThresholds()` is a manual code change, never automatic. This was an explicit
-scoping decision with the Author, consistent with Atlas being decision support, never an automatic
-investment system.
----
-# Reports
-Generate:
-HTML report
-JSON report
-Database record
-Example:
-```
-Strategy:
-ML Correction Detector
-Period:
-2015-2025
-Return:
-+125%
-Max Drawdown:
--18%
-Sharpe:
-1.42
-```
----
-# Database Tables
-Required:
-```
-backtests
-backtest_runs
-trades
-performance_metrics
-strategy_versions
-```
----
-# Future Extensions
-Possible additions:
-- Monte Carlo simulation
-- Portfolio optimization
-- Risk parity
-- Factor analysis
-- Reinforcement learning
-- Paper trading integration
-
-## ML Contribution — does the model actually make money?
-
-`StrategyResult.MLContribution` (application/backtesting.measureMLContribution) runs theidentical simulation twice over the same bars — once with the ML term in the decision blend, once
-with it removed — and reports the difference in return, Sharpe and max drawdown. Nil when only
-the deterministic stub is loaded, same guard as `MLEvaluation`.
-
-This closes a real gap. `MLEvaluation` reports ROC AUC, precision and recall; none of them say
-whether *acting* on the model beats ignoring it. A model can rank well and still lose money, or
-score modestly and still help. Judging a trading signal by classification metrics alone is the
-standard mistake, and this project was making it: the backtester already computed Sharpe, the ML
-evaluation already computed AUC, and nothing ever compared them.
-
-Across all 47 collected symbols, 180-day window, 1215 simulated trades (25.9 per symbol):
+Across all 47 collected symbols, 180-day window, 1215 simulated trades (25.9 per symbol), with the
+correction model of the time:
 
 | | better with ML | worse | no difference | mean delta | median delta |
 |---|---|---|---|---|---|
@@ -384,34 +83,42 @@ Across all 47 collected symbols, 180-day window, 1215 simulated trades (25.9 per
 return +0.202 with ML against +0.194 without, mean max drawdown 0.217 against 0.243, win rate
 0.343 against 0.334.
 
-Read plainly: the ML term earns a modest place. Return and Sharpe are close to a coin flip
-symbol by symbol, with medians at zero — for the typical symbol the model changes almost nothing.
-Where it consistently helps is drawdown, improving it for 30 symbols against 16, which is exactly
-the axis a correction model should move. It buys a little less depth in the bad stretches without
-costing return.
+Read plainly: return and Sharpe are a coin flip symbol by symbol, with medians at zero. Where the
+model consistently helps is drawdown — 30 symbols against 16 — which is exactly the axis a
+correction model should move.
 
-**This replaced an earlier, much more damning reading** of the same measurement: mean Sharpe delta
-−0.097, drawdown worse for 11 symbols and better for *none*. That reading was an artifact of two
-bugs since fixed, and is worth recording because both were invisible in every statistical metric
-the project computed:
+**This replaced an earlier, much more damning reading** of the same measurement: mean Sharpe
+delta −0.097, drawdown worse for 11 symbols and better for none. That was an artifact of two bugs,
+both invisible in every statistical metric the project computed:
 
-1. The momentum term was frozen (see docs/decision_engine.md), so scores clustered and rarely
-   crossed a threshold. The simulation averaged **1.0 trades per symbol** — each "delta" was the
-   timing of a single entry. It is 25.9 now, from the same 180 days of history. The sample was
-   never a data-availability problem; it was a symptom.
-2. Yahoo emits a timestamp for exchange holidays and half-days with null OHLC, which unmarshalled
-   to zero (see `providers.hasUsablePrices`). Final equity is `cash + quantity*close`, so a
-   zero-priced last bar reported exactly −100% return and 100% drawdown. Four WSE large caps
-   showed a total wipeout on a long-only strategy — Easter Monday, not a trading result — which
-   alone dragged the mean return delta to −0.102 and made the model look like it was destroying
-   Polish positions. WSE now reads +0.025 mean return delta, in line with US at +0.003.
+1. The momentum term was frozen ([decision_engine.md](decision_engine.md)), so scores rarely
+   crossed a threshold and the simulation averaged **1.0 trades per symbol** — each "delta" was
+   the timing of a single entry.
+2. Yahoo emits holiday and half-day timestamps with null OHLC, which unmarshalled to zero
+   (`providers.hasUsablePrices` now drops them). A zero-priced last bar reported −100% return;
+   four WSE large caps showed a total wipeout on Easter Monday, which alone dragged the mean
+   return delta to −0.102.
 
-The lesson is the one this struct exists for, sharpened: an economic measurement is only as
-trustworthy as the bars underneath it, and a number that looks like a finding (−0.097 Sharpe,
-drawdown worse for 11 and better for 0) can be a data bug wearing a conclusion's clothes.
+An economic measurement is only as trustworthy as the bars underneath it. This is still one
+window of one dataset, and 1215 trades is enough to see a moderate effect, not a subtle one; Yahoo
+keeps about 730 days of hourly history, so the sample can be deepened about fourfold.
 
-**Remaining caveats.** The simulated strategy is all-in/all-out, and this is still one window of
-one dataset. 1215 trades is enough to see a moderate effect and not a subtle one. Yahoo retains
-roughly 730 days of hourly history against the 180 used here, so the sample can be deepened
-about fourfold without waiting for time to pass.
+## Walk-forward and threshold optimization
 
+`GET /backtests/walkforward` (`UseCase.RunWalkForward`, `walkforward.go`) splits the requested
+window 60/20/20 into train, validate and test — chronological, non-overlapping, never shuffled —
+and runs each as an independent simulation with its own indicator warm-up and simulated
+portfolio, so no split sees another's data.
+
+`optimizeThresholds` then runs a small fixed grid around `decision.DefaultThresholds()` (±0.05 on
+the four score bands, ±0.10 on `LowMLConfidence`) on the train split only, ranked by Sharpe so the
+search does not reward high-variance blowups. The winner is reported
+(`WalkForwardResult.BestThresholds`) for a person to review; it never touches the live engine,
+and adopting it is a manual code change. Read [decision_engine.md](decision_engine.md)'s "What the
+technical score does not do" before acting on one: a grid search over a signal with no measured
+edge returns confident-looking thresholds anyway.
+
+## Not built
+
+A pluggable strategy interface or further strategies, partial position sizing, Sortino ratio,
+HTML reports, and separate trades/metrics tables. None is in progress.
