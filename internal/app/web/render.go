@@ -33,6 +33,20 @@ var funcMap = template.FuncMap{
 	// percent turns a 0..1 ratio into a 0..100 number for "%.2f%%"-style formatting —
 	// html/template has no arithmetic operators, so this has to happen in Go.
 	"percent": func(x float64) float64 { return x * 100 },
+	// priceState says what a position's CurrentPrice is: a current market quote ("quote"), a
+	// quote older than portfolio.QuoteMaxAge ("stale"), or the last recorded trade ("trade") —
+	// the same rule the decision engine applies (Position.IsLive), so the screen and the
+	// recommendation never disagree about whether a price is current.
+	"priceState": func(p portfolio.Position) string {
+		switch {
+		case p.PriceSource != portfolio.PriceFromQuote:
+			return "trade"
+		case !p.IsLive(time.Now(), portfolio.QuoteMaxAge):
+			return "stale"
+		default:
+			return "quote"
+		}
+	},
 	// pnl computes a position's unrealized profit/loss for the dashboard/portfolio tables.
 	"pnl": func(p portfolio.Position) float64 { return (p.CurrentPrice - p.AverageCost) * p.Quantity },
 	// totalPnL sums pnl across every position — the one number missing from both the dashboard

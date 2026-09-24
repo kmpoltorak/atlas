@@ -68,9 +68,13 @@ var translations = map[string]map[Lang]string{
 	// was found, falling back to the last transaction's timestamp (the honest label) when not.
 	"table.current_price": {LangEN: "Current Price", LangPL: "Aktualna cena", LangDE: "Aktueller Kurs", LangFR: "Prix actuel", LangES: "Precio actual"},
 	"table.as_of":         {LangEN: "as of", LangPL: "stan na", LangDE: "Stand", LangFR: "au", LangES: "a fecha de"},
-	"table.pnl":           {LangEN: "P&L", LangPL: "Zysk/strata", LangDE: "G/V", LangFR: "P&L", LangES: "G/P"},
-	"table.total":         {LangEN: "Total", LangPL: "Suma", LangDE: "Gesamt", LangFR: "Total", LangES: "Total"},
-	"table.exposure":      {LangEN: "Exposure", LangPL: "Ekspozycja", LangDE: "Exponierung", LangFR: "Exposition", LangES: "Exposición"},
+	// Shown instead of table.as_of when the price is not a current market quote (see the
+	// priceState template func), so a cost basis or a days-old quote is never read as today's value.
+	"price.trade":    {LangEN: "last trade price, not a market quote — as of", LangPL: "cena ostatniej transakcji, nie notowanie — stan na", LangDE: "Preis der letzten Transaktion, kein Marktkurs — Stand", LangFR: "prix de la dernière transaction, pas une cotation — au", LangES: "precio de la última operación, no una cotización — a fecha de"},
+	"price.stale":    {LangEN: "stale quote — last traded", LangPL: "nieaktualne notowanie — ostatni obrót", LangDE: "veralteter Kurs — zuletzt gehandelt", LangFR: "cotation périmée — dernier échange le", LangES: "cotización desactualizada — última negociación"},
+	"table.pnl":      {LangEN: "P&L", LangPL: "Zysk/strata", LangDE: "G/V", LangFR: "P&L", LangES: "G/P"},
+	"table.total":    {LangEN: "Total", LangPL: "Suma", LangDE: "Gesamt", LangFR: "Total", LangES: "Total"},
+	"table.exposure": {LangEN: "Exposure", LangPL: "Ekspozycja", LangDE: "Exponierung", LangFR: "Exposition", LangES: "Exposición"},
 	// table.drawdown and table.avg_deviation are the dashboard/portfolio Risk table's own
 	// simple heuristics (portfolio.RiskSnapshot — see its doc comment), deliberately named for
 	// what they actually compute rather than reusing "Drawdown"/"Volatility", which

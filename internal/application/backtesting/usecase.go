@@ -208,6 +208,7 @@ func (u *UseCase) simulate(symbol string, bars []market.Bar, initialCapital floa
 	simOrchestrator := decisionUC.NewOrchestratorWithML(u.Orchestrator.Analyzer, simPortfolio, simDecision, ml)
 	simOrchestrator.SetMLEnabled(u.Orchestrator.MLEnabled())
 	simOrchestrator.SetPortfolioRiskEnabled(u.Orchestrator.PortfolioRiskEnabled())
+	simOrchestrator.HistoricalClock = true
 	if err := validateBars(bars); err != nil {
 		return backtesting.StrategyResult{}, err
 	}
@@ -230,7 +231,7 @@ func (u *UseCase) simulate(symbol string, bars []market.Bar, initialCapital floa
 			simPortfolio.Positions = []portfolio.Position{{
 				Symbol: symbol, Quantity: quantity, AverageCost: entryPrice, CurrentPrice: bars[i-1].Close,
 				// The simulation's own mark-to-market is a real valuation as of that bar, so it
-				// must not read as a never-quoted position (see Orchestrator.asOf).
+				// must not read as a never-quoted position (see Orchestrator.HistoricalClock).
 				PriceSource: portfolio.PriceFromQuote, PricedAt: bars[i-1].Timestamp,
 			}}
 		} else {

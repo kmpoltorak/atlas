@@ -40,9 +40,9 @@ type DashboardPage struct {
 	// denominated figure in all three currencies. Empty when NBP is unreachable and nothing is
 	// cached yet — money degrades to PLN-only in that case, not an error.
 	Rates map[string]float64
-	// PriceAsOf maps a Position's Symbol to its most recent transaction's RFC3339 timestamp —
-	// see priceAsOf (web_handlers.go). The same event that set Position.CurrentPrice, so this is
-	// genuinely "as of when" that price is from, not a live quote timestamp.
+	// PriceAsOf maps a Position's Symbol to when its CurrentPrice is from: the quote's market
+	// trade time for a quoted position, its most recent transaction otherwise — see
+	// livePricedPositions (web_handlers.go). The priceState template func says which.
 	PriceAsOf map[string]string
 	// AlertCounts is the watchlist's current non-HOLD recommendations, grouped by action (e.g.
 	// {"BUY": 2, "SELL": 1}) — see alertCountsByAction. Nil when there are none (or the

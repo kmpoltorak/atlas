@@ -39,6 +39,13 @@ type Orchestrator struct {
 	// existing behavior exactly.
 	mlEnabled            atomic.Bool
 	portfolioRiskEnabled atomic.Bool
+
+	// HistoricalClock makes quote freshness be measured against the last bar scored rather than
+	// the wall clock. Only a backtest sets it: a simulated 2024 position must not be called stale
+	// for having a 2024 price. Live scoring must not, because the last bar is exactly what goes
+	// stale when a provider stops updating — measured against it, a series weeks out of date
+	// made its equally old quotes look current.
+	HistoricalClock bool
 }
 
 func NewOrchestrator(analyzerUC *analyzerUC.UseCase, portfolioUC *portfolioUC.UseCase, decisionUC *UseCase) *Orchestrator {
@@ -356,7 +363,7 @@ func (o *Orchestrator) blendMLAndPortfolio(symbol string, bars []market.Bar, tec
 			// live quote that price is the last trade, so its unrealized P&L is exactly zero by
 			// construction — which the risk terms read as "nothing wrong" when it means "not
 			// valued". Say so rather than scoring a stale book as a healthy one.
-			if stale := stalelyPricedSymbols(positions, asOf(bars)); len(stale) > 0 {
+			if stale := stalelyPricedSymbols(positions, o.clock(bars)); len(stale) > 0 {
 				result.RiskDataAvailable = false
 				result.Degraded = true
 				result.Reasons = append(result.Reasons,
@@ -415,12 +422,10 @@ func computeRiskScore(risk portfolio.RiskSnapshot, positions []portfolio.Positio
 	return clamp01((drawdownComponent + volatilityComponent) / 2)
 }
 
-// asOf is the clock a recommendation is being made against: the timestamp of the most recent bar
-// it can see. For live scoring that is a few minutes ago; for a backtest it is the simulation's
-// own position in history, which is why this is not time.Now() — a simulated 2024 position must
-// not be called stale for having a 2024 price.
-func asOf(bars []market.Bar) time.Time {
-	if len(bars) == 0 {
+// clock is the time a recommendation is being made against: now for live scoring, the most
+// recent bar for a backtest (see HistoricalClock).
+func (o *Orchestrator) clock(bars []market.Bar) time.Time {
+	if !o.HistoricalClock || len(bars) == 0 {
 		return time.Now().UTC()
 	}
 	return bars[len(bars)-1].Timestamp.UTC()

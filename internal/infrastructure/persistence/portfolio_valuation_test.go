@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"atlas/internal/domain/market"
 	"atlas/internal/domain/portfolio"
 )
 
@@ -15,8 +16,8 @@ func TestPositionRowPrefersARealQuote(t *testing.T) {
 	quotedAt := time.Date(2026, 9, 4, 16, 30, 0, 0, time.UTC)
 	row := positionRow{
 		Ticker: "CDR.WA", Quantity: 10, AvgCost: 100, TradePrice: 100,
-		LastPrice:      sql.NullFloat64{Float64: 70, Valid: true},
-		QuoteUpdatedAt: sql.NullTime{Time: quotedAt, Valid: true},
+		LastPrice: sql.NullFloat64{Float64: 70, Valid: true},
+		QuotedAt:  sql.NullTime{Time: quotedAt, Valid: true},
 	}
 
 	position := row.toPosition()
@@ -73,5 +74,51 @@ func TestPositionIsLiveExpiresWithAge(t *testing.T) {
 	}
 	if position.IsLive(quotedAt.Add(5*24*time.Hour), portfolio.QuoteMaxAge) {
 		t.Fatal("a five-day-old quote must not be presented as a current price")
+	}
+}
+
+// The review's stale-data case: the provider answers HTTP 200 with the same old price on every
+// poll, as it does for an instrument that has stopped trading. Each poll used to stamp NOW(), so
+// the position never aged past QuoteMaxAge however long ago the market last traded it.
+func TestRepeatedPollsDoNotRefreshAStaleQuote(t *testing.T) {
+	db := connectTestDB(t)
+	portfolioID := testPortfolioID(t, db)
+	if _, err := db.SaveTransaction(portfolioID, portfolio.Transaction{
+		Symbol: "TESTSTALE", Type: "BUY", Quantity: 1, Price: 50, PriceInPLN: 50,
+		Timestamp: "2026-08-01T09:00:00Z",
+	}); err != nil {
+		t.Fatalf("seed transaction: %v", err)
+	}
+	if err := db.SavePositions(portfolioID, []portfolio.Position{
+		{Symbol: "TESTSTALE", Quantity: 1, AverageCost: 50, CurrentPrice: 50},
+	}); err != nil {
+		t.Fatalf("seed position: %v", err)
+	}
+
+	lastTraded := time.Now().Add(-10 * 24 * time.Hour).UTC().Truncate(time.Second)
+	for poll := 0; poll < 3; poll++ {
+		if err := db.UpsertSymbolQuote("TESTSTALE", market.Quote{Symbol: "TESTSTALE", Price: 48, QuotedAt: lastTraded}); err != nil {
+			t.Fatalf("poll %d: %v", poll, err)
+		}
+	}
+
+	positions, err := db.GetPositions(portfolioID)
+	if err != nil {
+		t.Fatalf("read positions: %v", err)
+	}
+	var found *portfolio.Position
+	for i := range positions {
+		if positions[i].Symbol == "TESTSTALE" {
+			found = &positions[i]
+		}
+	}
+	if found == nil {
+		t.Fatal("position missing")
+	}
+	if !found.PricedAt.Equal(lastTraded) {
+		t.Fatalf("the position must be dated by the market's trade time %v, got %v", lastTraded, found.PricedAt)
+	}
+	if found.IsLive(time.Now(), portfolio.QuoteMaxAge) {
+		t.Fatal("a ten-day-old quote must not count as live however recently it was fetched")
 	}
 }

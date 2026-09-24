@@ -134,6 +134,8 @@ type chartMeta struct {
 	FullExchangeName   string  `json:"fullExchangeName"`
 	Currency           string  `json:"currency"`
 	RegularMarketPrice float64 `json:"regularMarketPrice"`
+	// RegularMarketTime is when RegularMarketPrice last traded, in Unix seconds.
+	RegularMarketTime int64 `json:"regularMarketTime"`
 	// ChartPreviousClose is relative to the *requested chart window*, not necessarily "yesterday's
 	// close" — e.g. a 5-day request returns the close from before that whole window. It only means
 	// "the previous session's close" when the request is range=1d, which is all fetchChartMeta
@@ -223,7 +225,15 @@ func (p *YahooFinanceProvider) FetchQuote(ctx context.Context, symbol string) (m
 		Price:         meta.RegularMarketPrice,
 		PreviousClose: meta.ChartPreviousClose,
 		Currency:      meta.Currency,
+		QuotedAt:      unixOrZero(meta.RegularMarketTime),
 	}, nil
+}
+
+func unixOrZero(seconds int64) time.Time {
+	if seconds <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(seconds, 0).UTC()
 }
 
 // yahooIntervalDuration is yahooInterval expressed as a Duration. Kept next to it so the two

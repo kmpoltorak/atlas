@@ -124,6 +124,7 @@ func TestFetchQuoteParsesMeta(t *testing.T) {
 				"result": [{
 					"meta": {
 						"regularMarketPrice": 146.605,
+						"regularMarketTime": 1788883200,
 						"chartPreviousClose": 151.05,
 						"currency": "USD"
 					}
@@ -143,6 +144,10 @@ func TestFetchQuoteParsesMeta(t *testing.T) {
 	}
 	if quote.Symbol != "ORCL" || quote.Price != 146.605 || quote.PreviousClose != 151.05 || quote.Currency != "USD" {
 		t.Fatalf("unexpected quote: %+v", quote)
+	}
+	// The market's trade time, not the fetch time: that is what says how current the price is.
+	if !quote.QuotedAt.Equal(time.Unix(1788883200, 0)) {
+		t.Fatalf("expected the reported regularMarketTime, got %v", quote.QuotedAt)
 	}
 }
 

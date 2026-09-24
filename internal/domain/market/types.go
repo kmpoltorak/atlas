@@ -41,6 +41,11 @@ type Quote struct {
 	// PLN-denominated portfolio figures (Position.CurrentPrice) must convert first. May be
 	// empty if the provider didn't report one.
 	Currency string
+	// QuotedAt is when the market last traded at Price, as the provider reports it — not when
+	// Atlas fetched it. A provider keeps returning the last known price of an instrument that has
+	// stopped trading, so the fetch time says nothing about how current the price is. Zero when
+	// the provider did not report one.
+	QuotedAt time.Time
 }
 
 // Every method takes a context: these are outbound HTTP calls to a third party, and without one

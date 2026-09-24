@@ -2,6 +2,7 @@ package decision
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -373,5 +374,40 @@ func TestMomentumVolumeScoreDampsUnconfirmedMoves(t *testing.T) {
 	}
 	if thinScore <= 0.5 {
 		t.Fatalf("damping must pull toward neutral, not past it, got %v", thinScore)
+	}
+}
+
+func staleReasonPresent(reasons []string) bool {
+	for _, reason := range reasons {
+		if strings.HasPrefix(reason, "Portfolio risk computed without current prices") {
+			return true
+		}
+	}
+	return false
+}
+
+// Live scoring measures quote freshness against the wall clock. It used to measure against the
+// last bar, which is exactly what stops advancing when a provider stops updating a symbol: a
+// series and its quotes both weeks old then read as perfectly current.
+func TestLiveScoringFlagsAQuoteAsOldAsItsBars(t *testing.T) {
+	old := time.Now().Add(-30 * 24 * time.Hour)
+	portfolioUseCase := portfolioUC.NewUseCase()
+	portfolioUseCase.Positions = []portfolio.Position{{
+		Symbol: "AAPL", Quantity: 10, AverageCost: 100, CurrentPrice: 100,
+		PriceSource: portfolio.PriceFromQuote, PricedAt: old,
+	}}
+	orchestrator := NewOrchestratorWithML(analyzerUC.NewUseCase(), portfolioUseCase, NewUseCase(), mlUC.NewUseCase())
+	bars := []market.Bar{{Symbol: "AAPL", Close: 100, Timestamp: old}}
+
+	blend := orchestrator.blendMLAndPortfolio("AAPL", bars, domainDecision.TechnicalScore{Overall: 0.6})
+	if !blend.Degraded || blend.RiskDataAvailable || !staleReasonPresent(blend.Reasons) {
+		t.Fatalf("a month-old quote must be flagged in live scoring, got degraded=%v reasons=%v", blend.Degraded, blend.Reasons)
+	}
+
+	// A backtest standing at that same point in history sees a current price.
+	orchestrator.HistoricalClock = true
+	blend = orchestrator.blendMLAndPortfolio("AAPL", bars, domainDecision.TechnicalScore{Overall: 0.6})
+	if staleReasonPresent(blend.Reasons) {
+		t.Fatalf("a backtest must judge freshness at its own point in history, got %v", blend.Reasons)
 	}
 }

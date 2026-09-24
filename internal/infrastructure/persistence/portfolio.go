@@ -107,18 +107,18 @@ func (t *TimescaleDB) GetPositions(portfolioID string) ([]portfolio.Position, er
 // resolve a position's price the same way. Splitting that resolution across call sites is what
 // let the UI and the engine disagree about what a position was worth.
 type positionRow struct {
-	Ticker         string          `db:"ticker"`
-	Quantity       float64         `db:"quantity"`
-	AvgCost        float64         `db:"avg_cost"`
-	TradePrice     float64         `db:"trade_price"`
-	LastPrice      sql.NullFloat64 `db:"last_price"`
-	QuoteUpdatedAt sql.NullTime    `db:"quote_updated_at"`
+	Ticker     string          `db:"ticker"`
+	Quantity   float64         `db:"quantity"`
+	AvgCost    float64         `db:"avg_cost"`
+	TradePrice float64         `db:"trade_price"`
+	LastPrice  sql.NullFloat64 `db:"last_price"`
+	QuotedAt   sql.NullTime    `db:"quoted_at"`
 }
 
 // positionColumns is the one place the valuation inputs are selected. Both queries below use it
 // verbatim so neither can drift into pricing positions differently from the other.
 const positionColumns = `s.ticker, p.quantity, p.avg_cost,
-		 p.current_price AS trade_price, s.last_price, s.quote_updated_at`
+		 p.current_price AS trade_price, s.last_price, s.quoted_at`
 
 // toPosition applies the valuation rule: a real quote when there is one, otherwise the last
 // trade price, labelled as such. It never presents the fallback as a current market price.
@@ -134,8 +134,10 @@ func (r positionRow) toPosition() portfolio.Position {
 	if r.LastPrice.Valid && r.LastPrice.Float64 > 0 {
 		position.CurrentPrice = r.LastPrice.Float64
 		position.PriceSource = portfolio.PriceFromQuote
-		if r.QuoteUpdatedAt.Valid {
-			position.PricedAt = r.QuoteUpdatedAt.Time.UTC()
+		// When the market traded at that price, not when Atlas fetched it (migrations/022).
+		// A quote with no reported trade time keeps PricedAt zero, which IsLive reads as stale.
+		if r.QuotedAt.Valid {
+			position.PricedAt = r.QuotedAt.Time.UTC()
 		}
 	}
 	return position
