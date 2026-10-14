@@ -95,7 +95,7 @@ baseline. Details: [docs/ml.md](docs/ml.md), [training/README.md](training/READM
 
 ## Development
 
-The Go toolchain is 1.27.1.
+The Go toolchain is 1.27.2.
 
 ```bash
 go build ./...
