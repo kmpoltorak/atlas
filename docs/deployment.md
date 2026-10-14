@@ -10,8 +10,8 @@ backup, restore and recovery procedures.
 
 | Service | Image | Notes |
 |---|---|---|
-| `atlas-api` | built from `Dockerfile` (Go 1.27.1 builder, `debian:bookworm-slim` runtime, ONNX Runtime 1.28.0) | `linux/amd64`; `linux/arm64` builds and runs, model inference unverified on real ARM (docs/ml.md) |
-| `atlas-trainer` | built from `training/Dockerfile` (`golang:1.27.1-bookworm` + Python 3.11) | runs retrain.sh on demand for the Settings page |
+| `atlas-api` | built from `Dockerfile` (Go 1.27.2 builder, `debian:bookworm-slim` runtime, ONNX Runtime 1.28.0) | `linux/amd64`; `linux/arm64` builds and runs, model inference unverified on real ARM (docs/ml.md) |
+| `atlas-trainer` | built from `training/Dockerfile` (`golang:1.27.2-bookworm` + Python 3.11) | runs retrain.sh on demand for the Settings page |
 | `timescaledb` | `timescale/timescaledb:2.29.1-pg16` | pinned: the extension version lives in the data volume |
 | `redis` | `redis:7.4.10-alpine` | bars and exchange-rate cache |
 | `prometheus` | `prom/prometheus:v3.0.0` | |
@@ -124,7 +124,7 @@ default to the in-network Compose service names (`PROMETHEUS_URL`/`ALERTMANAGER_
 `curl -fsS http://localhost:8080/health`, not `wget` — its runtime base (`debian:bookworm-slim`) doesn't ship `wget`, a real bug
 once (`docker inspect` showed a nonstop "unhealthy" status despite `/health` genuinely returning
 200) fixed by adding `curl` to the Dockerfile. `atlas-trainer` still uses `wget`, which is fine
-there: its image is the full `golang:1.27.1-bookworm`, which does ship it.
+there: its image is the full `golang:1.27.2-bookworm`, which does ship it.
 
 ## Monitoring
 
