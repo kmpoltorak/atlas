@@ -1,4 +1,4 @@
-# Atlas — AI Portfolio Advisor
+# Atlas — portfolio decision support
 
 Atlas is a **decision-support** tool for a personal stock/ETF portfolio. It watches a list of
 symbols, computes technical indicators, runs ML models, and combines them with your actual
