@@ -1,7 +1,8 @@
 # AGENTS.md
 
 Rules for AI coding agents working in this repo. Project specifics (purpose, commands,
-layout, limitations) live in `README.md`: read it before changing anything.
+layout, limitations) live in `README.md`. `CLAUDE.md` only imports this file, so Claude Code
+loads the same rules.
 
 ## Workflow
 

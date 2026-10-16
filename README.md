@@ -20,8 +20,8 @@ For every symbol on the watchlist, every five minutes:
 
 1. **Collects** hourly price bars from Yahoo Finance into TimescaleDB.
 2. **Computes indicators** — RSI, EMA, MACD, ATR, ADX, OBV, Bollinger Bands, volume.
-3. **Runs two ML models** — correction and recovery probability (XGBoost, trained in Python, run
-   in Go via ONNX) — and classifies the market as BULL/BEAR/SIDEWAYS with a fixed rule.
+3. **Runs two ML models** — correction and recovery probability (XGBoost) — and classifies the
+   market as BULL/BEAR/SIDEWAYS with a fixed rule.
 4. **Reads the portfolio** — positions, P&L and portfolio-wide risk across all portfolios.
 5. **Recommends** an action with a confidence and the reasons, and stores it.
 6. **Notifies** Discord, Slack or Telegram when a symbol's action changes to BUY, ACCUMULATE,
@@ -58,7 +58,7 @@ can read and change everything, so do not expose it beyond the machine it runs o
 For webhooks or a non-default database password, copy `.env.example` to `.env`. Every variable,
 what persists and how to update: [docs/deployment.md](docs/deployment.md).
 
-## How it is built
+## Stack
 
 | Concern | Choice |
 |---|---|
@@ -69,12 +69,19 @@ what persists and how to update: [docs/deployment.md](docs/deployment.md).
 | ML training | Python — pandas, XGBoost, onnxmltools — in the `atlas-trainer` container; never in the `atlas-api` image |
 | ML inference | Go, `onnxruntime_go` (cgo), so the image is Debian rather than Alpine |
 | Monitoring | Prometheus, Grafana, Alertmanager |
-| Deployment | Docker Compose, one machine, one person; images for `linux/amd64` and `linux/arm64` |
+| Deployment | Docker Compose |
 
 Every external dependency — market data, models, notification channels, exchange rates — is
 optional: Atlas starts without it and says what is missing. See
 [docs/architecture.md](docs/architecture.md), and [docs/adr/](docs/adr/) for why the load-bearing
 decisions were made.
+
+## How this was built
+
+Atlas was written for private use, with AI coding agents (Claude Code) working under the rules
+in [AGENTS.md](AGENTS.md); 120 of the 231 commits up to 2026-10-14 carry a
+`Co-Authored-By: Claude` trailer. Full-repository reviews were each closed in their own pull
+request (#88–#91).
 
 ## Machine learning
 
