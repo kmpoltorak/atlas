@@ -246,3 +246,13 @@ between causes one duplicate notification on the retry. That window is bounded b
 `.github/workflows/ci.yml` runs gofmt, vet, the full test suite against real TimescaleDB and Redis
 service containers and a real ONNX Runtime, `govulncheck`, the Python tests, and a Docker build,
 on every pull request. There is no push or deploy stage: Atlas runs where it is built.
+
+## Shared homelab monitoring
+
+On the same Docker host as `kmpoltorak-monitoring-tools`, use
+`docker compose -f docker-compose.yml -f compose.monitoring.yaml up -d --build`.
+The override joins the shared Atlas monitoring network, keeps database ports
+internal and publishes the API only on `127.0.0.1:18080`. The standalone
+monitoring services stay available in the base Compose file for local use.
+Enable the Atlas target example in the shared monitoring repository; its
+migration guide preserves existing monitoring data and documents rollback.

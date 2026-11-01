@@ -61,6 +61,21 @@ The dashboard is in English, Polish, German, French and Spanish.
 | `grafana` | http://localhost:3000 | dashboards (`admin` / `admin`) |
 | `atlas-trainer` | internal only | trains model candidates on request from the Settings page |
 
+## Shared monitoring
+
+For the same Ubuntu host as [kmpoltorak-monitoring-tools](https://github.com/kmpoltorak/kmpoltorak-monitoring-tools),
+start the monitoring stack first, then:
+
+```sh
+docker compose -f docker-compose.yml -f compose.monitoring.yaml up -d --build
+```
+
+This mode publishes the application on `127.0.0.1:18080` (override with
+`MONITORED_HTTP_PORT`) and joins its dedicated external monitoring network.
+Database ports stay internal and the local monitoring services stay disabled.
+Enable the matching target configuration in the monitoring repository.
+Its migration guide covers backups and rollback; application data volumes stay in this project.
+
 ## Configuration
 
 Copy `.env.example` to `.env`; Compose reads it automatically.
@@ -102,6 +117,8 @@ activation: [training/README.md](training/README.md), details: [docs/ml.md](docs
 - The dashboard has been checked by hand only: no automated browser, phone or keyboard tests.
 
 ## Development
+
+Shared monitoring configuration: `python3 -m unittest discover -s tests -p 'test_shared_monitoring.py' -v` (Docker Compose 2.30+).
 
 There is no Makefile; Go 1.27.2:
 
