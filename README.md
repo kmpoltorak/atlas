@@ -43,6 +43,10 @@ Every setting has a working default. Open http://localhost:8080, add symbols to
 the watchlist and record your transactions. [GETTING_STARTED.md](GETTING_STARTED.md)
 explains the dashboard with no technical background assumed.
 
+On a remote server, test `curl http://127.0.0.1:8080/health` there. From your computer,
+run `ssh -N -L 18080:127.0.0.1:8080 user@server` and open http://localhost:18080.
+Optional HTTPS through hometoolslab's Traefik: [deployment](docs/deployment.md#traefik).
+
 Every five minutes, for each watched symbol, Atlas collects hourly bars from
 Yahoo Finance, computes RSI, EMA, MACD, ATR, ADX, OBV, Bollinger Bands and
 volume, runs the correction and recovery models, classifies the market as
@@ -74,12 +78,12 @@ Atlas's database, cache, models and trainer cache stay here.
 ## Configuration
 
 Copy `.env.example` to `.env`; Compose reads it automatically.
-For a local Traefik override, set `DOMAIN_NAME` to hometoolslab's base domain.
+For the optional `docker-compose.traefik.yml` override, set `DOMAIN_NAME` to hometoolslab's base domain.
 It has no effect on the base Compose file; see [deployment](docs/deployment.md#traefik).
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `DOMAIN_NAME` | base Compose: unused | local Traefik override: serves `atlas.<domain>`; use hometoolslab's domain |
+| `DOMAIN_NAME` | base Compose: unused | optional Traefik override: serves `atlas.<domain>`; use hometoolslab's domain |
 | `DATABASE_PASSWORD` | `atlas` | used by both `atlas-api` and `timescaledb` |
 | `DISCORD_WEBHOOK_URL`, `SLACK_WEBHOOK_URL` | empty | recommendation-change alerts; any combination |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | empty | same, via Telegram |
@@ -104,7 +108,7 @@ activation: [training/README.md](training/README.md), details: [docs/ml.md](docs
 
 ## Limitations
 
-- No login. Anyone who can reach the dashboard can read and change everything, so do not expose it beyond the machine.
+- No built-in login. Direct access stays on loopback; the optional Traefik override requires hometoolslab's authentication middleware.
 - One person, one machine: no multiple users, no multi-host or Kubernetes deployment, and no more than one `atlas-api` per database.
 - The technical score has no measured selection value on 720 days of hourly bars ([docs/decision_engine.md](docs/decision_engine.md)): Atlas has no measured entry signal.
 - The recovery model does not beat its baseline on the current dataset.

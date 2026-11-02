@@ -1,0 +1,20 @@
+# Optional: docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d
+# Requires hometoolslab's Traefik, its middlewares and the hometools_default network.
+services:
+  atlas-api:
+    networks: [default, monitoring, traefik]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=hometools_default"
+      - "traefik.http.routers.atlas.rule=Host(`atlas.${DOMAIN_NAME:?set DOMAIN_NAME in .env}`)"
+      - "traefik.http.routers.atlas.entrypoints=websecure"
+      - "traefik.http.routers.atlas.tls=true"
+      - "traefik.http.routers.atlas.tls.certresolver=myresolver"
+      - "traefik.http.routers.atlas.middlewares=admin-auth@docker,security-headers@docker"
+      - "traefik.http.routers.atlas.service=atlas"
+      - "traefik.http.services.atlas.loadbalancer.server.port=8080"
+
+networks:
+  traefik:
+    external: true
+    name: hometools_default

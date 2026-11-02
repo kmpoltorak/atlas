@@ -17,9 +17,9 @@ starts the four Atlas services and joins their shared monitoring network.
 | `redis` | `redis:7.4.10-alpine` | bars and exchange-rate cache |
 
 Every published port is bound to `127.0.0.1`. **Atlas has no login**: anyone who can reach port
-8080 can read and change everything, so the stack must not be exposed beyond the machine. Only
-cross-origin protection remains, which stops a web page in the same browser from posting to the
-dashboard.
+8080 can read and change everything. Remote access uses an SSH tunnel or the authenticated
+Traefik override below. Cross-origin protection stops a web page in the same browser from
+posting to the dashboard; it does not authenticate users.
 
 `atlas-api` runs as the numeric user 10001, applies its own database migrations on start (under
 an advisory lock, tracked in `schema_migrations`), and shuts down gracefully on `SIGTERM`. The
@@ -49,7 +49,7 @@ Every setting is an environment variable (`internal/config/config.go`) with a wo
 and every optional integration is non-fatal when unset. Put overrides in `.env`
 (`.env.example` has the common ones with comments; `.env` is gitignored).
 
-`DOMAIN_NAME` is only for a local Traefik override, described below. Grafana credentials,
+`DOMAIN_NAME` is only for the optional Traefik override, described below. Grafana credentials,
 Prometheus retention and Alertmanager delivery are configured in `kmpoltorak-monitoring-tools`.
 
 | Variable | Default | Purpose |
@@ -78,15 +78,35 @@ Prometheus retention and Alertmanager delivery are configured in `kmpoltorak-mon
 
 ## Traefik
 
-For hometoolslab's Traefik, set `DOMAIN_NAME` in Atlas's `.env` to the same base domain as
-hometoolslab. Your local `docker-compose.override.yml` uses it in the router's `Host` rule
-for `atlas.${DOMAIN_NAME}`; no Traefik override is shipped with Atlas.
-The override must also join `atlas-api` to the external `hometools_default` network, select
-that network with `traefik.docker.network=hometools_default`, and route to container port 8080.
-Use hometoolslab's `websecure` entrypoint, `myresolver` certificate resolver, and
-`admin-auth@docker,security-headers@docker` middleware. Keep the existing `default` and
-`monitoring` networks. Point `atlas.<domain>` to the server in DNS.
-Setting `DOMAIN_NAME` alone does not create the router or DNS record.
+The optional `docker-compose.traefik.yml` is not loaded by plain `docker compose up -d`.
+It requires hometoolslab's running Traefik on the same Docker host, its `hometools_default`
+network, `websecure` entrypoint, `myresolver` certificate resolver and
+`admin-auth@docker,security-headers@docker` middleware. It joins only `atlas-api` to that
+network, keeps its application and monitoring networks, and routes to container port 8080.
+
+Set `DOMAIN_NAME` in Atlas's existing `.env` to hometoolslab's base domain (without `https://`),
+and point `atlas.<domain>` to the server in DNS. Then enable the override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.traefik.yml config -q &&
+docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d
+```
+
+Open `https://atlas.<domain>` and use the same credentials as for Traefik's dashboard.
+Use both `-f` options for subsequent updates, rebuilds and restarts with Traefik enabled.
+If you already created a local `docker-compose.override.yml` for Traefik, replace its use
+with the explicit command above. To return to loopback-only access, run
+`docker compose -f docker-compose.yml up -d`.
+
+Without Traefik, test on the server with `curl http://127.0.0.1:8080/health`. For browser access
+from another computer, keep an SSH tunnel running:
+
+```bash
+ssh -N -L 18080:127.0.0.1:8080 user@server
+```
+
+Open http://localhost:18080 on that computer. Port 8080 is bound to loopback, so
+`http://<server-ip>:8080` is not reachable directly from the LAN.
 
 ## Update
 
