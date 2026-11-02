@@ -74,9 +74,12 @@ Atlas's database, cache, models and trainer cache stay here.
 ## Configuration
 
 Copy `.env.example` to `.env`; Compose reads it automatically.
+For a local Traefik override, set `DOMAIN_NAME` to hometoolslab's base domain.
+It has no effect on the base Compose file; see [deployment](docs/deployment.md#traefik).
 
 | Variable | Default | Meaning |
 |---|---|---|
+| `DOMAIN_NAME` | base Compose: unused | local Traefik override: serves `atlas.<domain>`; use hometoolslab's domain |
 | `DATABASE_PASSWORD` | `atlas` | used by both `atlas-api` and `timescaledb` |
 | `DISCORD_WEBHOOK_URL`, `SLACK_WEBHOOK_URL` | empty | recommendation-change alerts; any combination |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | empty | same, via Telegram |
