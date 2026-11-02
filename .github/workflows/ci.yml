@@ -173,3 +173,10 @@ jobs:
 
       - name: Smoke test the trainer image
         run: ./scripts/trainer-smoke-test.sh
+
+  shared-monitoring:
+    name: Shared monitoring configuration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s tests -p 'test_shared_monitoring.py' -v

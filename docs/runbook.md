@@ -21,7 +21,7 @@ the machine it protects does not survive losing that machine: copy dumps somewhe
 |---|---|---|
 | TimescaleDB (prices, portfolios, transactions, watchlist, recommendations) | `timescaledb-data` volume | A dump or a Settings-page backup — the only thing here with no other copy |
 | Configuration | This Git repository (`.env` is gitignored by design) | `git checkout` |
-| Grafana dashboards, Prometheus/Alertmanager config | In Git (`grafana/`, `prometheus/`, `alertmanager/`), provisioned automatically | `git checkout` |
+| Grafana dashboards, Prometheus/Alertmanager config | In `kmpoltorak-monitoring-tools`, provisioned automatically | follow that repository's migration guide |
 | ML models | `training/models/` (gitignored) | Re-run training from TimescaleDB's own price history — reproducible, not instant. Atlas runs without a model (RSI stub) meanwhile |
 
 ## TimescaleDB backup
@@ -118,7 +118,7 @@ exists yet, so this was safe to run directly rather than against a throwaway cop
 ## Infrastructure alerting
 
 Separate from the Discord alerts `internal/app/alerts_loop.go` already sends for recommendation
-changes, `prometheus/alerts.yml` defines Prometheus alerting rules for Atlas's own health:
+changes, `prometheus/atlas-alerts.yml` in `kmpoltorak-monitoring-tools` defines Prometheus alerting rules for Atlas's own health:
 
 | Alert | Fires when |
 |---|---|
@@ -127,33 +127,14 @@ changes, `prometheus/alerts.yml` defines Prometheus alerting rules for Atlas's o
 | `AtlasHighErrorRate` | more than 5% of requests returned a 5xx status over 5 minutes |
 | `AtlasAlertPollErrors` | a whole background alert-poll cycle failed at least once in 15 minutes (e.g. the market data provider is unreachable) |
 
-Docker Compose wires this end to end: `prometheus` loads `alerts.yml` and forwards firing alerts
-to the `alertmanager` service (`:9093`), which routes them to a Discord channel — deliberately a
-*different* one from `DISCORD_WEBHOOK_URL`'s business alerts, so infra noise never mixes with
-investment notifications. Set `ALERTMANAGER_DISCORD_WEBHOOK_URL` in your (gitignored) `.env` —
-see `.env.example` — to enable real delivery; leave it empty and Alertmanager still starts and
-runs fine, it just logs a failed delivery attempt per alert instead of posting anywhere (the same
-non-fatal-optional-dependency pattern as everywhere else in this project).
+The shared monitoring project loads these rules and routes them through its
+Alertmanager. Set `ALERTMANAGER_DISCORD_WEBHOOK_URL` in that project's `.env`
+for infrastructure Discord notifications. Leave it empty to keep alerts visible
+without sending notifications. Atlas's recommendation notifications stay in
+Atlas's `.env`; its trainer still uses `ALERTMANAGER_DISCORD_WEBHOOK_URL` for
+training failures. Set the same infrastructure URL in both places if wanted.
 
-The webhook URL itself is never written to a file tracked by Git: `alertmanager/alertmanager.yml`
-points `discord_configs`' `webhook_url_file` at `/tmp/discord_webhook_url`, which
-`docker-compose.yml`'s `alertmanager` service writes from that env var at container start (an
-overridden entrypoint, since Alertmanager's config can't read env vars directly, only file
-paths).
-
-**Pinned image version matters here**: `prom/alertmanager:v0.27.0` (the version this stack
-started on) has a real bug — confirmed live and via its own source on GitHub — where
-`discord_configs`' config-load validation only checks `WebhookURL`, never `WebhookURLFile`, so
-every `webhook_url_file`-only config fails to load at all (`no discord webhook URL provided`),
-regardless of the file's actual content. Fixed in `v0.28.0`; this stack is pinned to `v0.28.1`.
-
-Verified live end to end: config loads cleanly both with `ALERTMANAGER_DISCORD_WEBHOOK_URL` empty
-and set; posting a synthetic alert to Alertmanager's API against a fake (but real-shaped) webhook
-URL produced a genuine round trip to Discord's actual API (`404 Unknown Webhook`), logged as a
-failed delivery, Alertmanager kept running — exactly the intended non-fatal degrade.
-
-```bash
-docker compose up -d prometheus alertmanager
-curl -s http://localhost:9090/api/v1/rules | jq '.data.groups[].rules[].name'
-curl -s http://localhost:9093/api/v2/status
-```
+Use the shared project's Prometheus Alerts page to inspect rules and its
+`docker compose logs alertmanager` to inspect deliveries. Existing Atlas
+monitoring volumes are left untouched; they cannot be merged into the
+hometoolslab database by copying their files together.

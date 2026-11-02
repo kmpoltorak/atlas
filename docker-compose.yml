@@ -4,6 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: atlas-api
+    networks: [default, monitoring]
     ports:
       - "127.0.0.1:8080:8080"
     environment:
@@ -33,11 +34,7 @@ services:
       # 0 keeps every recommendation/indicator/prediction row forever, which is fine for a
       # laptop run. Set a day count on anything long-lived (see config.DerivedRetentionDays).
       DERIVED_RETENTION_DAYS: ${DERIVED_RETENTION_DAYS:-0}
-      # /health reports these three as purely informational (never affects its own status/HTTP
-      # code — see internal/app/http_handler.go's healthHandler) — hardcoded in-network Compose
-      # service names, same as DATABASE_HOST/REDIS_HOST above, not a `${VAR:-default}` override
-      # slot: unlike TRAINER_URL below, there's no real deployment where these three would live
-      # anywhere else within this same Compose stack.
+      # Shared monitoring health is informational and does not affect API readiness.
       PROMETHEUS_URL: http://prometheus:9090
       ALERTMANAGER_URL: http://alertmanager:9093
       GRAFANA_URL: http://grafana:3000
@@ -92,6 +89,7 @@ services:
       context: .
       dockerfile: training/Dockerfile
     container_name: atlas-trainer
+    networks: [default, monitoring]
     volumes:
       # Read-write, the whole repo: retrain.sh needs cmd/export-training-data's Go source and
       # training/train.py, and writes into training/data/ and training/models/ — the same
@@ -119,14 +117,8 @@ services:
       # resolve if a venv created on the host OS gets bind-mounted into this (Linux) container.
       # Gitignored, like training/.venv itself (see .gitignore).
       TRAINING_VENV_DIR: training/.venv-container
-      # cmd/trainer reads this directly for the one outcome worth a push: a training run that
-      # failed (see cmd/trainer/main.go). A successful run only logs — training/retrain.sh used to
-      # also push a "new candidates ready" notification on success, but that fired on every run
-      # regardless of whether the candidate was any good, which made it noise rather than signal.
-      # Deliberately reuses the *same* .env value as alertmanager's ALERTMANAGER_DISCORD_WEBHOOK_URL
-      # below, not DISCORD_WEBHOOK_URL above (atlas-api's business-alert channel) — training
-      # outcomes are an "is Atlas itself working" signal, same category as API-down/error-rate
-      # infra alerts, not an investment recommendation. One webhook URL in .env covers both.
+      # Training failures use the infrastructure channel, separate from recommendations.
+      # Set the same variable in the monitoring project's .env for infra alerts there.
       TRAINING_DISCORD_WEBHOOK_URL: ${ALERTMANAGER_DISCORD_WEBHOOK_URL:-}
     depends_on:
       timescaledb:
@@ -183,68 +175,12 @@ services:
       timeout: 5s
       retries: 5
 
-  prometheus:
-    image: prom/prometheus:v3.0.0
-    container_name: atlas-prometheus
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml
-      - prometheus-data:/prometheus
-    ports:
-      - "127.0.0.1:9090:9090"
-    depends_on:
-      - alertmanager
-
-  alertmanager:
-    # Pinned above v0.27.0 deliberately: confirmed live (and via prometheus/alertmanager's
-    # source on GitHub) that v0.27.0 has a real bug where discord_configs' config-load
-    # validation only checks WebhookURL, ignoring WebhookURLFile as a valid alternative even
-    # though the field is otherwise fully supported — every webhook_url_file-only config fails
-    # to load with "no discord webhook URL provided", regardless of the file's actual content.
-    # Fixed in v0.28.0 (config.go's check became `WebhookURL == nil && len(WebhookURLFile) == 0`).
-    image: prom/alertmanager:v0.28.1
-    container_name: atlas-alertmanager
-    environment:
-      # Empty by default (non-fatal — see alertmanager/alertmanager.yml's comment): the pinned
-      # v0.28.1 image's config-load validation only requires webhook_url_file's *path* to be
-      # set (which it always is, hardcoded below), not the file's content — an empty file only
-      # fails an actual notification-send attempt (logged, non-fatal), never config load.
-      # Compose's secrets-from-environment feature was tried first instead but rejected: it
-      # hard-fails container startup outright when the source env var is entirely unset, unlike
-      # every other optional dependency in this project (ML model, business Discord alerts, NBP
-      # rates), which all degrade gracefully instead of refusing to start.
-      ALERTMANAGER_DISCORD_WEBHOOK_URL: ${ALERTMANAGER_DISCORD_WEBHOOK_URL:-}
-    # Overrides the image's default entrypoint only to write that env var to a file first —
-    # Alertmanager's config can't read env vars directly, only webhook_url_file (a path). The
-    # `exec` line re-applies the image's own default CMD flags (see `docker inspect`).
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        echo -n "$$ALERTMANAGER_DISCORD_WEBHOOK_URL" > /tmp/discord_webhook_url
-        exec /bin/alertmanager --config.file=/etc/alertmanager/alertmanager.yml --storage.path=/alertmanager
-    volumes:
-      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
-      - alertmanager-data:/alertmanager
-    ports:
-      - "127.0.0.1:9093:9093"
-
-  grafana:
-    image: grafana/grafana:11.4.0
-    container_name: atlas-grafana
-    environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
-    volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning
-      - ./grafana/dashboards:/var/lib/grafana/dashboards
-      - grafana-data:/var/lib/grafana
-    ports:
-      - "127.0.0.1:3000:3000"
-
 volumes:
   timescaledb-data:
   redis-data:
-  prometheus-data:
-  grafana-data:
-  alertmanager-data:
   trainer-gomod-cache:
+
+networks:
+  monitoring:
+    external: true
+    name: kmpoltorak-monitoring-atlas
