@@ -6,7 +6,8 @@ backup, restore and recovery procedures.
 
 ## What runs, and which versions
 
-`docker compose up -d` starts every service; `docker-compose.yml` is the complete list.
+Start `kmpoltorak-monitoring-tools` first on the same host. Then `docker compose up -d`
+starts the four Atlas services and joins their shared monitoring network.
 
 | Service | Image | Notes |
 |---|---|---|
@@ -14,9 +15,6 @@ backup, restore and recovery procedures.
 | `atlas-trainer` | built from `training/Dockerfile` (`golang:1.27.2-bookworm` + Python 3.11) | runs retrain.sh on demand for the Settings page |
 | `timescaledb` | `timescale/timescaledb:2.29.1-pg16` | pinned: the extension version lives in the data volume |
 | `redis` | `redis:7.4.10-alpine` | bars and exchange-rate cache |
-| `prometheus` | `prom/prometheus:v3.0.0` | |
-| `alertmanager` | `prom/alertmanager:v0.28.1` | not below v0.28.0: v0.27.0 ignores `webhook_url_file`, see the comment in `docker-compose.yml` |
-| `grafana` | `grafana/grafana:11.4.0` | |
 
 Every published port is bound to `127.0.0.1`. **Atlas has no login**: anyone who can reach port
 8080 can read and change everything, so the stack must not be exposed beyond the machine. Only
@@ -31,8 +29,7 @@ The trainer publishes no host port: atlas-api calls its `/train`, `/status` and 
 endpoints through `TRAINER_URL`, which backs the Settings page's "Train now" and model "Remove"
 buttons ([training/README.md](../training/README.md)).
 
-**What persists.** Named volumes (`timescaledb-data`, `redis-data`, `prometheus-data`,
-`alertmanager-data`, `grafana-data`, `trainer-gomod-cache`) survive `docker compose down` and are
+**What persists.** Named volumes (`timescaledb-data`, `redis-data`, `trainer-gomod-cache`) survive `docker compose down` and are
 destroyed by `docker compose down -v`. Trained models are a bind mount instead:
 `./training/models`, read-only into atlas-api and read-write into the trainer, which is how a
 model the trainer writes becomes selectable on the Settings page without a rebuild.
@@ -75,7 +72,6 @@ and every optional integration is non-fatal when unset. Put overrides in `.env`
 | `LIBONNXRUNTIME_PATH` | `/usr/lib/libonnxruntime.so` | Native ONNX Runtime library |
 | `TRAINER_URL` | Compose: `http://atlas-trainer:8091` | The trainer; empty hides the training buttons, and the page explains running `training/retrain.sh` by hand |
 | `PROMETHEUS_URL`/`ALERTMANAGER_URL`/`GRAFANA_URL` | the Compose service URLs | Checked by `/health`; set one empty to disable that check |
-| `GRAFANA_ADMIN_PASSWORD` | `admin` | Read by the `grafana` container only |
 
 ## Update
 
@@ -145,10 +141,10 @@ atlas_dependency_up{dependency="database|redis|trainer|prometheus|alertmanager|g
 response. `atlas-api`'s own liveness is Prometheus' built-in `up{job="atlas-api"}` instead — it
 can't self-report the way the others can (if atlas-api itself is down, no gauge push happens
 either). Both are visualized together on Grafana's "Atlas Overview" dashboard's "Service Status"
-panel (`grafana/dashboards/overview.json`).
+panel (`grafana/dashboards/overview.json` in `kmpoltorak-monitoring-tools`).
 
 `cmd/trainer` (the training sidecar) exposes its own `/metrics` on port 8091, scraped as a second
-Prometheus job (`atlas-trainer`, `prometheus/prometheus.yml`):
+Prometheus job (`atlas-trainer` in the monitoring project's `prometheus/prometheus.yml`):
 ```
 atlas_trainer_runs_total{outcome="success|failure"}
 atlas_trainer_run_duration_seconds
@@ -247,12 +243,10 @@ between causes one duplicate notification on the retry. That window is bounded b
 service containers and a real ONNX Runtime, `govulncheck`, the Python tests, and a Docker build,
 on every pull request. There is no push or deploy stage: Atlas runs where it is built.
 
-## Shared homelab monitoring
+## Shared monitoring
 
-On the same Docker host as `kmpoltorak-monitoring-tools`, use
-`docker compose -f docker-compose.yml -f compose.monitoring.yaml up -d --build`.
-The override joins the shared Atlas monitoring network, keeps database ports
-internal and publishes the API only on `127.0.0.1:18080`. The standalone
-monitoring services stay available in the base Compose file for local use.
-Enable the Atlas target example in the shared monitoring repository; its
-migration guide preserves existing monitoring data and documents rollback.
+The normal Compose file joins `kmpoltorak-monitoring-atlas`, created by the
+monitoring project. Its Grafana, Prometheus and Alertmanager answer the API's
+informational health checks; the API port stays `127.0.0.1:8080`. Monitoring
+configuration and dashboards live only in that repository. Old Atlas monitoring
+volumes are not removed or merged by this change.

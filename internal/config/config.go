@@ -116,13 +116,10 @@ func Load() Config {
 		// everything else here. docker-compose.yml runs the atlas-trainer service in the default
 		// stack and sets this to reach it — see cmd/trainer.
 		TrainerURL: envOrDefault("TRAINER_URL", ""),
-		// Unlike TrainerURL, these default to the in-network Compose service names rather than
-		// "" — prometheus/alertmanager/grafana are part of every deployment Atlas ships, the
-		// trainer only of the Compose one. /health reports each as
-		// purely informational (see healthHandler) — set to "" to disable a given check
-		// entirely, e.g. in a deployment topology that doesn't run one of these. That is why
-		// these read through envOrUnset: envOrDefault treats "" as unset and would put the
-		// default straight back.
+		// Monitoring lives in the shared Compose project. These DNS names resolve on
+		// its external network; /health reports them as informational only. An empty
+		// URL disables a check, so use envOrUnset rather than envOrDefault, which
+		// would replace an explicitly empty value with the default again.
 		PrometheusURL:   envOrUnset("PROMETHEUS_URL", "http://prometheus:9090"),
 		AlertmanagerURL: envOrUnset("ALERTMANAGER_URL", "http://alertmanager:9093"),
 		GrafanaURL:      envOrUnset("GRAFANA_URL", "http://grafana:3000"),

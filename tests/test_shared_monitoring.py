@@ -1,6 +1,5 @@
-"""Render the real Compose merge; no containers or credentials required."""
+"""Render Atlas's actual startup configuration without creating containers."""
 import json
-import os
 from pathlib import Path
 import subprocess
 import unittest
@@ -9,23 +8,17 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class SharedMonitoring(unittest.TestCase):
-    def test_shared_mode_uses_only_central_monitoring_and_private_database(self):
-        env = dict(os.environ, MONITORED_HTTP_PORT='18080', COMPOSE_PROFILES='')
-        command = ['docker', 'compose', '--env-file', '/dev/null', '-f', 'docker-compose.yml',
-                   '-f', 'compose.monitoring.yaml', 'config', '--format', 'json']
-        result = subprocess.run(command, cwd=ROOT, env=env, text=True,
+    def test_default_uses_shared_monitoring_and_preserves_application_storage(self):
+        result = subprocess.run(['docker', 'compose', '--env-file', '/dev/null', 'config',
+                                 '--format', 'json'], cwd=ROOT, text=True,
                                 capture_output=True, check=True, timeout=30)
         model = json.loads(result.stdout)
         services = model['services']
-        self.assertTrue({'prometheus', 'grafana', 'alertmanager'}.isdisjoint(services))
-        app = services['atlas-api']
-        self.assertEqual(set(app['networks']), {'default', 'monitoring'})
-        self.assertIn('atlas-api', app['networks']['monitoring']['aliases'])
-        self.assertEqual(app['ports'][0]['host_ip'], '127.0.0.1')
-        self.assertEqual(app['ports'][0]['published'], '18080')
-        self.assertTrue(model['networks']['monitoring']['external'])
+        self.assertEqual(set(services), {'atlas-api', 'atlas-trainer', 'timescaledb', 'redis'})
+        for name in ['atlas-api', 'atlas-trainer']:
+            self.assertEqual(set(services[name]['networks']), {'default', 'monitoring'})
+        self.assertEqual(services['atlas-api']['ports'][0]['host_ip'], '127.0.0.1')
+        self.assertEqual(services['atlas-api']['ports'][0]['published'], '8080')
+        self.assertTrue(model['networks']['monitoring'].get('external', False))
         self.assertEqual(model['networks']['monitoring']['name'], 'kmpoltorak-monitoring-atlas')
-        for name, dependency in services.items():
-            if name != 'atlas-api':
-                self.assertFalse(dependency.get('ports'), name)
-        self.assertIn('monitoring', services['atlas-trainer']['networks'])
+        self.assertEqual(set(model['volumes']), {'timescaledb-data', 'redis-data', 'trainer-gomod-cache'})

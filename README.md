@@ -32,6 +32,9 @@ cd atlas
 
 ## Quick start
 
+Start [kmpoltorak-monitoring-tools](https://github.com/kmpoltorak/kmpoltorak-monitoring-tools)
+on the same Docker host first; it creates Atlas's monitoring network. Then:
+
 ```bash
 docker compose up -d
 ```
@@ -56,25 +59,17 @@ The dashboard is in English, Polish, German, French and Spanish.
 | `atlas-api` | http://localhost:8080 | dashboard and REST API |
 | `timescaledb` | localhost:5432 | database; migrations run at startup |
 | `redis` | localhost:6379 | cache for price bars and exchange rates |
-| `prometheus` | http://localhost:9090 | metrics |
-| `alertmanager` | http://localhost:9093 | infra alert routing |
-| `grafana` | http://localhost:3000 | dashboards (`admin` / `admin`) |
 | `atlas-trainer` | internal only | trains model candidates on request from the Settings page |
 
 ## Shared monitoring
 
-For the same Ubuntu host as [kmpoltorak-monitoring-tools](https://github.com/kmpoltorak/kmpoltorak-monitoring-tools),
-start the monitoring stack first, then:
-
-```sh
-docker compose -f docker-compose.yml -f compose.monitoring.yaml up -d --build
-```
-
-This mode publishes the application on `127.0.0.1:18080` (override with
-`MONITORED_HTTP_PORT`) and joins its dedicated external monitoring network.
-Database ports stay internal and the local monitoring services stay disabled.
-Enable the matching target configuration in the monitoring repository.
-Its migration guide covers backups and rollback; application data volumes stay in this project.
+Grafana, Prometheus and Alertmanager run in
+[kmpoltorak-monitoring-tools](https://github.com/kmpoltorak/kmpoltorak-monitoring-tools)
+with hometoolslab's monitoring. Atlas's normal Compose file joins its dedicated
+external network; no override file or profile is needed. The API stays on
+`127.0.0.1:8080`. The shared project scrapes the API and trainer and provisions
+Atlas Overview. Its migration guide preserves existing monitoring data;
+Atlas's database, cache, models and trainer cache stay here.
 
 ## Configuration
 
@@ -83,10 +78,9 @@ Copy `.env.example` to `.env`; Compose reads it automatically.
 | Variable | Default | Meaning |
 |---|---|---|
 | `DATABASE_PASSWORD` | `atlas` | used by both `atlas-api` and `timescaledb` |
-| `GRAFANA_ADMIN_PASSWORD` | `admin` | Grafana admin password |
 | `DISCORD_WEBHOOK_URL`, `SLACK_WEBHOOK_URL` | empty | recommendation-change alerts; any combination |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | empty | same, via Telegram |
-| `ALERTMANAGER_DISCORD_WEBHOOK_URL` | empty | separate channel for infra alerts and training failures |
+| `ALERTMANAGER_DISCORD_WEBHOOK_URL` | empty | trainer failures; set it in the monitoring project too for infrastructure alerts |
 | `ML_ENABLED` | `true` | startup default for blending ML, portfolio and risk into the score; the Settings page overrides it live |
 | `MODEL_PATH`, `RECOVERY_MODEL_PATH` | empty | ONNX models under `training/models` |
 | `TRAINER_URL` | `http://atlas-trainer:8091` | empty hides the train and delete buttons |
@@ -118,7 +112,7 @@ activation: [training/README.md](training/README.md), details: [docs/ml.md](docs
 
 ## Development
 
-Shared monitoring configuration: `python3 -m unittest discover -s tests -p 'test_shared_monitoring.py' -v` (Docker Compose 2.30+).
+Shared monitoring configuration: `python3 -m unittest discover -s tests -p 'test_shared_monitoring.py' -v` (Docker Compose v2).
 
 There is no Makefile; Go 1.27.2:
 
