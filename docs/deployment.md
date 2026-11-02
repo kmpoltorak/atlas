@@ -49,6 +49,9 @@ Every setting is an environment variable (`internal/config/config.go`) with a wo
 and every optional integration is non-fatal when unset. Put overrides in `.env`
 (`.env.example` has the common ones with comments; `.env` is gitignored).
 
+`DOMAIN_NAME` is only for a local Traefik override, described below. Grafana credentials,
+Prometheus retention and Alertmanager delivery are configured in `kmpoltorak-monitoring-tools`.
+
 | Variable | Default | Purpose |
 |---|---|---|
 | `SERVER_PORT` | `8080` | HTTP listen port |
@@ -64,7 +67,7 @@ and every optional integration is non-fatal when unset. Put overrides in `.env`
 | `DISCORD_WEBHOOK_URL` | *(empty → off)* | Business alerts (BUY/ACCUMULATE/REDUCE/SELL, on change) |
 | `SLACK_WEBHOOK_URL` | *(empty → off)* | The same alerts to a Slack Incoming Webhook |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | *(empty → off)* | The same alerts via a Telegram bot; both must be set |
-| `ALERTMANAGER_DISCORD_WEBHOOK_URL` | *(empty → off)* | Infra alerts and failed training runs, deliberately a separate channel |
+| `ALERTMANAGER_DISCORD_WEBHOOK_URL` | *(empty → off)* | Failed training runs; set it in the monitoring project too for infrastructure alerts |
 | `ML_ENABLED` | `true` | Initial state of the ML factor; the Settings page toggle overrides it once used. `false` drops only the ML factor, not portfolio risk |
 | `MODEL_PATH` | *(empty → stub)* | Correction model `.onnx`; a Settings-page selection overrides it |
 | `RECOVERY_MODEL_PATH` | *(empty → 0)* | Recovery model `.onnx`, independent of `MODEL_PATH` |
@@ -72,6 +75,18 @@ and every optional integration is non-fatal when unset. Put overrides in `.env`
 | `LIBONNXRUNTIME_PATH` | `/usr/lib/libonnxruntime.so` | Native ONNX Runtime library |
 | `TRAINER_URL` | Compose: `http://atlas-trainer:8091` | The trainer; empty hides the training buttons, and the page explains running `training/retrain.sh` by hand |
 | `PROMETHEUS_URL`/`ALERTMANAGER_URL`/`GRAFANA_URL` | the Compose service URLs | Checked by `/health`; set one empty to disable that check |
+
+## Traefik
+
+For hometoolslab's Traefik, set `DOMAIN_NAME` in Atlas's `.env` to the same base domain as
+hometoolslab. Your local `docker-compose.override.yml` uses it in the router's `Host` rule
+for `atlas.${DOMAIN_NAME}`; no Traefik override is shipped with Atlas.
+The override must also join `atlas-api` to the external `hometools_default` network, select
+that network with `traefik.docker.network=hometools_default`, and route to container port 8080.
+Use hometoolslab's `websecure` entrypoint, `myresolver` certificate resolver, and
+`admin-auth@docker,security-headers@docker` middleware. Keep the existing `default` and
+`monitoring` networks. Point `atlas.<domain>` to the server in DNS.
+Setting `DOMAIN_NAME` alone does not create the router or DNS record.
 
 ## Update
 
