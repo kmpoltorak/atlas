@@ -305,8 +305,9 @@ entirely, changes nothing else in the calling code.
 
 This is the repo's first cgo dependency (`onnxruntime_go` dlopens the native
 `libonnxruntime.so`/`.dylib` at runtime) — the Dockerfile moved off Alpine to a glibc base
-(`debian:bookworm-slim`) to safely bundle it, and downloads ONNX Runtime 1.28.0 for the image's
-own architecture (`x64` for amd64, `aarch64` for arm64). arm64 inference is unverified: under
+(`debian:bookworm-slim`) to safely bundle it, and extracts ONNX Runtime 1.28.0 from Microsoft's
+NuGet package for the image's own architecture (`linux-x64` for amd64, `linux-arm64` for arm64).
+CI uses the same package. arm64 inference is unverified: under
 QEMU emulation both the image and Microsoft's own 1.28.0 arm64 Python wheel crash inside the
 library while 1.20.1 loads, and it has not been run on real ARM hardware. See the Dockerfile's
 comments for why Alpine/musl isn't viable here.

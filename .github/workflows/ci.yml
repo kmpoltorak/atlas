@@ -87,12 +87,12 @@ jobs:
       # so a slimmer future runner image doesn't turn this into a confusing dlopen failure.
       - name: Install ONNX Runtime
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq libgomp1
-          curl -fsSL -o /tmp/ort.tgz \
-            "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz"
+          sudo apt-get update -qq && sudo apt-get install -y -qq libgomp1 unzip
+          curl -fsSL -o /tmp/ort.nupkg \
+            "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/${ONNXRUNTIME_VERSION}/microsoft.ml.onnxruntime.${ONNXRUNTIME_VERSION}.nupkg"
           sudo mkdir -p /opt/onnxruntime
-          sudo tar -xzf /tmp/ort.tgz -C /opt/onnxruntime --strip-components=1
-          rm /tmp/ort.tgz
+          sudo unzip -j /tmp/ort.nupkg 'runtimes/linux-x64/native/libonnxruntime*.so' -d /opt/onnxruntime/lib
+          rm /tmp/ort.nupkg
           test -f "$TEST_ONNXRUNTIME_LIB_PATH" || {
             echo "libonnxruntime.so not found at $TEST_ONNXRUNTIME_LIB_PATH after extraction"
             exit 1
