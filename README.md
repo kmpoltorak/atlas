@@ -119,6 +119,9 @@ activation: [training/README.md](training/README.md), details: [docs/ml.md](docs
 
 ## Development
 
+CI and the API image obtain ONNX Runtime 1.28.0 native libraries from Microsoft's
+NuGet package, without depending on GitHub release downloads.
+
 Shared monitoring configuration: `python3 -m unittest discover -s tests -p 'test_shared_monitoring.py' -v` (Docker Compose v2).
 
 There is no Makefile; Go 1.27.2:

@@ -23,8 +23,8 @@ COPY migrations ./migrations
 RUN CGO_ENABLED=1 go build -o /out/atlas-api ./cmd/api
 
 # Fetches the native onnxruntime shared library into its own stage so the final image only
-# copies the handful of files it needs, not the full SDK (headers, static libs, docs) the
-# release tarball ships.
+# copies the native libraries from Microsoft's NuGet package, without depending on
+# GitHub release downloads.
 # Supported architectures are exactly the two below; anything else fails the build here rather
 # than shipping an image whose native library cannot load.
 FROM debian:bookworm-slim AS onnxruntime
@@ -32,15 +32,16 @@ ARG ONNXRUNTIME_VERSION=1.28.0
 ARG TARGETARCH
 RUN case "${TARGETARCH}" in \
       amd64) ORT_ARCH=x64 ;; \
-      arm64) ORT_ARCH=aarch64 ;; \
+      arm64) ORT_ARCH=arm64 ;; \
       *) echo "unsupported architecture: ${TARGETARCH} (amd64 and arm64 are supported)" >&2; exit 1 ;; \
     esac \
-    && apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
-    && curl -fsSL -o /tmp/ort.tgz \
-       "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}.tgz" \
-    && mkdir -p /onnxruntime \
-    && tar -xzf /tmp/ort.tgz -C /onnxruntime --strip-components=1 \
-    && rm /tmp/ort.tgz \
+    && apt-get update && apt-get install -y --no-install-recommends curl ca-certificates unzip \
+    && curl -fsSL -o /tmp/ort.nupkg \
+       "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/${ONNXRUNTIME_VERSION}/microsoft.ml.onnxruntime.${ONNXRUNTIME_VERSION}.nupkg" \
+    && mkdir -p /onnxruntime/lib \
+    && unzip -j /tmp/ort.nupkg "runtimes/linux-${ORT_ARCH}/native/libonnxruntime*.so" -d /onnxruntime/lib \
+    && test -s /onnxruntime/lib/libonnxruntime.so \
+    && rm /tmp/ort.nupkg \
     && rm -rf /var/lib/apt/lists/*
 
 FROM debian:bookworm-slim
@@ -58,7 +59,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY --from=onnxruntime /onnxruntime/lib/libonnxruntime.so* /usr/lib/
+COPY --from=onnxruntime /onnxruntime/lib/libonnxruntime*.so /usr/lib/
 COPY --from=builder /out/atlas-api /app/atlas-api
 
 # Numeric UID, not the username: a runtime that enforces non-root (Kubernetes' runAsNonRoot, for
