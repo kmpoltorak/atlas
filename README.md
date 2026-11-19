@@ -145,7 +145,7 @@ Re-run `internal/application/ml/testdata/gen_smoketest.py` whenever
 `ml.FeatureOrder` changes, since the ONNX fixtures encode the input width. On
 every pull request CI sets all three variables, runs `go test -race`, the
 training split tests, `govulncheck`, a Docker build and a trainer container
-smoke test.
+smoke test. Docker build record artifacts expire after three days.
 
 Built with an AI coding assistant. I wrote the spec and reviewed every change.
 
