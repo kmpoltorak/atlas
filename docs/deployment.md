@@ -166,7 +166,7 @@ there: its image is the full `golang:1.27.2-bookworm`, which does ship it.
 
 Actual metric names (internal/observability/metrics.go):
 ```
-atlas_api_requests_total
+atlas_api_requests_total{status="200|503|..."}
 atlas_request_duration_seconds
 atlas_provider_requests_total
 atlas_recommendations_total

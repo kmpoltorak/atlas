@@ -123,6 +123,7 @@ changes, `prometheus/atlas-alerts.yml` in `kmpoltorak-monitoring-tools` defines 
 | Alert | Fires when |
 |---|---|
 | `AtlasAPIDown` | `/metrics` hasn't been scrapeable for 2 minutes |
+| `AtlasDependencyDown` | atlas-api is up but could not reach the database or Redis for 2 minutes |
 | `AtlasAPIFlapping` | atlas-api's up/down state changed more than 4 times in 15 minutes (crash-loop proxy that needs no extra scrape config) |
 | `AtlasHighErrorRate` | more than 5% of requests returned a 5xx status over 5 minutes |
 | `AtlasAlertPollErrors` | a whole background alert-poll cycle failed at least once in 15 minutes (e.g. the market data provider is unreachable) |
