@@ -16,6 +16,8 @@ class SharedMonitoring(unittest.TestCase):
         model = json.loads(result.stdout)
         services = model['services']
         self.assertEqual(set(services), {'atlas-api', 'atlas-trainer', 'timescaledb', 'redis'})
+        for name, service in services.items():
+            self.assertEqual(service.get('restart'), 'unless-stopped', name)
         for name in ['atlas-api', 'atlas-trainer']:
             self.assertEqual(set(services[name]['networks']), {'default', 'monitoring'})
         self.assertEqual(services['atlas-api']['ports'][0]['host_ip'], '127.0.0.1')
