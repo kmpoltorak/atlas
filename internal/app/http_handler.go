@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"atlas/internal/app/web"
@@ -124,7 +125,7 @@ func (a *Application) instrument(next http.Handler) http.Handler {
 		default:
 			method = "OTHER"
 		}
-		a.Metrics.RequestCounter.WithLabelValues(route, method, http.StatusText(recorder.status)).Inc()
+		a.Metrics.RequestCounter.WithLabelValues(route, method, strconv.Itoa(recorder.status)).Inc()
 		a.Metrics.RequestDuration.WithLabelValues(route, method).Observe(time.Since(start).Seconds())
 	})
 }
