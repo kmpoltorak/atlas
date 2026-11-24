@@ -34,6 +34,11 @@ destroyed by `docker compose down -v`. Trained models are a bind mount instead:
 `./training/models`, read-only into atlas-api and read-write into the trainer, which is how a
 model the trainer writes becomes selectable on the Settings page without a rebuild.
 
+**What restarts.** All four services use `restart: unless-stopped`: they come back after a crash or
+a Docker or host restart, but not after a manual `docker stop` or `docker compose down`. To rebuild
+only the application without stopping the database:
+`docker compose up -d --build --force-recreate --no-deps atlas-api atlas-trainer`.
+
 ## Install
 
 ```bash
